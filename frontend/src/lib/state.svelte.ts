@@ -1,4 +1,5 @@
 import { api, errText } from './api'
+import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import type { Column, ConnConfig, StmtResult, Table } from './types'
 
@@ -90,6 +91,7 @@ export const app = $state({
   tableOpen: { pkDesc: false },
   gridZoom: 1,
   ddlMode: 'sql' as 'sql' | 'table',
+  theme: getTheme(),
 })
 
 let toastSeq = 0
@@ -466,6 +468,7 @@ export function saveWorkspaceSoon() {
       tableOpen: app.tableOpen,
       gridZoom: app.gridZoom,
       ddlMode: app.ddlMode,
+      theme: app.theme,
       tabs: app.tabs.map((t) => ({
         id: t.id,
         title: t.title,
@@ -489,6 +492,10 @@ export async function loadWorkspace() {
     if (data.fetchSize) app.fetchSize = data.fetchSize
     if (data.treeView) app.treeView = { ...app.treeView, ...data.treeView }
     if (data.tableOpen) app.tableOpen = { ...app.tableOpen, ...data.tableOpen }
+    if ((data.theme === 'auto' || data.theme === 'dark' || data.theme === 'light') && data.theme !== app.theme) {
+      app.theme = data.theme
+      setTheme(data.theme)
+    }
     if (data.ddlMode === 'table' || data.ddlMode === 'sql') app.ddlMode = data.ddlMode
     if (typeof data.gridZoom === 'number' && data.gridZoom >= 0.5 && data.gridZoom <= 3) app.gridZoom = data.gridZoom
     for (const t of data.tabs ?? []) {

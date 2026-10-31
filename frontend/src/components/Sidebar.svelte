@@ -19,6 +19,7 @@
     type Tab,
   } from '../lib/state.svelte'
   import { api } from '../lib/api'
+  import { setTheme, type ThemeMode } from '../lib/theme'
   import { copyText } from '../lib/clipboard'
   import { driverLabel, type ConnConfig, type Column } from '../lib/types'
 
@@ -451,7 +452,21 @@
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="viewmenu" onclick={(e) => e.stopPropagation()}>
-          <div class="vm-title">트리에 표시</div>
+          <div class="vm-title">테마</div>
+          <div class="theme-seg" role="group">
+            {#each [['auto', '자동'], ['dark', '다크'], ['light', '라이트']] as [m, label] (m)}
+              <button
+                class:on={app.theme === m}
+                title={m === 'auto' ? 'OS 설정을 따릅니다' : ''}
+                onclick={() => {
+                  app.theme = m as ThemeMode
+                  setTheme(app.theme)
+                  saveWorkspaceSoon()
+                }}>{label}</button
+              >
+            {/each}
+          </div>
+          <div class="vm-title sep">트리에 표시</div>
           <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
           <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 테이블 행 수 (통계 기준 추정)</label>
@@ -649,6 +664,28 @@
   }
   .info {
     cursor: default;
+  }
+  .theme-seg {
+    display: flex;
+    margin: 2px 8px 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .theme-seg button {
+    flex: 1;
+    height: 24px;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .theme-seg button + button {
+    border-left: 1px solid var(--border);
+  }
+  .theme-seg button.on {
+    background: var(--bg-select);
+    color: var(--text);
   }
   .tip {
     position: fixed;
