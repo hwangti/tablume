@@ -193,8 +193,10 @@
     }
   }
 
+  let busy = $derived(tab.running || !!tab.opening)
+
   $effect(() => {
-    if (!tab.running) return
+    if (!busy) return
     const h = setInterval(() => tick++, 100)
     return () => clearInterval(h)
   })
@@ -338,7 +340,7 @@
 
   let elapsed = $derived.by(() => {
     void tick
-    return tab.running ? ((Date.now() - tab.startedAt) / 1000).toFixed(1) + 's' : ''
+    return busy ? ((Date.now() - tab.startedAt) / 1000).toFixed(1) + 's' : ''
   })
 </script>
 
@@ -433,7 +435,7 @@
             로그
             {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
           </button>
-          {#if tab.running}<span class="running small"><span class="spin"></span> {elapsed}</span>{/if}
+          {#if busy}<span class="running small"><span class="spin"></span> {elapsed}</span>{/if}
         {:else}
           {#each tab.results as r, i (i)}
             <button class="rtab" class:on={tab.activeResult === i} onclick={() => (tab.activeResult = i)}>
@@ -526,6 +528,12 @@
       {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="rbody" onkeydown={resultsKey}>
+        {#if isTable && tableView === 'data' && busy}
+          <!-- over the old rows (reload) or the empty tab (first load) -->
+          <div class="loading" class:blank={!current}>
+            <div class="loading-pill"><span class="spin"></span> 데이터 불러오는 중… {elapsed}</div>
+          </div>
+        {/if}
         {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
           <StructureView connId={tab.connId} schema={tab.tableRef.schema} table={tab.tableRef.table} />
         {:else if isTable && tableView === 'ddl'}
@@ -833,8 +841,34 @@
     font-size: 11px;
   }
   .rbody {
+    position: relative;
     flex: 1;
     min-height: 0;
+  }
+  .loading {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 60px;
+    background: color-mix(in srgb, var(--bg) 45%, transparent);
+    pointer-events: none;
+  }
+  .loading.blank {
+    background: var(--bg);
+  }
+  .loading-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
   .messages {
     height: 100%;

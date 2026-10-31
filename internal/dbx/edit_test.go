@@ -37,3 +37,14 @@ func TestDetectSource(t *testing.T) {
 		}
 	}
 }
+
+func TestEditableType(t *testing.T) {
+	for typ, want := range map[string]bool{
+		"longtext": true, "mediumtext": true, "text": true, "varchar(255)": true, "json": true,
+		"LONG": false, "LONG RAW": false, "longblob": false, "RAW(16)": false, "varbinary(10)": false, "bytea": false,
+	} {
+		if got := editableType(typ); got != want {
+			t.Errorf("%s: got %v want %v", typ, got, want)
+		}
+	}
+}

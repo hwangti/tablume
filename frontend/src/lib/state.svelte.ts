@@ -44,6 +44,9 @@ export interface Tab {
   results: StmtResult[]
   activeResult: number // index into results, or -1 for the messages pane
   running: boolean
+  // Table tab being prepared (building the SELECT) before it runs.
+  opening?: boolean
+  openSeq?: number
   loadingMore: boolean
   messages: Message[]
   startedAt: number
@@ -390,23 +393,41 @@ export async function openTableData(connId: string, schema: string, t: Table): P
     return tab
   }
   const ref: TableRef = { schema, table: t, where: '', orderBy: '' }
-  if (app.tableOpen.pkDesc) await applyPkDesc(connId, ref)
-  const sql = await api.SelectSQL(connId, schema, t, ref.where, ref.orderBy, TABLE_LIMIT)
+  // Show the tab right away (with a loading state); building the SELECT
+  // may need a round trip (PK lookup) before the query even starts.
   if (tab) {
     tab.connId = connId
     tab.schema = schema
-    tab.sql = sql
+    tab.sql = ''
     tab.title = t.name
     tab.results = []
+    tab.activeResult = 0
     tab.tableRef = ref
     app.activeTab = tab.id
-    saveWorkspaceSoon()
   } else {
-    tab = openConsole(connId, { schema, sql, title: t.name })
+    tab = openConsole(connId, { schema, sql: '', title: t.name })
     tab.preview = true
     tab.layout = 'results' // table data: the grid gets the whole tab
     tab.tableRef = ref
   }
+  const seq = (tab.openSeq = (tab.openSeq ?? 0) + 1)
+  const cur = tab.tableRef! // the reactive copy of ref
+  tab.opening = true
+  tab.startedAt = Date.now()
+  let sql: string
+  try {
+    if (!(await connect(connId))) return tab
+    if (app.tableOpen.pkDesc) await applyPkDesc(connId, cur)
+    sql = await api.SelectSQL(connId, schema, t, cur.where, cur.orderBy, TABLE_LIMIT)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return tab
+  } finally {
+    if (tab.openSeq === seq) tab.opening = false
+  }
+  if (tab.openSeq !== seq) return tab // the tab was reused for another table meanwhile
+  tab.sql = sql
+  saveWorkspaceSoon()
   await runSQL(tab, sql, -1)
   return tab
 }

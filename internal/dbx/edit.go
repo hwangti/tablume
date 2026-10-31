@@ -194,9 +194,12 @@ func (m *Manager) resolveSource(p *pool, current string, parts []string) (string
 	}
 }
 
+// editableType: binary columns and Oracle LONG can't be edited as text.
+// (Only the exact LONG type — "LONGTEXT" is ordinary MySQL text.)
 func editableType(t string) bool {
 	base, _, _ := strings.Cut(t, "(") // RAW(10) -> RAW
-	return !isBinaryType(strings.TrimSpace(base)) && !strings.Contains(strings.ToUpper(t), "LONG")
+	base = strings.ToUpper(strings.TrimSpace(base))
+	return !isBinaryType(base) && base != "LONG"
 }
 
 // EditInfo tells whether a result set can be edited in place: it must come

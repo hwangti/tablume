@@ -448,3 +448,28 @@ func TestFloatFormat(t *testing.T) {
 		})
 	}
 }
+
+// MySQL LONGTEXT used to be taken for Oracle LONG and made read-only.
+func TestLongTextEditable(t *testing.T) {
+	tg := targets(t)["mariadb"]
+	m := NewManager()
+	if _, err := m.Connect(tg.cfg); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Disconnect(tg.cfg.ID)
+	defer m.Execute(ExecRequest{TabID: "l", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE IF EXISTS art", Cursor: -1})
+	res, err := m.Execute(ExecRequest{TabID: "l", ConnID: tg.cfg.ID, Schema: tg.schema, Cursor: -1,
+		SQL: "DROP TABLE IF EXISTS art; CREATE TABLE art (id bigint AUTO_INCREMENT PRIMARY KEY, content longtext NOT NULL, j mediumtext); INSERT INTO art (content) VALUES ('<p>a &gt; b</p>')"})
+	if err != nil || res.Results[len(res.Results)-1].Error != "" {
+		t.Fatal(err, res.Results)
+	}
+	info, err := m.EditInfo(tg.cfg.ID, tg.schema, []string{"art"}, []string{"id", "content", "j"})
+	if err != nil || !info.Editable || info.Columns[1] != "content" || info.Columns[2] != "j" {
+		t.Fatalf("%v %+v", err, info)
+	}
+	n, err := m.ApplyChanges(ApplyRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: info.Table,
+		Changes: []RowChange{{Kind: "update", Key: map[string]any{"id": "1"}, Values: map[string]any{"content": "<p>new</p>"}}}})
+	if err != nil || n != 1 {
+		t.Fatal(n, err)
+	}
+}

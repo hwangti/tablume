@@ -10,10 +10,12 @@
     </linearGradient>
   </defs>
   <rect x="48" y="48" width="928" height="928" rx="210" fill="url(#bg)"/>
-  <!-- table card -->
-  <rect x="190" y="230" width="540" height="540" rx="60" fill="#ffffff"/>
-  <path d="M190 290a60 60 0 0 1 60-60h420a60 60 0 0 1 60 60v100H190z" fill="#cfe0ff"/>
-  <path d="M190 525h540M190 650h540M370 390v380" stroke="#c3d3f3" stroke-width="20"/>
+  <!-- table card, centred on the 512x512 middle (the feather overlaps it) -->
+  <g transform="translate(52 12)">
+    <rect x="190" y="230" width="540" height="540" rx="60" fill="#ffffff"/>
+    <path d="M190 290a60 60 0 0 1 60-60h420a60 60 0 0 1 60 60v100H190z" fill="#cfe0ff"/>
+    <path d="M190 525h540M190 650h540M370 390v380" stroke="#c3d3f3" stroke-width="20"/>
+  </g>
   <!-- feather -->
   <g transform="translate(690 860) rotate(35) scale(0.86)">
     <path d="M0 10C-105-120-110-320 0-500C110-320 105-120 0 10Z" fill="url(#fe)" stroke="#ffffff" stroke-width="26" stroke-linejoin="round"/>

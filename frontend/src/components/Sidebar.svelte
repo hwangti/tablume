@@ -467,8 +467,8 @@
             {/each}
           </div>
           <div class="vm-title sep">트리에 표시</div>
-          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
+          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
           <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 테이블 행 수 (통계 기준 추정)</label>
           <label><input type="checkbox" bind:checked={app.treeView.size} onchange={saveWorkspaceSoon} /> 테이블 크기</label>
           <div class="vm-title sep">테이블 열 때</div>
