@@ -2,7 +2,10 @@ package main
 
 import (
 	"embed"
+	"path/filepath"
 	goruntime "runtime"
+
+	"tablume/internal/store"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -27,6 +30,13 @@ func main() {
 		appMenu.Append(menu.WindowMenu())
 	}
 
+	// Keep WebView2's cache next to our own config (%APPDATA%\Tablume\webview)
+	// instead of Wails' default %APPDATA%\Tablume.exe.
+	webviewDir := ""
+	if dir, err := store.Dir(); err == nil {
+		webviewDir = filepath.Join(dir, "webview")
+	}
+
 	err := wails.Run(&options.App{
 		Title:            "Tablume",
 		Width:            1360,
@@ -43,7 +53,8 @@ func main() {
 			About: &mac.AboutInfo{Title: "Tablume", Message: "A lightweight database client"},
 		},
 		Windows: &windows.Options{
-			Theme: windows.SystemDefault,
+			Theme:               windows.SystemDefault,
+			WebviewUserDataPath: webviewDir,
 		},
 	})
 	if err != nil {
