@@ -3,6 +3,7 @@
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
+  import Modal from './Modal.svelte'
   import { api, errText } from '../lib/api'
   import { modKey } from '../lib/clipboard'
   import {
@@ -14,8 +15,10 @@
     loadCompletion,
     saveWorkspaceSoon,
     toast,
+    confirmBox,
     type Tab,
   } from '../lib/state.svelte'
+  import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
   import type { Cell, StmtResult } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
@@ -39,6 +42,57 @@
     if (connected && tab.schema) loadCompletion(tab.connId, tab.schema)
   })
 
+  // Find out early whether the shown result is editable (for the lock icon).
+  $effect(() => {
+    if (current && !current.edit?.info && connected) loadEditInfo(tab, current)
+  })
+
+  let grid = $state<ResultGrid>()
+  let pending = $derived(pendingCount(current))
+  let editInfo = $derived(current?.edit?.info ?? null)
+  let applyView = $state<{ sql: string[]; busy: boolean; error: string } | null>(null)
+
+  async function guardPending(): Promise<boolean> {
+    const n = tabPending(tab)
+    return n === 0 || confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 실행할까요?`)
+  }
+
+  async function openApply() {
+    if (!current || !pending) return
+    try {
+      applyView = { sql: await previewChanges(tab, current), busy: false, error: '' }
+    } catch (e) {
+      toast(errText(e), 'error')
+    }
+  }
+
+  async function doApply() {
+    const view = applyView
+    if (!current || !view) return
+    view.busy = true
+    try {
+      const { count, inserted } = await applyChanges(tab, current)
+      applyView = null
+      toast(`${count}건 적용됨`)
+      if (inserted) await rerun() // show generated values (auto ids, defaults)
+    } catch (e) {
+      view.busy = false
+      view.error = errText(e)
+    }
+  }
+
+  async function rerun() {
+    if (!current || !(await guardPending())) return
+    await runSQL(tab, current.sql, -1)
+  }
+
+  function resultsKey(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      openApply()
+    }
+  }
+
   $effect(() => {
     if (!tab.running) return
     const h = setInterval(() => tick++, 100)
@@ -54,7 +108,7 @@
   }
 
   async function run() {
-    if (!view) return
+    if (!view || !(await guardPending())) return
     const s = view.state.selection.main
     const doc = view.state.doc.toString()
     const res = s.empty ? await runSQL(tab, doc, s.head) : await runSQL(tab, doc.slice(s.from, s.to), -1, s.from)
@@ -62,7 +116,7 @@
   }
 
   async function runAll() {
-    if (!view) return
+    if (!view || !(await guardPending())) return
     const s = view.state.selection.main
     const doc = view.state.doc.toString()
     const res = s.empty ? await runSQL(tab, doc, -1) : await runSQL(tab, doc.slice(s.from, s.to), -1, s.from)
@@ -220,6 +274,19 @@
         </button>
         <span class="grow"></span>
         {#if current}
+          {#if pending > 0}
+            <span class="pending">변경 {pending}건</span>
+            <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}S)"><Icon name="check" size={13} /> 적용</button>
+            <button class="btn mini" onclick={() => current && revert(current)} title="모든 변경 되돌리기"><Icon name="undo" size={13} /> 되돌리기</button>
+            <span class="sep"></span>
+          {/if}
+          {#if editInfo?.editable}
+            <button class="icon-btn" title="행 추가" onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
+            <button class="icon-btn" title="선택 행 삭제 (Delete)" onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
+          {:else if editInfo}
+            <span class="ro" title={'읽기 전용: ' + editInfo.reason}><Icon name="lock" size={13} /> 읽기 전용</span>
+          {/if}
+          <button class="icon-btn" title="다시 실행" onclick={rerun} disabled={tab.running}><Icon name="refresh" size={14} /></button>
           <span class="meta">
             {current.rows!.length.toLocaleString()}{current.hasMore ? '+' : ''}행 · {current.elapsedMs}ms
           </span>
@@ -227,9 +294,13 @@
           <button class="btn mini" onclick={() => exportResult('json')}>JSON</button>
         {/if}
       </div>
-      <div class="rbody">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="rbody" onkeydown={resultsKey}>
         {#if current}
           <ResultGrid
+            bind:this={grid}
+            result={current}
+            ensureEdit={() => loadEditInfo(tab, current!)}
             columns={current.columns!}
             rows={current.rows!}
             hasMore={current.hasMore}
@@ -256,6 +327,19 @@
     </div>
   </div>
 </div>
+
+{#if applyView}
+  <Modal title="변경 적용 — {applyView.sql.length}건" onclose={() => (applyView = null)} width={760} dismissible={false}>
+    <p class="dim" style="margin:0 0 8px">아래 SQL을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.</p>
+    <pre class="apply-list mono">{applyView.sql.join(';\n') + ';'}</pre>
+    {#if applyView.error}<div class="apply-error">{applyView.error}</div>{/if}
+    {#snippet footer()}
+      <span style="flex:1"></span>
+      <button class="btn" onclick={() => (applyView = null)}>취소</button>
+      <button class="btn primary" onclick={doApply} disabled={applyView?.busy}>{applyView?.busy ? '적용 중…' : '적용'}</button>
+    {/snippet}
+  </Modal>
+{/if}
 
 <style>
   .tab {
@@ -363,6 +447,44 @@
     height: 6px;
     border-radius: 50%;
     background: var(--danger);
+  }
+  .pending {
+    color: var(--warn);
+    font-weight: 600;
+    margin-right: 2px;
+    white-space: nowrap;
+  }
+  .ro {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-faint);
+    font-size: 12px;
+    margin-right: 4px;
+    white-space: nowrap;
+    cursor: help;
+  }
+  .apply-list {
+    max-height: 360px;
+    overflow: auto;
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .apply-error {
+    margin-top: 10px;
+    color: var(--danger);
+    white-space: pre-wrap;
+    user-select: text;
+    -webkit-user-select: text;
   }
   .meta {
     color: var(--text-dim);

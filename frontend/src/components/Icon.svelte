@@ -27,6 +27,11 @@
     filter: 'M2.5 3.5h11L9.5 8.5v4l-3 1v-5z',
     format: 'M3 4h10M3 8h6M3 12h8',
     open: 'M2.5 4.5h4l1.5 1.5h5.5v6.5h-11zM2.5 12.5L4.5 8h11',
+    lock: 'M4.5 7.5h7v6h-7zM6 7.5V5.5a2 2 0 014 0v2',
+    undo: 'M5 4L2.5 6.5 5 9M2.5 6.5H10a3.5 3.5 0 010 7H7',
+    check: 'M3 8.5l3 3 7-7',
+    minus: 'M3 8h10',
+    ddl: 'M4 1.5h5l3 3v10H4zM6 8h4M6 10.5h4M6 5.5h1.5',
   }
 </script>
 

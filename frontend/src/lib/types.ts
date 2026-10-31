@@ -52,6 +52,32 @@ export interface StmtResult {
   elapsedMs: number
   error: string
   notice: string
+  source: string[] | null
+  // client-side only
+  edit?: EditState
+}
+
+export interface EditInfo {
+  editable: boolean
+  reason: string
+  schema: string
+  table: Table
+  columns: string[] // table column per result column, '' = read-only
+  key: string[]
+}
+
+export interface EditState {
+  info: EditInfo | null
+  loading: boolean
+  edits: Record<number, Record<number, Cell>> // row -> col -> new value
+  deleted: Record<number, true>
+  added: Record<number, true>
+}
+
+export interface RowChange {
+  kind: 'update' | 'delete' | 'insert'
+  key: Record<string, Cell>
+  values: Record<string, Cell>
 }
 
 export interface ExecResponse {

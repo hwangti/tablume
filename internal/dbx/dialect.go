@@ -31,6 +31,11 @@ type Dialect interface {
 	QualifiedName(schema string, t Table) string
 	SelectTop(qualified string, n int) string
 	Version(ctx context.Context, q Querier) string
+	// DDL returns CREATE statements; it gets its own connection because
+	// Oracle's DBMS_METADATA options are per session.
+	DDL(ctx context.Context, conn *sql.Conn, schema string, t Table) (string, error)
+	// Param is the n-th (1-based) bind placeholder for a column of type typ.
+	Param(n int, typ string) string
 }
 
 type Querier interface {

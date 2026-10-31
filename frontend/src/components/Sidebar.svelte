@@ -12,6 +12,7 @@
     openTableData,
     activeTab,
     pinTab,
+    openDDL,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -110,6 +111,7 @@
       x: e.clientX,
       y: e.clientY,
       items: [
+        { label: 'DDL 보기', run: () => openDDL(c.id, s.name, t.t) },
         { label: '새 탭에서 데이터 보기', run: () => pinTable(c.id, s.name, t) },
         {
           label: 'SELECT 문을 콘솔에 넣기',

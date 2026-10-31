@@ -1,5 +1,5 @@
 import * as App from '../../wailsjs/go/main/App'
-import type { Column, ConnConfig, ExecResponse, SchemaList, Table, Cell } from './types'
+import type { Column, ConnConfig, ExecResponse, SchemaList, Table, Cell, EditInfo, RowChange } from './types'
 
 // Typed view over the generated Wails bindings (they use classes; plain
 // objects work the same at runtime).
@@ -17,6 +17,10 @@ interface Api {
   CompletionColumns(id: string, schema: string): Promise<Record<string, string[]>>
   SelectSQL(id: string, schema: string, t: Table, limit: number): Promise<string>
   QualifiedName(id: string, schema: string, t: Table): Promise<string>
+  TableDDL(id: string, schema: string, t: Table): Promise<string>
+  EditInfo(id: string, schema: string, source: string[], columns: string[]): Promise<EditInfo>
+  PreviewChanges(req: ApplyRequest): Promise<string[]>
+  ApplyChanges(req: ApplyRequest): Promise<number>
   Execute(req: {
     tabId: string
     connId: string
@@ -33,6 +37,13 @@ interface Api {
   OpenSQLFile(): Promise<{ name: string; content: string } | null>
   LoadWorkspace(): Promise<string>
   SaveWorkspace(data: string): Promise<void>
+}
+
+export interface ApplyRequest {
+  connId: string
+  schema: string
+  table: Table
+  changes: RowChange[]
 }
 
 export const api = App as unknown as Api

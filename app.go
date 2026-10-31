@@ -99,6 +99,20 @@ func (a *App) SelectSQL(id, schema string, t dbx.Table, limit int) (string, erro
 	return a.db.SelectSQL(id, schema, t, limit)
 }
 
+func (a *App) TableDDL(id, schema string, t dbx.Table) (string, error) {
+	return a.db.DDL(id, schema, t)
+}
+
+// ---------------------------------------------------------------- editing
+
+func (a *App) EditInfo(id, schema string, source, columns []string) (dbx.EditInfo, error) {
+	return a.db.EditInfo(id, schema, source, columns)
+}
+
+func (a *App) PreviewChanges(req dbx.ApplyRequest) ([]string, error) { return a.db.PreviewChanges(req) }
+
+func (a *App) ApplyChanges(req dbx.ApplyRequest) (int, error) { return a.db.ApplyChanges(req) }
+
 func (a *App) QualifiedName(id, schema string, t dbx.Table) (string, error) {
 	return a.db.QualifiedName(id, schema, t)
 }

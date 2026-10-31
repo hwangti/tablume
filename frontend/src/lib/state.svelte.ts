@@ -1,4 +1,5 @@
 import { api, errText } from './api'
+import { tabPending } from './editing.svelte'
 import type { Column, ConnConfig, StmtResult, Table } from './types'
 
 export interface TableNode {
@@ -263,9 +264,11 @@ export function openConsole(connId: string, opts: { schema?: string; sql?: strin
   return app.tabs[app.tabs.length - 1]
 }
 
-export function closeTab(id: string) {
+export async function closeTab(id: string) {
   const i = app.tabs.findIndex((t) => t.id === id)
   if (i < 0) return
+  const n = tabPending(app.tabs[i])
+  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 탭을 닫을까요?`))) return
   api.CloseSession(id)
   app.tabs.splice(i, 1)
   if (app.activeTab === id) app.activeTab = app.tabs[Math.min(i, app.tabs.length - 1)]?.id ?? ''
@@ -355,7 +358,8 @@ export function cancel(tab: Tab) {
 
 export async function openTableData(connId: string, schema: string, t: Table): Promise<Tab> {
   const sql = await api.SelectSQL(connId, schema, t, 1000)
-  let tab = app.tabs.find((x) => x.preview && !x.running)
+  // A preview tab with unsaved edits is never replaced.
+  let tab = app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
   if (tab && tab.connId === connId && tab.sql === sql) {
     app.activeTab = tab.id // same table clicked again
     return tab
@@ -374,6 +378,15 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   }
   await runSQL(tab, sql, -1)
   return tab
+}
+
+export async function openDDL(connId: string, schema: string, t: Table) {
+  try {
+    const ddl = await api.TableDDL(connId, schema, t)
+    openConsole(connId, { schema, sql: ddl, title: `DDL: ${t.name}` })
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
 }
 
 export function pinTab(tab: Tab | undefined) {

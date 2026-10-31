@@ -1,22 +1,137 @@
 <script lang="ts">
-  import type { Cell, ResultColumn } from '../lib/types'
+  import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
   import { copyText, modKey } from '../lib/clipboard'
   import { toast } from '../lib/state.svelte'
+  import { cellValue, isEdited, setCell, addRow, toggleDelete, revert } from '../lib/editing.svelte'
   import CellViewer from './CellViewer.svelte'
 
   let {
+    result,
     columns,
     rows,
     hasMore,
     loadingMore,
     onloadmore,
+    ensureEdit,
   }: {
+    result: StmtResult
     columns: ResultColumn[]
     rows: Cell[][]
     hasMore: boolean
     loadingMore: boolean
     onloadmore: () => void
+    // Resolves whether this result can be edited (loads it on first use).
+    ensureEdit: () => Promise<EditInfo | null>
   } = $props()
+
+  let editing = $state<{ ri: number; vi: number; c: number; value: string } | null>(null)
+  let info = $derived(result.edit?.info ?? null)
+  let st = $derived(result.edit)
+
+  function val(ri: number, c: number): Cell {
+    return cellValue(result, ri, c)
+  }
+
+  // Starts editing a cell; falls back to the read-only viewer when the
+  // result or column can't be edited.
+  async function startEdit(vi: number, c: number, initial?: string) {
+    const ri = order[vi]
+    const inf = await ensureEdit()
+    if (!inf?.editable) {
+      if (initial === undefined) openViewer(vi, c)
+      else if (inf) toast('읽기 전용: ' + inf.reason)
+      return
+    }
+    if (!inf.columns[c]) {
+      if (initial === undefined) openViewer(vi, c)
+      else toast('이 컬럼은 편집할 수 없습니다 (바이너리 또는 계산 컬럼)')
+      return
+    }
+    if (st?.deleted[ri]) return
+    const v = val(ri, c)
+    if (initial === undefined && v !== null && (v.includes('\n') || v.length > 200)) {
+      openViewer(vi, c) // long text: edit in the larger editor
+      return
+    }
+    editing = { ri, vi, c, value: initial ?? v ?? '' }
+  }
+
+  function commitEdit(move?: [number, number]) {
+    if (!editing) return
+    const { ri, vi, c, value } = editing
+    editing = null
+    setCell(result, ri, c, value)
+    scroller.focus({ preventScroll: true })
+    if (move) {
+      const r = Math.max(0, Math.min(order.length - 1, vi + move[0]))
+      const cc = Math.max(0, Math.min(columns.length - 1, c + move[1]))
+      anchor = focus = { r, c: cc }
+      scrollIntoView(r, cc)
+    }
+  }
+
+  function cancelEdit() {
+    editing = null
+    scroller.focus({ preventScroll: true })
+  }
+
+  function editorKey(e: KeyboardEvent) {
+    e.stopPropagation()
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commitEdit([1, 0])
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      commitEdit([0, e.shiftKey ? -1 : 1])
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelEdit()
+    }
+  }
+
+  function focusInput(node: HTMLInputElement, selectAll: boolean) {
+    node.focus({ preventScroll: true })
+    if (selectAll) node.select()
+    else node.setSelectionRange(node.value.length, node.value.length)
+  }
+
+  function selectedRows(): number[] {
+    if (!sel) return []
+    const out: number[] = []
+    for (let v = sel.r1; v <= sel.r2; v++) out.push(order[v])
+    return out
+  }
+
+  async function setNull() {
+    const inf = await ensureEdit()
+    if (!inf?.editable || !sel) return
+    for (let v = sel.r1; v <= sel.r2; v++)
+      for (let c = sel.c1; c <= sel.c2; c++) if (inf.columns[c] && !st?.deleted[order[v]]) setCell(result, order[v], c, null)
+  }
+
+  export async function newRow() {
+    const inf = await ensureEdit()
+    if (!inf?.editable) {
+      if (inf) toast('읽기 전용: ' + inf.reason)
+      return
+    }
+    sort = null
+    const ri = addRow(result)
+    const c = inf.columns.findIndex((x) => x)
+    anchor = focus = { r: ri, c: Math.max(0, c) }
+    scrollIntoView(ri, Math.max(0, c))
+    startEdit(ri, Math.max(0, c))
+  }
+
+  export async function deleteRows() {
+    const inf = await ensureEdit()
+    if (!inf?.editable) {
+      if (inf) toast('읽기 전용: ' + inf.reason)
+      return
+    }
+    toggleDelete(result, selectedRows())
+  }
+
 
   const ROW_H = 24
   const HEAD_H = 28
@@ -30,7 +145,7 @@
   let anchor = $state<{ r: number; c: number } | null>(null)
   let focus = $state<{ r: number; c: number } | null>(null)
   let menu = $state<{ x: number; y: number } | null>(null)
-  let viewing = $state<{ col: string; value: Cell } | null>(null)
+  let viewing = $state<{ col: string; value: Cell; ri: number; c: number } | null>(null)
 
   const numericRe =
     /^(UNSIGNED )?(TINYINT|SMALLINT|MEDIUMINT|INT|INTEGER|BIGINT|INT[248]|NUMBER|NUMERIC|DECIMAL|FLOAT[48]?|DOUBLE|REAL|MONEY|SMALLMONEY|BINARY_FLOAT|BINARY_DOUBLE|IBFLOAT|IBDOUBLE)\b/
@@ -75,8 +190,8 @@
     const { col, dir } = sort
     const num = numeric[col]
     idx.sort((a, b) => {
-      const x = rows[a][col]
-      const y = rows[b][col]
+      const x = val(a, col)
+      const y = val(b, col)
       if (x === y) return 0
       if (x === null) return 1
       if (y === null) return -1
@@ -176,9 +291,24 @@
       PageDown: [page, 0],
       Tab: [0, e.shiftKey ? -1 : 1],
     }
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault()
       openViewer(focus.r, focus.c)
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'F2') {
+      e.preventDefault()
+      startEdit(focus.r, focus.c)
+      return
+    }
+    if ((e.key === 'Delete' || (e.key === 'Backspace' && mod)) && sel) {
+      e.preventDefault()
+      deleteRows()
+      return
+    }
+    if (e.key.length === 1 && !mod && !e.altKey) {
+      e.preventDefault()
+      startEdit(focus.r, focus.c, e.key) // typing replaces the value
       return
     }
     let mv = moves[e.key]
@@ -198,7 +328,7 @@
     const cols: number[] = []
     for (let c = sel.c1; c <= sel.c2; c++) cols.push(c)
     const data: Cell[][] = []
-    for (let v = sel.r1; v <= sel.r2; v++) data.push(cols.map((c) => rows[order[v]][c]))
+    for (let v = sel.r1; v <= sel.r2; v++) data.push(cols.map((c) => val(order[v], c)))
     return { cols, data }
   }
 
@@ -232,7 +362,9 @@
   }
 
   function openViewer(vi: number, c: number) {
-    viewing = { col: columns[c].name, value: rows[order[vi]][c] }
+    const ri = order[vi]
+    const canEdit = !!info?.editable && !!info.columns[c] && !st?.deleted[ri]
+    viewing = { col: columns[c].name, value: val(ri, c), ri, c: canEdit ? c : -1 }
   }
 
   function headerClick(c: number) {
@@ -299,22 +431,44 @@
     {#each visible as { ri, vi } (ri)}
       <div class="tr" class:alt={vi % 2 === 1} style:top="{HEAD_H + vi * ROW_H}px" style:width="{totalW}px">
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="num" style:width="{numW}px" onmousedown={(e) => rowDown(e, vi)}>{vi + 1}</div>
+        <div
+          class="num"
+          class:added={st?.added[ri]}
+          class:deleted={st?.deleted[ri]}
+          style:width="{numW}px"
+          onmousedown={(e) => rowDown(e, vi)}
+        >
+          {st?.added[ri] ? '+' : vi + 1}
+        </div>
         {#each columns as _, c (c)}
-          {@const v = rows[ri][c]}
+          {@const v = val(ri, c)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="td"
             class:sel={isSel(vi, c)}
             class:focus={focus?.r === vi && focus?.c === c}
             class:right={numeric[c]}
+            class:edited={isEdited(result, ri, c)}
+            class:added={st?.added[ri]}
+            class:deleted={st?.deleted[ri]}
+            class:editing={editing?.ri === ri && editing?.c === c}
             style:width="{widths[c]}px"
             onmousedown={(e) => cellDown(e, vi, c)}
             onmouseover={(e) => cellOver(e, vi, c)}
-            ondblclick={() => openViewer(vi, c)}
+            ondblclick={() => startEdit(vi, c)}
             onfocus={() => {}}
           >
-            {#if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
+            {#if editing?.ri === ri && editing?.c === c}
+              <input
+                class="cell-input"
+                bind:value={editing.value}
+                use:focusInput={editing.value.length !== 1}
+                onkeydown={editorKey}
+                onblur={() => commitEdit()}
+                onmousedown={(e) => e.stopPropagation()}
+                spellcheck="false"
+              />
+            {:else if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
           </div>
         {/each}
       </div>
@@ -337,13 +491,27 @@
     <button onclick={() => copySelection(false)}>복사 <kbd>{modKey}C</kbd></button>
     <button onclick={() => copySelection(true)}>헤더 포함 복사</button>
     <button onclick={copyInList}>IN (…) 목록으로 복사</button>
-    {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>값 보기 <kbd>Enter</kbd></button>{/if}
+    {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>값 보기 <kbd>Shift+Enter</kbd></button>{/if}
     <button onclick={selectAll}>전체 선택</button>
+    {#if info?.editable}
+      <hr />
+      {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>편집 <kbd>Enter</kbd></button>{/if}
+      <button onclick={setNull}>NULL로 설정</button>
+      <button onclick={newRow}>행 추가</button>
+      <button onclick={deleteRows}>행 삭제 / 복원 <kbd>Delete</kbd></button>
+      <button onclick={() => revert(result, selectedRows())}>선택 행 변경 되돌리기</button>
+    {/if}
   </div>
 {/if}
 
 {#if viewing}
-  <CellViewer column={viewing.col} value={viewing.value} onclose={() => (viewing = null)} />
+  <CellViewer
+    column={viewing.col}
+    value={viewing.value}
+    editable={viewing.c >= 0}
+    onsave={(v) => viewing && setCell(result, viewing.ri, viewing.c, v)}
+    onclose={() => (viewing = null)}
+  />
 {/if}
 
 <style>
@@ -477,6 +645,42 @@
     font-style: italic;
   }
 
+  .td.edited {
+    background: color-mix(in srgb, var(--warn) 22%, transparent);
+  }
+
+  .td.added,
+  .num.added {
+    background: color-mix(in srgb, var(--ok) 14%, transparent);
+  }
+
+  .num.added {
+    color: var(--ok);
+    font-weight: 600;
+  }
+
+  .td.deleted,
+  .num.deleted {
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    text-decoration: line-through;
+    color: var(--text-dim);
+  }
+
+  .td.editing {
+    padding: 0;
+    overflow: visible;
+  }
+
+  .cell-input {
+    width: 100%;
+    height: 100%;
+    padding: 0 7px;
+    border: 2px solid var(--accent);
+    border-radius: 0;
+    font: inherit;
+    background: var(--bg-input);
+  }
+
   .more {
     position: absolute;
     left: 0;
@@ -531,6 +735,13 @@
 
   .menu button:hover {
     background: var(--bg-select);
+  }
+
+  .menu hr {
+    width: 100%;
+    margin: 4px 0;
+    border: none;
+    border-top: 1px solid var(--border);
   }
 
   kbd {

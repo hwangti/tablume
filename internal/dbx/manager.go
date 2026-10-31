@@ -408,6 +408,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			r.Error = out.err.Error()
 		}
 		if out.rows != nil {
+			r.Source = DetectSource(st.SQL, p.d.Style())
 			r.Columns = describeColumns(out.cols)
 			r.Rows, r.HasMore = out.data, out.more
 			if r.HasMore && last && out.err == nil {

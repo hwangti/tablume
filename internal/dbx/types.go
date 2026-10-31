@@ -57,6 +57,8 @@ type StmtResult struct {
 	ElapsedMs    int64          `json:"elapsedMs"`
 	Error        string         `json:"error"`
 	Notice       string         `json:"notice"`
+	// Source is the table a plain single-table SELECT reads from, as written.
+	Source []string `json:"source"`
 }
 
 type ExecRequest struct {

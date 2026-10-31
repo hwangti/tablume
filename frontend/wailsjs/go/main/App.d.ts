@@ -3,6 +3,8 @@
 import {dbx} from '../models';
 import {main} from '../models';
 
+export function ApplyChanges(arg1:dbx.ApplyRequest):Promise<number>;
+
 export function Cancel(arg1:string):Promise<void>;
 
 export function CloseSession(arg1:string):Promise<void>;
@@ -14,6 +16,8 @@ export function Connect(arg1:string,arg2:string):Promise<string>;
 export function DeleteConnection(arg1:string):Promise<void>;
 
 export function Disconnect(arg1:string):Promise<void>;
+
+export function EditInfo(arg1:string,arg2:string,arg3:Array<string>,arg4:Array<string>):Promise<dbx.EditInfo>;
 
 export function Execute(arg1:dbx.ExecRequest):Promise<dbx.ExecResponse>;
 
@@ -37,6 +41,8 @@ export function OpenSQLFile():Promise<main.OpenedFile>;
 
 export function PickSQLiteFile():Promise<string>;
 
+export function PreviewChanges(arg1:dbx.ApplyRequest):Promise<Array<string>>;
+
 export function QualifiedName(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 
 export function SaveConnection(arg1:dbx.ConnConfig):Promise<dbx.ConnConfig>;
@@ -46,5 +52,7 @@ export function SaveTextFile(arg1:string,arg2:string):Promise<string>;
 export function SaveWorkspace(arg1:string):Promise<void>;
 
 export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:number):Promise<string>;
+
+export function TableDDL(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 
 export function TestConnection(arg1:dbx.ConnConfig):Promise<string>;

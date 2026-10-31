@@ -216,3 +216,106 @@ func TestOracleCompileErrors(t *testing.T) {
 		t.Fatal(res.Results[0].Error)
 	}
 }
+
+func TestDDLAndEditing(t *testing.T) {
+	all := targets(t)
+	for _, name := range []string{"mariadb", "postgres", "mssql", "oracle", "sqlite"} {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			run := func(q string) StmtResult {
+				t.Helper()
+				res, err := m.Execute(ExecRequest{TabID: "e", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				last := res.Results[len(res.Results)-1]
+				if last.Error != "" {
+					t.Fatalf("%s: %s", q, last.Error)
+				}
+				return last
+			}
+			run(tg.setup)
+			tables, _ := m.Tables(tg.cfg.ID, tg.schema)
+			var tbl Table
+			for _, x := range tables {
+				if x.Name == tg.table {
+					tbl = x
+				}
+			}
+			ddl, err := m.DDL(tg.cfg.ID, tg.schema, tbl)
+			if err != nil {
+				t.Fatal("ddl:", err)
+			}
+			t.Logf("DDL:\n%s", ddl)
+
+			sel := "SELECT * FROM " + tg.table + " ORDER BY id"
+			if name == "mssql" {
+				sel = "SELECT * FROM dbo.items ORDER BY id"
+			}
+			r := run(sel)
+			if r.Source == nil {
+				t.Fatal("no source detected")
+			}
+			var cols []string
+			for _, c := range r.Columns {
+				cols = append(cols, c.Name)
+			}
+			info, err := m.EditInfo(tg.cfg.ID, tg.schema, r.Source, cols)
+			if err != nil || !info.Editable {
+				t.Fatalf("edit info: %v %+v", err, info)
+			}
+			t.Logf("edit info: key=%v cols=%v", info.Key, info.Columns)
+			col := func(i int) string { return info.Columns[i] }
+			s := func(v string) *string { return &v }
+			// 1: change text (with a quote) and a date; 2: number + NULL; 3: delete; 4: insert
+			changes := []RowChange{
+				{Kind: "update", Key: map[string]any{col(0): s("1")}, Values: map[string]any{col(1): s("O'Brien 한글"), col(5): s("2025-12-31")}},
+				{Kind: "update", Key: map[string]any{col(0): s("2")}, Values: map[string]any{col(2): s("42.5"), col(3): nil}},
+				{Kind: "delete", Key: map[string]any{col(0): s("3")}},
+				{Kind: "insert", Values: map[string]any{col(0): s("4"), col(1): s("new"), col(4): s("2024-02-03 04:05:06")}},
+			}
+			req := ApplyRequest{ConnID: tg.cfg.ID, Schema: info.Schema, Table: info.Table, Changes: changes}
+			preview, err := m.PreviewChanges(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("preview:\n%s", strings.Join(preview, "\n"))
+			if n, err := m.ApplyChanges(req); err != nil || n != 4 {
+				t.Fatalf("apply: %d %v", n, err)
+			}
+			r = run(sel)
+			if len(r.Rows) != 3 {
+				t.Fatalf("rows after apply: %q", r.Rows)
+			}
+			t.Logf("after: %q", r.Rows)
+			if r.Rows[0][1] != "O'Brien 한글" || !strings.HasPrefix(r.Rows[0][5].(string), "2025-12-31") {
+				t.Errorf("row 1 not updated: %q", r.Rows[0])
+			}
+			if !strings.HasPrefix(r.Rows[1][2].(string), "42.5") || r.Rows[1][3] != nil {
+				t.Errorf("row 2 not updated: %q", r.Rows[1])
+			}
+			if r.Rows[2][0] != "4" || !strings.HasPrefix(r.Rows[2][4].(string), "2024-02-03 04:05:06") {
+				t.Errorf("row 4 not inserted: %q", r.Rows[2])
+			}
+			// a change that matches no row rolls everything back
+			bad := ApplyRequest{ConnID: tg.cfg.ID, Schema: info.Schema, Table: info.Table, Changes: []RowChange{
+				{Kind: "update", Key: map[string]any{col(0): s("1")}, Values: map[string]any{col(1): s("should roll back")}},
+				{Kind: "delete", Key: map[string]any{col(0): s("999")}},
+			}}
+			if _, err := m.ApplyChanges(bad); err == nil {
+				t.Fatal("expected failure")
+			} else {
+				t.Log("expected error:", err)
+			}
+			r = run(sel)
+			if r.Rows[0][1] != "O'Brien 한글" {
+				t.Errorf("not rolled back: %q", r.Rows[0])
+			}
+		})
+	}
+}
