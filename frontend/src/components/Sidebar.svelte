@@ -11,14 +11,35 @@
     openConsole,
     openTableData,
     activeTab,
+    pinTab,
     type SchemaNode,
     type TableNode,
+    type Tab,
   } from '../lib/state.svelte'
   import { api } from '../lib/api'
   import { copyText } from '../lib/clipboard'
   import { driverLabel, type ConnConfig } from '../lib/types'
 
   let filter = $state('')
+
+  // A double-click also fires two clicks. Share the in-flight open between
+  // them, and pin only once it has finished, so no duplicate tab appears.
+  let opening: { key: string; done: Promise<Tab> } | null = null
+
+  function openTable(connId: string, schema: string, t: TableNode) {
+    const key = `${connId}|${schema}|${t.t.schema}.${t.t.name}`
+    if (opening?.key === key) return opening.done
+    const cur = { key, done: openTableData(connId, schema, t.t) }
+    opening = cur
+    cur.done.finally(() => {
+      if (opening === cur) opening = null
+    })
+    return cur.done
+  }
+
+  async function pinTable(connId: string, schema: string, t: TableNode) {
+    pinTab(await openTable(connId, schema, t))
+  }
   let menu = $state<null | { x: number; y: number; items: { label: string; run: () => void; danger?: boolean }[] }>(null)
 
   const blank = (): ConnConfig => ({
@@ -89,7 +110,7 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '데이터 보기', run: () => openTableData(c.id, s.name, t.t) },
+        { label: '새 탭에서 데이터 보기', run: () => pinTable(c.id, s.name, t) },
         {
           label: 'SELECT 문을 콘솔에 넣기',
           run: async () => {
@@ -181,12 +202,20 @@
               <div
                 class="node"
                 style:padding-left="38px"
-                onclick={() => toggleTable(c.id, s.name, t)}
-                ondblclick={() => openTableData(c.id, s.name, t.t)}
+                onclick={() => openTable(c.id, s.name, t)}
+                ondblclick={() => pinTable(c.id, s.name, t)}
                 oncontextmenu={(e) => tableMenu(e, c, s, t)}
-                title="더블클릭: 데이터 보기"
+                title="클릭: 데이터 보기 · 더블클릭: 탭 고정 · 화살표: 컬럼 보기"
               >
-                <span class="chev" class:open={t.expanded}><Icon name="chevron" size={12} /></span>
+                <button
+                  class="chev btn-chev"
+                  class:open={t.expanded}
+                  onclick={(e) => (e.stopPropagation(), toggleTable(c.id, s.name, t))}
+                  ondblclick={(e) => e.stopPropagation()}
+                  aria-label="컬럼 펼치기"
+                >
+                  <Icon name="chevron" size={12} />
+                </button>
                 <Icon name={t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
                 <span class="label">{tableLabel(t, c.driver)}</span>
                 {#if t.loading}<span class="spin"></span>{/if}
@@ -228,6 +257,8 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
+    overflow: hidden;
     background: var(--bg-panel);
   }
   .top {
@@ -288,6 +319,21 @@
   }
   .chev.open {
     transform: rotate(90deg);
+  }
+  .btn-chev {
+    justify-content: center;
+    width: 16px;
+    height: 18px;
+    margin: 0 -2px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+  }
+  .btn-chev:hover {
+    background: var(--bg-hover);
+    color: var(--text);
   }
   .dbicon {
     display: inline-flex;

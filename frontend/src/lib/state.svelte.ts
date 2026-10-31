@@ -45,6 +45,9 @@ export interface Tab {
   loadingMore: boolean
   messages: Message[]
   startedAt: number
+  // A preview tab shows table data and is reused by the next table click,
+  // until the user edits its SQL or pins it (double-click).
+  preview?: boolean
 }
 
 export interface Toast {
@@ -350,10 +353,34 @@ export function cancel(tab: Tab) {
   api.Cancel(tab.id)
 }
 
-export async function openTableData(connId: string, schema: string, t: Table) {
+export async function openTableData(connId: string, schema: string, t: Table): Promise<Tab> {
   const sql = await api.SelectSQL(connId, schema, t, 1000)
-  const tab = openConsole(connId, { schema, sql, title: t.name })
+  let tab = app.tabs.find((x) => x.preview && !x.running)
+  if (tab && tab.connId === connId && tab.sql === sql) {
+    app.activeTab = tab.id // same table clicked again
+    return tab
+  }
+  if (tab) {
+    tab.connId = connId
+    tab.schema = schema
+    tab.sql = sql
+    tab.title = t.name
+    tab.results = []
+    app.activeTab = tab.id
+    saveWorkspaceSoon()
+  } else {
+    tab = openConsole(connId, { schema, sql, title: t.name })
+    tab.preview = true
+  }
   await runSQL(tab, sql, -1)
+  return tab
+}
+
+export function pinTab(tab: Tab | undefined) {
+  if (tab?.preview) {
+    tab.preview = false
+    saveWorkspaceSoon()
+  }
 }
 
 // ---------------------------------------------------------------- workspace
@@ -365,7 +392,7 @@ export function saveWorkspaceSoon() {
     const data = {
       activeTab: app.activeTab,
       fetchSize: app.fetchSize,
-      tabs: app.tabs.map((t) => ({ id: t.id, title: t.title, connId: t.connId, schema: t.schema, sql: t.sql })),
+      tabs: app.tabs.map((t) => ({ id: t.id, title: t.title, connId: t.connId, schema: t.schema, sql: t.sql, preview: t.preview })),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
   }, 600)

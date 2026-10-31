@@ -5,9 +5,18 @@
     title,
     onclose,
     width = 520,
+    dismissible = true,
     children,
     footer,
-  }: { title: string; onclose: () => void; width?: number; children: Snippet; footer?: Snippet } = $props()
+  }: {
+    title: string
+    onclose: () => void
+    width?: number
+    // false for dialogs with user input: a stray click outside must not discard it
+    dismissible?: boolean
+    children: Snippet
+    footer?: Snippet
+  } = $props()
 
   function keydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -20,7 +29,7 @@
 <svelte:window onkeydown={keydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="backdrop" onmousedown={(e) => e.target === e.currentTarget && onclose()}>
+<div class="backdrop" onmousedown={(e) => dismissible && e.target === e.currentTarget && onclose()}>
   <div class="modal" style:width="{width}px" role="dialog" aria-label={title}>
     <header>
       <span class="title">{title}</span>

@@ -120,7 +120,7 @@
     if (e.button === 2 && isSel(vi, c)) return
     if (e.shiftKey && anchor) focus = { r: vi, c }
     else anchor = focus = { r: vi, c }
-    scroller.focus()
+    scroller.focus({ preventScroll: true })
   }
 
   function cellOver(e: MouseEvent, vi: number, c: number) {
@@ -133,7 +133,7 @@
       anchor = { r: vi, c: 0 }
       focus = { r: vi, c: columns.length - 1 }
     }
-    scroller.focus()
+    scroller.focus({ preventScroll: true })
   }
 
   function selectAll() {

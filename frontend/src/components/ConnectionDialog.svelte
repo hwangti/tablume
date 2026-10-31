@@ -97,7 +97,7 @@
 
 </script>
 
-<Modal title={isNew ? '새 연결' : '연결 편집'} onclose={close} width={560}>
+<Modal title={isNew ? '새 연결' : '연결 편집'} onclose={close} width={560} dismissible={false}>
   <div class="drivers">
     {#each DRIVERS as d (d.id)}
       <button class="drv" class:on={c.driver === d.id} onclick={() => setDriver(d.id)}>{d.label}</button>

@@ -70,6 +70,7 @@
   }
 
   function onSqlChange(v: string) {
+    if (v !== tab.sql) tab.preview = false
     tab.sql = v
     saveWorkspaceSoon()
   }
@@ -338,12 +339,13 @@
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
+    overflow-y: hidden;
   }
   .rtab {
     display: flex;
     align-items: center;
     gap: 5px;
-    height: 30px;
+    height: 100%;
     padding: 0 10px;
     border: none;
     border-bottom: 2px solid transparent;

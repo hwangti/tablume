@@ -5,7 +5,7 @@
   import ConnectionDialog from './components/ConnectionDialog.svelte'
   import Modal from './components/Modal.svelte'
   import Icon from './components/Icon.svelte'
-  import { app, loadConnections, loadWorkspace, openConsole, closeTab, connById, activeTab, saveWorkspaceSoon } from './lib/state.svelte'
+  import { app, loadConnections, loadWorkspace, openConsole, closeTab, connById, activeTab, saveWorkspaceSoon, pinTab } from './lib/state.svelte'
   import { driverLabel } from './lib/types'
 
   let sideW = $state(270)
@@ -82,7 +82,7 @@
           style:--conn-color={c?.color || 'transparent'}
           onclick={() => (app.activeTab = t.id)}
           onmousedown={(e) => tabMouseDown(e, t.id)}
-          ondblclick={() => (renaming = t.id)}
+          ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
         >
           {#if t.running}<span class="spin"></span>{:else}<Icon name="console" size={13} />{/if}
@@ -96,7 +96,7 @@
               onkeydown={(e) => (e.key === 'Enter' || e.key === 'Escape') && e.currentTarget.blur()}
             />
           {:else}
-            <span class="name">{t.title}</span>
+            <span class="name" class:preview={t.preview} title={t.preview ? '미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.' : ''}>{t.title}</span>
           {/if}
           <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label="닫기"><Icon name="close" size={12} /></button>
         </div>
@@ -139,7 +139,7 @@
 {/if}
 
 {#if app.prompt}
-  <Modal title={app.prompt.title} onclose={() => app.prompt?.resolve(null)} width={380}>
+  <Modal title={app.prompt.title} onclose={() => app.prompt?.resolve(null)} width={380} dismissible={false}>
     <form onsubmit={(e) => (e.preventDefault(), submitPassword())}>
       <!-- svelte-ignore a11y_autofocus -->
       <input type="password" bind:value={password} autofocus style="width:100%" placeholder="비밀번호" />
@@ -172,7 +172,9 @@
 <style>
   .layout {
     display: grid;
+    grid-template-rows: minmax(0, 1fr);
     height: 100%;
+    overflow: hidden;
   }
   .vdivider {
     background: var(--border);
@@ -189,6 +191,7 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
   }
   .tabs {
     display: flex;
@@ -221,6 +224,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .tab .name.preview {
+    font-style: italic;
+  }
   .rename {
     width: 120px;
     padding: 1px 4px;
@@ -251,6 +257,7 @@
     position: relative;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
   }
   .pane {
     position: absolute;
