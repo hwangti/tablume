@@ -13,6 +13,7 @@
     activeTab,
     pinTab,
     openDDL,
+    saveWorkspaceSoon,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -22,6 +23,50 @@
   import { driverLabel, type ConnConfig } from '../lib/types'
 
   let filter = $state('')
+  let viewMenu = $state(false)
+
+  const compact = new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 })
+
+  function fmtRows(n: number | undefined): string {
+    if (n === undefined || n < 0) return ''
+    return n < 10000 ? n.toLocaleString('ko-KR') : compact.format(n)
+  }
+
+  function fmtSize(b: number | undefined): string {
+    if (b === undefined || b < 0) return ''
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    let i = 0
+    let v = b
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024
+      i++
+    }
+    return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + units[i]
+  }
+
+  function tableTitle(t: TableNode): string {
+    const lines = [t.t.name]
+    if (t.t.comment) lines.push(t.t.comment)
+    const r = fmtRows(t.t.rows)
+    if (r) lines.push(`행 수(통계 기준 추정): ${r}`)
+    const sz = fmtSize(t.t.size)
+    if (sz) lines.push(`크기: ${sz}`)
+    lines.push('', '클릭: 데이터 보기 · 더블클릭: 탭 고정 · 화살표: 컬럼 보기')
+    return lines.join('\n')
+  }
+
+  function tableMeta(t: TableNode): string {
+    const parts: string[] = []
+    if (app.treeView.rows) {
+      const r = fmtRows(t.t.rows)
+      if (r) parts.push(r + '행')
+    }
+    if (app.treeView.size) {
+      const sz = fmtSize(t.t.size)
+      if (sz) parts.push(sz)
+    }
+    return parts.join(' · ')
+  }
 
   // A double-click also fires two clicks. Share the in-flight open between
   // them, and pin only once it has finished, so no duplicate tab appears.
@@ -145,11 +190,30 @@
   }
 </script>
 
-<svelte:window onclick={() => (menu = null)} />
+<svelte:window onclick={() => ((menu = null), (viewMenu = false))} />
 
 <aside>
   <div class="top">
     <span class="title">연결</span>
+    <div class="viewopt">
+      <button
+        class="icon-btn"
+        class:active={viewMenu}
+        title="보기 옵션"
+        onclick={(e) => (e.stopPropagation(), (viewMenu = !viewMenu))}
+      >
+        <Icon name="sliders" />
+      </button>
+      {#if viewMenu}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="viewmenu" onclick={(e) => e.stopPropagation()}>
+          <div class="vm-title">트리에 표시</div>
+          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
+          <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 행 수 (통계 기준 추정)</label>
+          <label><input type="checkbox" bind:checked={app.treeView.size} onchange={saveWorkspaceSoon} /> 크기</label>
+        </div>
+      {/if}
+    </div>
     <button class="icon-btn" title="새 연결" onclick={() => (app.editing = blank())}><Icon name="plus" /></button>
   </div>
   <div class="filter">
@@ -207,7 +271,7 @@
                 onclick={() => openTable(c.id, s.name, t)}
                 ondblclick={() => pinTable(c.id, s.name, t)}
                 oncontextmenu={(e) => tableMenu(e, c, s, t)}
-                title="클릭: 데이터 보기 · 더블클릭: 탭 고정 · 화살표: 컬럼 보기"
+                title={tableTitle(t)}
               >
                 <button
                   class="chev btn-chev"
@@ -220,13 +284,20 @@
                 </button>
                 <Icon name={t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
                 <span class="label">{tableLabel(t, c.driver)}</span>
+                {#if app.treeView.comment && t.t.comment}<span class="cmt">{t.t.comment}</span>{/if}
                 {#if t.loading}<span class="spin"></span>{/if}
+                {#if tableMeta(t)}<span class="tmeta">{tableMeta(t)}</span>{/if}
               </div>
               {#if t.expanded && t.columns}
                 {#each t.columns as col (col.name)}
-                  <div class="node col" style:padding-left="70px" title="{col.name} {col.type}{col.nullable ? '' : ' NOT NULL'}">
+                  <div
+                    class="node col"
+                    style:padding-left="70px"
+                    title="{col.name} {col.type}{col.nullable ? '' : ' NOT NULL'}{col.comment ? '\n' + col.comment : ''}"
+                  >
                     <Icon name={col.pk ? 'key' : 'column'} size={13} color={col.pk ? 'var(--warn)' : 'var(--text-faint)'} />
                     <span class="label">{col.name}</span>
+                    {#if app.treeView.comment && col.comment}<span class="cmt">{col.comment}</span>{/if}
                     <span class="ctype">{col.type.toLowerCase()}{col.nullable ? '' : ' !'}</span>
                   </div>
                 {/each}
@@ -350,6 +421,57 @@
   .label {
     overflow: hidden;
     text-overflow: ellipsis;
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+  .cmt {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+  .tmeta {
+    margin-left: auto;
+    padding-left: 8px;
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .viewopt {
+    position: relative;
+  }
+  .icon-btn.active {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .viewmenu {
+    position: absolute;
+    top: 30px;
+    right: -30px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 220px;
+    padding: 10px 12px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .vm-title {
+    color: var(--text-dim);
+    font-size: 11.5px;
+    margin-bottom: 2px;
+  }
+  .viewmenu label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    cursor: pointer;
   }
   .conn .label {
     font-weight: 500;
@@ -369,6 +491,9 @@
     font-family: var(--font-mono);
     overflow: hidden;
     text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 40px;
+    max-width: 40%;
   }
   .col {
     gap: 6px;

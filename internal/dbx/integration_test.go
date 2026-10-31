@@ -319,3 +319,46 @@ func TestDDLAndEditing(t *testing.T) {
 		})
 	}
 }
+
+func TestTableMeta(t *testing.T) {
+	all := targets(t)
+	comments := map[string]string{
+		"mariadb":  "ALTER TABLE items COMMENT = '상품 테이블'; ALTER TABLE items MODIFY name VARCHAR(50) NOT NULL COMMENT '상품명'; ANALYZE TABLE items",
+		"postgres": "COMMENT ON TABLE items IS '상품 테이블'; COMMENT ON COLUMN items.name IS '상품명'; ANALYZE items",
+		"mssql": "EXEC sp_addextendedproperty 'MS_Description', N'상품 테이블', 'SCHEMA', 'dbo', 'TABLE', 'items';\n" +
+			"EXEC sp_addextendedproperty 'MS_Description', N'상품명', 'SCHEMA', 'dbo', 'TABLE', 'items', 'COLUMN', 'name'",
+		"oracle": "COMMENT ON TABLE items IS '상품 테이블';\nCOMMENT ON COLUMN items.name IS '상품명';\nBEGIN DBMS_STATS.GATHER_TABLE_STATS(USER, 'ITEMS'); END;\n/",
+	}
+	for name, cm := range comments {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			for _, q := range []string{tg.setup, cm} {
+				res, err := m.Execute(ExecRequest{TabID: "m", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+				if err != nil || res.Results[len(res.Results)-1].Error != "" {
+					t.Fatalf("%v %+v", err, res.Results)
+				}
+			}
+			tables, err := m.Tables(tg.cfg.ID, tg.schema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, x := range tables {
+				if x.Name == tg.table {
+					t.Logf("table: %+v", x)
+					if x.Comment != "상품 테이블" || x.Rows < 0 {
+						t.Errorf("table meta: %+v", x)
+					}
+					cols, err := m.Columns(tg.cfg.ID, tg.schema, x)
+					if err != nil || cols[1].Comment != "상품명" {
+						t.Errorf("column comment: %v %+v", err, cols[1])
+					}
+				}
+			}
+		})
+	}
+}

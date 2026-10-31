@@ -20,6 +20,9 @@ export namespace dbx {
 	    schema: string;
 	    name: string;
 	    type: string;
+	    comment: string;
+	    rows: number;
+	    size: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Table(source);
@@ -30,6 +33,9 @@ export namespace dbx {
 	        this.schema = source["schema"];
 	        this.name = source["name"];
 	        this.type = source["type"];
+	        this.comment = source["comment"];
+	        this.rows = source["rows"];
+	        this.size = source["size"];
 	    }
 	}
 	export class ApplyRequest {
@@ -73,6 +79,7 @@ export namespace dbx {
 	    type: string;
 	    nullable: boolean;
 	    pk: boolean;
+	    comment: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Column(source);
@@ -84,6 +91,7 @@ export namespace dbx {
 	        this.type = source["type"];
 	        this.nullable = source["nullable"];
 	        this.pk = source["pk"];
+	        this.comment = source["comment"];
 	    }
 	}
 	export class ConnConfig {

@@ -31,6 +31,9 @@
     undo: 'M5 4L2.5 6.5 5 9M2.5 6.5H10a3.5 3.5 0 010 7H7',
     check: 'M3 8.5l3 3 7-7',
     minus: 'M3 8h10',
+    maximize: 'M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9',
+    restore: 'M13 3L9.5 6.5M9.5 3v3.5H13M3 13l3.5-3.5M6.5 13V9.5H3',
+    sliders: 'M3 4.5h10M3 8h10M3 11.5h10M6 3v3M10.5 6.5v3M5 10v3',
     ddl: 'M4 1.5h5l3 3v10H4zM6 8h4M6 10.5h4M6 5.5h1.5',
   }
 </script>

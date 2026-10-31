@@ -26,6 +26,10 @@ type Table struct {
 	Schema string `json:"schema"`
 	Name   string `json:"name"`
 	Type   string `json:"type"` // TABLE, VIEW, ...
+	// From the catalog statistics, not COUNT(*): approximate, -1 if unknown.
+	Comment string `json:"comment"`
+	Rows    int64  `json:"rows"`
+	Size    int64  `json:"size"` // bytes, -1 if unknown
 }
 
 type Column struct {
@@ -33,6 +37,7 @@ type Column struct {
 	Type     string `json:"type"`
 	Nullable bool   `json:"nullable"`
 	PK       bool   `json:"pk"`
+	Comment  string `json:"comment"`
 }
 
 type SchemaList struct {

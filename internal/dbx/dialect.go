@@ -93,21 +93,45 @@ func scanTables(ctx context.Context, q Querier, query string, args ...any) ([]Ta
 		return nil, err
 	}
 	defer rows.Close()
+	// Rows are (name, type, comment, rows, size), optionally preceded by
+	// the inner schema (mssql).
 	cols, _ := rows.Columns()
 	out := []Table{}
 	for rows.Next() {
-		var t Table
-		if len(cols) == 3 {
-			err = rows.Scan(&t.Schema, &t.Name, &t.Type)
+		var schema, name, typ, comment sql.NullString
+		var n, size any
+		if len(cols) == 6 {
+			err = rows.Scan(&schema, &name, &typ, &comment, &n, &size)
 		} else {
-			err = rows.Scan(&t.Name, &t.Type)
+			err = rows.Scan(&name, &typ, &comment, &n, &size)
 		}
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		out = append(out, Table{Schema: schema.String, Name: name.String, Type: typ.String,
+			Comment: comment.String, Rows: toInt64(n), Size: toInt64(size)})
 	}
 	return out, rows.Err()
+}
+
+func toInt64(v any) int64 {
+	switch x := v.(type) {
+	case nil:
+		return -1
+	case int64:
+		return x
+	case float64:
+		return int64(x)
+	case []byte:
+		return toInt64(string(x))
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		if err != nil {
+			return -1
+		}
+		return int64(f)
+	}
+	return toInt64(fmt.Sprint(v))
 }
 
 // scanColumns expects rows of (name, type, nullable, pk) where nullable and
@@ -120,12 +144,12 @@ func scanColumns(ctx context.Context, q Querier, query string, args ...any) ([]C
 	defer rows.Close()
 	out := []Column{}
 	for rows.Next() {
-		var name, typ sql.NullString
+		var name, typ, comment sql.NullString
 		var nullable, pk any
-		if err := rows.Scan(&name, &typ, &nullable, &pk); err != nil {
+		if err := rows.Scan(&name, &typ, &nullable, &pk, &comment); err != nil {
 			return nil, err
 		}
-		out = append(out, Column{Name: name.String, Type: typ.String, Nullable: truthy(nullable), PK: truthy(pk)})
+		out = append(out, Column{Name: name.String, Type: typ.String, Nullable: truthy(nullable), PK: truthy(pk), Comment: comment.String})
 	}
 	return out, rows.Err()
 }
@@ -215,12 +239,14 @@ func (mysqlDialect) CurrentSchema(ctx context.Context, q Querier) string {
 }
 
 func (mysqlDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
-	return scanTables(ctx, q, `SELECT TABLE_NAME, CASE TABLE_TYPE WHEN 'BASE TABLE' THEN 'TABLE' ELSE TABLE_TYPE END
+	return scanTables(ctx, q, `SELECT TABLE_NAME, CASE TABLE_TYPE WHEN 'BASE TABLE' THEN 'TABLE' ELSE TABLE_TYPE END,
+		CASE WHEN TABLE_TYPE = 'VIEW' THEN '' ELSE TABLE_COMMENT END,
+		TABLE_ROWS, DATA_LENGTH + INDEX_LENGTH
 		FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME`, schema)
 }
 
 func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
-	return scanColumns(ctx, q, `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY = 'PRI'
+	return scanColumns(ctx, q, `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY = 'PRI', COLUMN_COMMENT
 		FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION`, schema, t.Name)
 }
 
@@ -292,14 +318,18 @@ func (pgDialect) CurrentSchema(ctx context.Context, q Querier) string {
 
 func (pgDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
 	return scanTables(ctx, q, `SELECT c.relname,
-		CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END
+		CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END,
+		COALESCE(obj_description(c.oid, 'pg_class'), ''),
+		CASE WHEN c.relkind IN ('v','f') OR c.reltuples < 0 THEN -1 ELSE c.reltuples::bigint END,
+		CASE WHEN c.relkind IN ('r','m','p') THEN pg_total_relation_size(c.oid) ELSE -1 END
 		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1 AND c.relkind IN ('r','v','m','p','f') ORDER BY c.relname`, schema)
 }
 
 func (pgDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
 	return scanColumns(ctx, q, `SELECT a.attname, format_type(a.atttypid, a.atttypmod), NOT a.attnotnull,
-		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey))
+		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)),
+		COALESCE(col_description(a.attrelid, a.attnum), '')
 		FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum`, schema, t.Name)
 }
@@ -372,8 +402,18 @@ func (mssqlDialect) CurrentSchema(ctx context.Context, q Querier) string {
 }
 
 func (mssqlDialect) ListTables(ctx context.Context, q Querier, db string) ([]Table, error) {
-	return scanTables(ctx, q, `SELECT TABLE_SCHEMA, TABLE_NAME, CASE TABLE_TYPE WHEN 'BASE TABLE' THEN 'TABLE' ELSE TABLE_TYPE END
-		FROM `+msq(db)+`.INFORMATION_SCHEMA.TABLES ORDER BY CASE TABLE_SCHEMA WHEN 'dbo' THEN 0 ELSE 1 END, TABLE_SCHEMA, TABLE_NAME`)
+	d := msq(db)
+	return scanTables(ctx, q, `SELECT s.name, o.name, CASE o.type WHEN 'U' THEN 'TABLE' ELSE 'VIEW' END,
+		COALESCE((SELECT CAST(ep.value AS nvarchar(4000)) FROM `+d+`.sys.extended_properties ep
+			WHERE ep.class = 1 AND ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'), ''),
+		CASE o.type WHEN 'U' THEN COALESCE((SELECT SUM(p.rows) FROM `+d+`.sys.partitions p
+			WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)), 0) ELSE -1 END,
+		CASE o.type WHEN 'U' THEN COALESCE((SELECT SUM(a.total_pages) FROM `+d+`.sys.partitions p
+			JOIN `+d+`.sys.allocation_units a ON a.container_id = p.partition_id
+			WHERE p.object_id = o.object_id), 0) * 8192 ELSE -1 END
+		FROM `+d+`.sys.objects o JOIN `+d+`.sys.schemas s ON s.schema_id = o.schema_id
+		WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0
+		ORDER BY CASE s.name WHEN 'dbo' THEN 0 ELSE 1 END, s.name, o.name`)
 }
 
 func (mssqlDialect) ListColumns(ctx context.Context, q Querier, db string, t Table) ([]Column, error) {
@@ -388,7 +428,11 @@ func (mssqlDialect) ListColumns(ctx context.Context, q Querier, db string, t Tab
 		CASE WHEN EXISTS (SELECT 1 FROM `+d+`.INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
 			JOIN `+d+`.INFORMATION_SCHEMA.KEY_COLUMN_USAGE k ON k.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND k.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
 			WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' AND k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME AND k.COLUMN_NAME = c.COLUMN_NAME)
-			THEN 1 ELSE 0 END
+			THEN 1 ELSE 0 END,
+		COALESCE((SELECT CAST(ep.value AS nvarchar(4000)) FROM `+d+`.sys.extended_properties ep
+			JOIN `+d+`.sys.columns sc ON sc.object_id = ep.major_id AND sc.column_id = ep.minor_id
+			WHERE ep.class = 1 AND ep.name = 'MS_Description' AND sc.name = c.COLUMN_NAME
+			AND ep.major_id = OBJECT_ID(QUOTENAME(c.TABLE_CATALOG) + '.' + QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME))), '')
 		FROM `+d+`.INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA = @p1 AND c.TABLE_NAME = @p2 ORDER BY c.ORDINAL_POSITION`, t.Schema, t.Name)
 }
 
@@ -455,10 +499,17 @@ func (oracleDialect) CurrentSchema(ctx context.Context, q Querier) string {
 }
 
 func (oracleDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
-	return scanTables(ctx, q, `SELECT table_name, 'TABLE' FROM all_tables WHERE owner = :1 AND table_name NOT LIKE 'BIN$%'
-		UNION ALL SELECT view_name, 'VIEW' FROM all_views WHERE owner = :2
-		UNION ALL SELECT mview_name, 'MATERIALIZED VIEW' FROM all_mviews WHERE owner = :3
-		ORDER BY 1`, schema, schema, schema)
+	// num_rows comes from optimizer statistics (NULL until gathered).
+	// Sizes come from USER_SEGMENTS, so only for the login user's own schema
+	// (DBA_SEGMENTS would need extra privileges).
+	return scanTables(ctx, q, `SELECT o.name, o.kind, c.comments, o.num_rows, NVL(sg.bytes, -1) FROM (
+			SELECT table_name name, 'TABLE' kind, num_rows FROM all_tables WHERE owner = :1 AND table_name NOT LIKE 'BIN$%'
+			UNION ALL SELECT view_name, 'VIEW', NULL FROM all_views WHERE owner = :2
+			UNION ALL SELECT mview_name, 'MATERIALIZED VIEW', NULL FROM all_mviews WHERE owner = :3
+		) o LEFT JOIN all_tab_comments c ON c.owner = :4 AND c.table_name = o.name
+		LEFT JOIN (SELECT segment_name, SUM(bytes) bytes FROM user_segments GROUP BY segment_name) sg
+			ON sg.segment_name = o.name AND o.kind = 'TABLE' AND USER = :5
+		ORDER BY 1`, schema, schema, schema, schema, schema)
 }
 
 func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
@@ -471,8 +522,11 @@ func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, 
 		c.nullable,
 		CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
 			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'P' AND kc.column_name = c.column_name)
-			THEN 1 ELSE 0 END
-		FROM all_tab_columns c WHERE c.owner = :1 AND c.table_name = :2 ORDER BY c.column_id`, schema, t.Name)
+			THEN 1 ELSE 0 END,
+		cc.comments
+		FROM all_tab_columns c
+		LEFT JOIN all_col_comments cc ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
+		WHERE c.owner = :1 AND c.table_name = :2 ORDER BY c.column_id`, schema, t.Name)
 }
 
 func (oracleDialect) AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error) {
@@ -516,12 +570,12 @@ func (sqliteDialect) ListSchemas(ctx context.Context, q Querier) (SchemaList, er
 func (sqliteDialect) CurrentSchema(context.Context, Querier) string { return "main" }
 
 func (sqliteDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
-	return scanTables(ctx, q, `SELECT name, upper(type) FROM `+quoteWith(schema, `"`, `"`)+`.sqlite_master
+	return scanTables(ctx, q, `SELECT name, upper(type), '', -1, -1 FROM `+quoteWith(schema, `"`, `"`)+`.sqlite_master
 		WHERE type IN ('table','view') AND name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY name`)
 }
 
 func (sqliteDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
-	return scanColumns(ctx, q, `SELECT name, type, NOT "notnull", pk > 0 FROM pragma_table_info(?, ?)`, t.Name, schema)
+	return scanColumns(ctx, q, `SELECT name, type, NOT "notnull", pk > 0, '' FROM pragma_table_info(?, ?)`, t.Name, schema)
 }
 
 func (sqliteDialect) AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error) {

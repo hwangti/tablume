@@ -49,6 +49,8 @@ export interface Tab {
   // A preview tab shows table data and is reused by the next table click,
   // until the user edits its SQL or pins it (double-click).
   preview?: boolean
+  // 'results' hides the editor so the grid gets the whole tab.
+  layout?: 'split' | 'results'
 }
 
 export interface Toast {
@@ -68,6 +70,8 @@ export const app = $state({
   confirm: null as null | { text: string; resolve: (v: boolean) => void },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
+  // What the schema tree shows next to each table / column.
+  treeView: { comment: true, rows: false, size: false },
 })
 
 let toastSeq = 0
@@ -375,6 +379,7 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   } else {
     tab = openConsole(connId, { schema, sql, title: t.name })
     tab.preview = true
+    tab.layout = 'results' // table data: the grid gets the whole tab
   }
   await runSQL(tab, sql, -1)
   return tab
@@ -405,7 +410,16 @@ export function saveWorkspaceSoon() {
     const data = {
       activeTab: app.activeTab,
       fetchSize: app.fetchSize,
-      tabs: app.tabs.map((t) => ({ id: t.id, title: t.title, connId: t.connId, schema: t.schema, sql: t.sql, preview: t.preview })),
+      treeView: app.treeView,
+      tabs: app.tabs.map((t) => ({
+        id: t.id,
+        title: t.title,
+        connId: t.connId,
+        schema: t.schema,
+        sql: t.sql,
+        preview: t.preview,
+        layout: t.layout,
+      })),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
   }, 600)
@@ -417,6 +431,7 @@ export async function loadWorkspace() {
     if (!raw) return
     const data = JSON.parse(raw)
     if (data.fetchSize) app.fetchSize = data.fetchSize
+    if (data.treeView) app.treeView = { ...app.treeView, ...data.treeView }
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
       app.tabs.push({

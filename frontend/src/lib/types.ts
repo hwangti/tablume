@@ -19,6 +19,9 @@ export interface Table {
   schema: string
   name: string
   type: string
+  comment?: string
+  rows?: number // estimate from statistics, -1 unknown
+  size?: number // bytes, -1 unknown
 }
 
 export interface Column {
@@ -26,6 +29,7 @@ export interface Column {
   type: string
   nullable: boolean
   pk: boolean
+  comment?: string
 }
 
 export interface SchemaList {

@@ -123,6 +123,12 @@
     mark(res)
   }
 
+  function toggleLayout() {
+    tab.layout = tab.layout === 'results' ? 'split' : 'results'
+    saveWorkspaceSoon()
+    if (tab.layout === 'split') requestAnimationFrame(() => view?.focus())
+  }
+
   function onSqlChange(v: string) {
     if (v !== tab.sql) tab.preview = false
     tab.sql = v
@@ -255,11 +261,17 @@
   </div>
 
   <div class="body" bind:this={body}>
-    <div class="editor" style:height="{split}%">
+    <div class="editor" class:collapsed={tab.layout === 'results'} style:height="{split}%">
       <SqlEditor value={tab.sql} driver={conn?.driver} schema={completion} onchange={onSqlChange} onrun={run} onrunall={runAll} bind:view />
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="divider" onmousedown={startDrag}></div>
+    <div
+      class="divider"
+      class:collapsed={tab.layout === 'results'}
+      onmousedown={startDrag}
+      ondblclick={toggleLayout}
+      title="드래그: 크기 조절 · 더블클릭: 결과만 보기"
+    ></div>
     <div class="results">
       <div class="rtabs">
         {#each tab.results as r, i (i)}
@@ -273,6 +285,13 @@
           {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
         </button>
         <span class="grow"></span>
+        <button
+          class="icon-btn"
+          title={tab.layout === 'results' ? 'SQL 에디터 보이기' : '결과만 크게 보기'}
+          onclick={toggleLayout}
+        >
+          <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
+        </button>
         {#if current}
           {#if pending > 0}
             <span class="pending">변경 {pending}건</span>
@@ -396,6 +415,10 @@
   }
   .editor {
     min-height: 0;
+  }
+  .editor.collapsed,
+  .divider.collapsed {
+    display: none;
   }
   .divider {
     height: 5px;
