@@ -1,0 +1,152 @@
+# Tablume
+
+A lightweight cross-platform multi-database SQL client written in Go.
+
+DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입니다. macOS와 Windows에서 동작합니다.
+
+![Tablume](docs/screenshot-oracle.png)
+
+- **지원 DB**: MySQL, MariaDB, Oracle, SQL Server, PostgreSQL, SQLite
+- **크기**: 실행 파일 하나, 약 35MB. JVM이나 Chromium을 함께 넣지 않고 OS에 있는 웹뷰를 씁니다. (Windows는 WebView2, macOS는 WKWebView)
+- **Oracle Instant Client가 필요 없습니다.** 순수 Go 드라이버([go-ora](https://github.com/sijms/go-ora))를 씁니다.
+
+## 기능
+
+- 연결 관리: 연결별 색상 지정, 연결 테스트, 비밀번호는 OS 키체인에 저장 (macOS 키체인, Windows 자격 증명 관리자)
+- 스키마 트리: 스키마/DB → 테이블/뷰 → 컬럼 (PK, 타입, NOT NULL 표시)
+  - 테이블 필터
+  - 더블클릭하면 데이터 보기
+  - 우클릭 메뉴: SELECT 문 생성, 이름 복사 등
+- SQL 콘솔 (탭 여러 개, 탭마다 연결과 세션이 따로 유지됨)
+  - `Ctrl/⌘+Enter`: 커서가 있는 문장을 실행하고, 선택 영역이 있으면 선택 영역을 실행
+  - `Ctrl/⌘+Shift+Enter`: 전체 스크립트를 순서대로 실행하고, 오류가 나면 멈춤
+  - 실행 중인 쿼리 취소. 서버가 취소에 응답하지 않으면 3초 뒤 그 탭의 연결을 새로 엽니다.
+  - DB별 문법 하이라이트, 테이블/컬럼 자동완성
+  - 문장을 나누는 규칙은 DB별로 다릅니다.
+    - Oracle: PL/SQL 블록은 `/` 줄까지를 한 문장으로 봅니다.
+    - SQL Server: `GO`로 배치를 나눕니다.
+    - MySQL: `DELIMITER`를 지원하고, `BEGIN … END` 블록은 그대로 실행할 수 있습니다.
+    - PostgreSQL: `$$` 인용을 인식합니다.
+  - Oracle에서 PL/SQL을 CREATE했는데 컴파일 오류가 있으면 오류 내용을 보여줍니다. (SQL\*Plus의 "created with compilation errors"에 해당)
+  - 탭과 SQL은 앱을 다시 켜도 복원됩니다. `.sql` 파일을 열고 저장할 수 있습니다.
+- 결과 그리드
+  - 가상 스크롤이라 수만 행도 가볍게 표시됩니다.
+  - 처음에 500행(설정 가능)만 가져오고, 스크롤하면 이어서 가져옵니다.
+  - 셀과 범위 선택, 복사(TSV, 헤더 포함, `IN (…)` 목록)
+  - 컬럼 정렬과 너비 조절
+  - 값 보기 창(JSON 정렬 지원)
+  - CSV/JSON으로 내보내기
+- 다크/라이트 테마는 OS 설정을 따릅니다.
+
+## 단축키
+
+| 키 | 동작 |
+|---|---|
+| `Ctrl/⌘ + Enter` | 현재 문장(또는 선택 영역) 실행 |
+| `Ctrl/⌘ + Shift + Enter` | 전체 실행 |
+| `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | 새 콘솔 / 탭 닫기 |
+| `Ctrl/⌘ + 1…9` | 탭 이동 |
+| `Ctrl/⌘ + /` | 주석 토글 |
+| `Ctrl/⌘ + F` | 에디터에서 찾기/바꾸기 |
+| 그리드에서 `Enter` / 더블클릭 | 셀 값 보기 |
+| 탭 더블클릭 / 가운데 클릭 | 이름 바꾸기 / 닫기 |
+
+## DB별 참고
+
+- **Oracle**: "서비스 이름"(예: `ORCL`, `FREEPDB1`, `XEPDB1`)으로 접속하고, 필요하면 "SID 사용"을 체크하세요. 11g도 지원합니다. 테이블 미리보기는 `ROWNUM`을 씁니다. 스키마 목록은 12c 이상에서 Oracle 내부 계정(SYS, XDB 등)을 숨깁니다.
+- **SQL Server**: 트리의 첫 단계는 데이터베이스입니다. 이름 있는 인스턴스는 호스트에 `host\SQLEXPRESS`처럼 적으면 됩니다. 기본값은 `TrustServerCertificate=true`입니다.
+- **MySQL/MariaDB**: 영향받은 행 수는 실제로 바뀐 행이 아니라 조건에 맞은 행 기준입니다(`clientFoundRows`).
+- **추가 옵션** 칸에 드라이버 옵션을 `key=value&key2=value2` 형식으로 넣을 수 있습니다. 예: `tls=true`, `sslmode=require`, `encrypt=true`
+- 트랜잭션: 기본은 autocommit입니다. 탭마다 연결이 하나로 고정되어 있어서 `BEGIN`/`START TRANSACTION` … `COMMIT`/`ROLLBACK`을 직접 실행해도 같은 세션에서 처리됩니다.
+
+## 개발
+
+필요한 것: Go 1.24 이상, Node 20 이상, [Wails v2](https://wails.io) CLI
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+```
+
+```bash
+wails dev
+```
+
+```bash
+wails build
+```
+
+- `wails dev`: 핫 리로드로 개발합니다. 브라우저에서 http://localhost:34115 를 열어도 됩니다.
+- `wails build`: 지금 쓰는 OS용으로 빌드합니다. 결과물은 `build/bin/`에 생깁니다.
+- 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 하고, `-tags webkit2_41` 옵션을 붙여야 합니다.
+- Windows용 `.exe`는 리눅스나 macOS에서도 `wails build -platform windows/amd64`로 만들 수 있습니다.
+- macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
+
+### GitHub Actions로 배포 파일 만들기
+
+`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(universal) `.app` zip과 Windows `.exe`를 만들어 아티팩트로 올립니다.
+
+macOS 빌드는 서명되지 않았기 때문에 처음 실행할 때 Finder에서 우클릭 → 열기를 하거나, 다음 명령을 실행해야 합니다.
+
+```bash
+xattr -dr com.apple.quarantine Tablume.app
+```
+
+### 테스트
+
+```bash
+go test ./internal/...
+```
+
+이 명령은 SQL 문장 분리기만 단위 테스트합니다. 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
+
+```bash
+docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
+```
+
+```bash
+docker run -d --name t-pg -e POSTGRES_PASSWORD=pw -p 5432:5432 postgres:17-alpine
+```
+
+```bash
+docker run -d --name t-ora -e ORACLE_PASSWORD=pw -e APP_USER=app -e APP_USER_PASSWORD=pw -p 1521:1521 gvenzl/oracle-free:slim-faststart
+```
+
+```bash
+docker run -d --name t-mssql -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=Passw0rd!' -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+```
+
+DB가 모두 뜨면 통합 테스트를 실행합니다.
+
+```bash
+TABLUME_IT=1 go test ./internal/dbx/ -v
+```
+
+## 구조
+
+```
+main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API
+internal/dbx/              DB 계층
+  dialect.go               DB별 접속 문자열과 메타데이터 쿼리
+  manager.go               연결 풀, 탭별 세션, 실행/취소/커서
+  split.go                 SQL 스크립트를 문장 단위로 나누기 (DB별 규칙)
+internal/store/            연결 목록(JSON)과 키체인 연동
+frontend/                  Svelte 5 + CodeMirror 6 UI
+```
+
+설정 파일 위치:
+
+- macOS: `~/Library/Application Support/Tablume/`
+- Windows: `%AppData%\Tablume\`
+
+## 다음에 하면 좋을 것
+
+- SSH 터널
+- 그리드에서 바로 셀 편집하고 커밋하기
+- 수동 커밋 모드 토글
+- 쿼리 히스토리
+- DDL 보기
+- 인덱스/제약조건 트리
+
+## 라이선스
+
+[MIT](LICENSE)

@@ -1,0 +1,35 @@
+<script lang="ts">
+  let { name, size = 16, color = 'currentColor' }: { name: string; size?: number; color?: string } = $props()
+
+  const paths: Record<string, string> = {
+    chevron: 'M6 4l4 4-4 4',
+    db: 'M3 4c0-1.1 2.2-2 5-2s5 .9 5 2v8c0 1.1-2.2 2-5 2s-5-.9-5-2zM3 4c0 1.1 2.2 2 5 2s5-.9 5-2M3 8c0 1.1 2.2 2 5 2s5-.9 5-2',
+    schema: 'M2.5 4.5h4l1.5 1.5h5.5v6.5h-11z',
+    table: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6.5 6.5v6',
+    view: 'M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 6.2a1.8 1.8 0 100 3.6 1.8 1.8 0 000-3.6z',
+    column: 'M3 4.5h10M3 8h10M3 11.5h6',
+    key: 'M10 2.5a3.5 3.5 0 11-3.2 4.9L2.5 11.7v1.8h2v-1.5h1.5v-1.5h1.5l1.1-1.1A3.5 3.5 0 0110 2.5zM11 5h.01',
+    play: 'M4.5 3v10l8-5z',
+    playAll: 'M2.5 3v10l6-5zM8.5 3v10l6-5z',
+    stop: 'M4 4h8v8H4z',
+    plus: 'M8 3v10M3 8h10',
+    refresh: 'M13 8a5 5 0 11-1.5-3.5M13 2.5V5h-2.5',
+    close: 'M4.5 4.5l7 7M11.5 4.5l-7 7',
+    plug: 'M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 01-7 0zM8 11v3',
+    unplug: 'M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 01-7 0zM8 11v3M2 2l12 12',
+    edit: 'M10.5 2.5l3 3-8 8h-3v-3z',
+    trash: 'M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9',
+    file: 'M4 1.5h5l3 3v10H4zM9 1.5v3h3',
+    save: 'M3 2.5h8l2 2v9H3zM5.5 2.5v3h5v-3M5 13.5v-4h6v4',
+    download: 'M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10',
+    copy: 'M5.5 5.5h7v8h-7zM3.5 10.5v-8h7',
+    console: 'M2.5 3.5h11v9h-11zM4.5 6.5L6.5 8l-2 1.5M8 10h3',
+    filter: 'M2.5 3.5h11L9.5 8.5v4l-3 1v-5z',
+    format: 'M3 4h10M3 8h6M3 12h8',
+    open: 'M2.5 4.5h4l1.5 1.5h5.5v6.5h-11zM2.5 12.5L4.5 8h11',
+  }
+</script>
+
+<svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={color} stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d={paths[name] ?? ''} />
+</svg>

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Tablume",
+  "outputfilename": "Tablume",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "TAEROK HWANG",
+    "email": "63739369+hwangti@users.noreply.github.com"
+  },
+  "info": {
+    "companyName": "Tablume",
+    "productName": "Tablume",
+    "productVersion": "0.1.0",
+    "comments": "A lightweight database client"
+  }
+}
