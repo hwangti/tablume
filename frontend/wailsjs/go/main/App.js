@@ -74,6 +74,10 @@ export function OpenSQLFile() {
   return window['go']['main']['App']['OpenSQLFile']();
 }
 
+export function PickKeyFile() {
+  return window['go']['main']['App']['PickKeyFile']();
+}
+
 export function PickSQLiteFile() {
   return window['go']['main']['App']['PickSQLiteFile']();
 }

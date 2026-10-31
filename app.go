@@ -52,13 +52,24 @@ func (a *App) DeleteConnection(id string) error {
 
 // TestConnection tries the settings from the form. An empty password on an
 // existing connection falls back to the stored one.
-func (a *App) TestConnection(c dbx.ConnConfig) (string, error) {
-	if c.Password == "" && c.ID != "" {
+func (a *App) TestConnection(c dbx.ConnConfig) (TestResult, error) {
+	if c.ID != "" {
 		if saved, ok := a.store.Get(c.ID); ok {
-			c.Password = saved.Password
+			if c.Password == "" {
+				c.Password = saved.Password
+			}
+			if c.SSHPassword == "" {
+				c.SSHPassword = saved.SSHPassword
+			}
 		}
 	}
-	return dbx.Test(c)
+	v, fp, err := dbx.Test(c)
+	return TestResult{Version: v, SSHHostKey: fp}, err
+}
+
+type TestResult struct {
+	Version    string `json:"version"`
+	SSHHostKey string `json:"sshHostKey"`
 }
 
 // NeedsPassword reports whether Connect must be given a password.
@@ -75,7 +86,13 @@ func (a *App) Connect(id, password string) (string, error) {
 	if password != "" {
 		c.Password = password
 	}
-	return a.db.Connect(c)
+	v, err := a.db.Connect(c)
+	if err == nil && c.SSH && c.SSHHostKey == "" {
+		if fp := a.db.SSHHostKey(id); fp != "" {
+			_ = a.store.SetSSHHostKey(id, fp)
+		}
+	}
+	return v, err
 }
 
 func (a *App) Disconnect(id string)       { a.db.Disconnect(id) }
@@ -140,6 +157,17 @@ func (a *App) PickSQLiteFile() (string, error) {
 			{DisplayName: "모든 파일", Pattern: "*"},
 		},
 	})
+}
+
+// PickKeyFile picks an SSH private key, starting in ~/.ssh.
+func (a *App) PickKeyFile() (string, error) {
+	dir := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		if st, err := os.Stat(filepath.Join(home, ".ssh")); err == nil && st.IsDir() {
+			dir = filepath.Join(home, ".ssh")
+		}
+	}
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "SSH 개인 키 파일", DefaultDirectory: dir})
 }
 
 // SaveTextFile asks for a path and writes content. Returns "" if cancelled.

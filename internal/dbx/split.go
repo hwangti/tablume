@@ -8,7 +8,7 @@ import (
 // Stmt is one statement found by Split. Start/End are byte offsets of the
 // trimmed statement text; Stop is the offset just past its delimiter.
 type Stmt struct {
-	SQL               string
+	SQL              string
 	Start, End, Stop int
 }
 

@@ -222,17 +222,40 @@
     cursor = r.key
     treeEl.focus({ preventScroll: true })
     if (r.kind === 'conn' || r.kind === 'schema') toggle(r)
+    else if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
     else if (r.kind === 'info') r.run?.()
   }
 
+  // Click opens a preview tab (replaced by the next click); double-click
+  // keeps it open.
   function rowDblClick(r: Row) {
-    if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
+    if (r.kind === 'table') pinTable(r.c.id, r.s.name, r.t)
     else if (r.kind === 'conn' && app.conn[r.c.id]?.status === 'connected') openConsole(r.c.id)
   }
 
-  function moveCursor(key: string) {
+  function moveCursor(key: string, block: ScrollLogicalPosition = 'nearest') {
     cursor = key
-    requestAnimationFrame(() => treeEl.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' }))
+    requestAnimationFrame(() => treeEl.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block }))
+  }
+
+  // Reveals the active tab's table in the tree: expands its connection and
+  // schema, clears a filter that hides it, and scrolls it into the middle.
+  async function locate() {
+    const tab = activeTab()
+    const ref = tab?.tableRef
+    if (!tab || !ref) return
+    const st = app.conn[tab.connId]
+    if (!st || st.status !== 'connected') return
+    st.expanded = true
+    const s = st.schemas.find((x) => x.name === ref.schema)
+    if (!s) return
+    if (!s.expanded) {
+      s.expanded = true
+      if (s.tables === null) await loadTables(tab.connId, s)
+    }
+    if (!matches(ref.table.name)) filter = ''
+    moveCursor(tableKey(tab.connId, ref.schema, ref.table), 'center')
+    treeEl.focus({ preventScroll: true })
   }
 
   function treeKey(e: KeyboardEvent) {
@@ -293,7 +316,7 @@
         fmtSize(r.t.t.size) && `크기 ${fmtSize(r.t.t.size)}`,
       ].filter(Boolean)
       if (meta.length) lines.push(meta.join(' · '))
-      lines.push('더블클릭 / Enter: 데이터 열기')
+      lines.push('클릭: 미리보기 · 더블클릭: 탭 고정')
       return { title: r.t.t.name, lines }
     }
     if (r.kind === 'col') {
@@ -415,6 +438,7 @@
 <aside>
   <div class="top">
     <span class="title">연결</span>
+    <button class="icon-btn" title="열린 테이블을 트리에서 찾기" onclick={locate} disabled={!activeKey}><Icon name="locate" /></button>
     <div class="viewopt">
       <button
         class="icon-btn"
@@ -442,7 +466,7 @@
   <div class="filter">
     <Icon name="filter" size={14} />
     <input bind:value={filter} placeholder="테이블 필터" spellcheck="false" />
-    {#if filter}<button class="icon-btn clear" title="필터 지우기" onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
+    {#if filter}<button class="x-btn" title="필터 지우기" onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -625,11 +649,6 @@
   }
   .info {
     cursor: default;
-  }
-  .icon-btn.clear {
-    width: 22px;
-    height: 22px;
-    margin-right: -3px;
   }
   .tip {
     position: fixed;

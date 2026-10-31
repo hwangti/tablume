@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import FilterInput from './FilterInput.svelte'
+  import StructureView from './StructureView.svelte'
   import { api, errText } from '../lib/api'
   import { modKey, copyText } from '../lib/clipboard'
   import {
@@ -462,11 +463,12 @@
             <button class="btn mini" onclick={() => current && revert(current)} title="모든 변경 되돌리기"><Icon name="undo" size={13} /> 되돌리기</button>
             <span class="sep"></span>
           {/if}
-          {#if editInfo?.editable}
-            <button class="icon-btn" title="행 추가" onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
-            <button class="icon-btn" title="선택 행 삭제 (Delete)" onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
-          {:else if editInfo}
+          {#if editInfo && !editInfo.editable}
             <span class="ro" title={'읽기 전용: ' + editInfo.reason}><Icon name="lock" size={13} /> 읽기 전용</span>
+          {/if}
+          {#if editInfo?.editable || editInfo?.insertable}
+            <button class="icon-btn" title="행 추가" onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
+            <button class="icon-btn" title={editInfo.editable ? '선택 행 삭제 (Delete)' : '추가한 행 취소 (Delete)'} onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
           {/if}
           <button class="icon-btn" title="다시 조회" onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
             <Icon name="refresh" size={14} />
@@ -486,11 +488,20 @@
             {/if}
           </div>
         {/if}
-        {#if isTable && tableView === 'ddl' && ddl}
-          <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
+        {#if isTable && tableView === 'ddl'}
+          <div class="seg" role="group">
+            <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>SQL</button>
+            <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>표</button>
+          </div>
+          {#if app.ddlMode === 'sql' && ddl}
+            <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
+          {/if}
         {/if}
         {#if isTable}
           <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
+        {/if}
+        {#if current && (!isTable || tableView === 'data') && app.gridZoom !== 1}
+          <button class="btn mini" title="표 확대/축소 초기화 ({modKey}0) · {modKey}+휠로 조절" onclick={() => grid?.zoom(0)}>{Math.round(app.gridZoom * 100)}%</button>
         {/if}
         {#if current && (!isTable || tableView === 'data')}
           <span class="meta">
@@ -503,19 +514,21 @@
           <span class="kw">WHERE</span>
           <div class="fwrap">
             <FilterInput bind:value={whereDraft} columns={filterCols} keywords={WHERE_KW} onsubmit={applyFilter} onrevert={revertFilter} />
-            {#if tab.tableRef.where}<button class="fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
+            {#if tab.tableRef.where}<button class="x-btn fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
           </div>
           <span class="kw">ORDER BY</span>
           <div class="fwrap order">
             <FilterInput bind:value={orderDraft} columns={filterCols} keywords={ORDER_KW} onsubmit={applyFilter} onrevert={revertFilter} />
-            {#if tab.tableRef.orderBy}<button class="fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
+            {#if tab.tableRef.orderBy}<button class="x-btn fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
           </div>
           <button class="btn mini" onclick={applyFilter} disabled={tab.running} title="Enter">조회</button>
         </div>
       {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="rbody" onkeydown={resultsKey}>
-        {#if isTable && tableView === 'ddl'}
+        {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
+          <StructureView connId={tab.connId} schema={tab.tableRef.schema} table={tab.tableRef.table} />
+        {:else if isTable && tableView === 'ddl'}
           {#if ddlError}
             <div class="msg error"><pre>{ddlError}</pre></div>
           {:else if ddl === null}
@@ -696,23 +709,35 @@
   }
   .fclear {
     position: absolute;
-    right: 3px;
-    top: 2px;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 1;
-    display: inline-flex;
-    padding: 3px;
-    border: none;
-    border-radius: 3px;
-    background: none;
-    color: var(--text-faint);
-    cursor: pointer;
-  }
-  .fclear:hover {
-    color: var(--text);
-    background: var(--bg-hover);
   }
   .dropdown {
     position: relative;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .seg button {
+    height: 22px;
+    padding: 0 10px;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .seg button + button {
+    border-left: 1px solid var(--border);
+  }
+  .seg button.on {
+    background: var(--bg-select);
+    color: var(--text);
   }
   .icon-btn.split {
     width: auto;

@@ -82,6 +82,8 @@ export namespace dbx {
 	    comment: string;
 	    unique: boolean;
 	    fk: string;
+	    default: string;
+	    extra: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Column(source);
@@ -96,6 +98,8 @@ export namespace dbx {
 	        this.comment = source["comment"];
 	        this.unique = source["unique"];
 	        this.fk = source["fk"];
+	        this.default = source["default"];
+	        this.extra = source["extra"];
 	    }
 	}
 	export class ConnConfig {
@@ -111,6 +115,14 @@ export namespace dbx {
 	    oracleSid: boolean;
 	    params: string;
 	    color: string;
+	    ssh: boolean;
+	    sshHost: string;
+	    sshPort: number;
+	    sshUser: string;
+	    sshAuth: string;
+	    sshPassword?: string;
+	    sshKeyFile: string;
+	    sshHostKey: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnConfig(source);
@@ -130,10 +142,19 @@ export namespace dbx {
 	        this.oracleSid = source["oracleSid"];
 	        this.params = source["params"];
 	        this.color = source["color"];
+	        this.ssh = source["ssh"];
+	        this.sshHost = source["sshHost"];
+	        this.sshPort = source["sshPort"];
+	        this.sshUser = source["sshUser"];
+	        this.sshAuth = source["sshAuth"];
+	        this.sshPassword = source["sshPassword"];
+	        this.sshKeyFile = source["sshKeyFile"];
+	        this.sshHostKey = source["sshHostKey"];
 	    }
 	}
 	export class EditInfo {
 	    editable: boolean;
+	    insertable: boolean;
 	    reason: string;
 	    schema: string;
 	    table: Table;
@@ -149,6 +170,7 @@ export namespace dbx {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.editable = source["editable"];
+	        this.insertable = source["insertable"];
 	        this.reason = source["reason"];
 	        this.schema = source["schema"];
 	        this.table = this.convertValues(source["table"], Table);
@@ -344,6 +366,20 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.content = source["content"];
+	    }
+	}
+	export class TestResult {
+	    version: string;
+	    sshHostKey: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TestResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.sshHostKey = source["sshHostKey"];
 	    }
 	}
 

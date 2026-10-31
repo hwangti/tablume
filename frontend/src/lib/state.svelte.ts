@@ -88,6 +88,8 @@ export const app = $state({
   // What the schema tree shows next to each table / column.
   treeView: { comment: true, tableCount: true, rows: false, size: false },
   tableOpen: { pkDesc: false },
+  gridZoom: 1,
+  ddlMode: 'sql' as 'sql' | 'table',
 })
 
 let toastSeq = 0
@@ -462,6 +464,8 @@ export function saveWorkspaceSoon() {
       fetchSize: app.fetchSize,
       treeView: app.treeView,
       tableOpen: app.tableOpen,
+      gridZoom: app.gridZoom,
+      ddlMode: app.ddlMode,
       tabs: app.tabs.map((t) => ({
         id: t.id,
         title: t.title,
@@ -485,6 +489,8 @@ export async function loadWorkspace() {
     if (data.fetchSize) app.fetchSize = data.fetchSize
     if (data.treeView) app.treeView = { ...app.treeView, ...data.treeView }
     if (data.tableOpen) app.tableOpen = { ...app.tableOpen, ...data.tableOpen }
+    if (data.ddlMode === 'table' || data.ddlMode === 'sql') app.ddlMode = data.ddlMode
+    if (typeof data.gridZoom === 'number' && data.gridZoom >= 0.5 && data.gridZoom <= 3) app.gridZoom = data.gridZoom
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
       app.tabs.push({

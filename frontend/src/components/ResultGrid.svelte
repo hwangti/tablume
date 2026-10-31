@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
   import { copyText, modKey } from '../lib/clipboard'
-  import { toast } from '../lib/state.svelte'
+  import { app, toast, saveWorkspaceSoon } from '../lib/state.svelte'
   import { cellValue, isEdited, setCell, addRow, toggleDelete, revert } from '../lib/editing.svelte'
   import CellViewer from './CellViewer.svelte'
   import Icon from './Icon.svelte'
@@ -36,6 +36,12 @@
   let info = $derived(result.edit?.info ?? null)
   let st = $derived(result.edit)
 
+  // Existing rows need a key to be changed; rows added here only need the
+  // table (insertable), so they stay editable even without a primary key.
+  function rowEditable(inf: EditInfo | null | undefined, ri: number): boolean {
+    return !!inf && (inf.editable || (!!inf.insertable && !!result.edit?.added[ri]))
+  }
+
   function val(ri: number, c: number): Cell {
     return cellValue(result, ri, c)
   }
@@ -45,7 +51,7 @@
   async function startEdit(vi: number, c: number, initial?: string) {
     const ri = order[vi]
     const inf = await ensureEdit()
-    if (!inf?.editable) {
+    if (!inf || !rowEditable(inf, ri)) {
       if (initial === undefined) openViewer(vi, c)
       else if (inf) toast('읽기 전용: ' + inf.reason)
       return
@@ -112,14 +118,15 @@
 
   async function setNull() {
     const inf = await ensureEdit()
-    if (!inf?.editable || !sel) return
+    if (!inf || !sel) return
     for (let v = sel.r1; v <= sel.r2; v++)
-      for (let c = sel.c1; c <= sel.c2; c++) if (inf.columns[c] && !st?.deleted[order[v]]) setCell(result, order[v], c, null)
+      for (let c = sel.c1; c <= sel.c2; c++)
+        if (inf.columns[c] && rowEditable(inf, order[v]) && !st?.deleted[order[v]]) setCell(result, order[v], c, null)
   }
 
   export async function newRow() {
     const inf = await ensureEdit()
-    if (!inf?.editable) {
+    if (!inf?.editable && !inf?.insertable) {
       if (inf) toast('읽기 전용: ' + inf.reason)
       return
     }
@@ -133,16 +140,20 @@
 
   export async function deleteRows() {
     const inf = await ensureEdit()
-    if (!inf?.editable) {
+    const rs = selectedRows()
+    if (!inf || !rs.every((ri) => rowEditable(inf, ri))) {
       if (inf) toast('읽기 전용: ' + inf.reason)
       return
     }
-    toggleDelete(result, selectedRows())
+    toggleDelete(result, rs)
   }
 
 
-  const ROW_H = 24
-  const HEAD_H = 28
+  // Zoom (Ctrl + wheel / Ctrl +, -, 0) scales rows, fonts and widths;
+  // widths[] stay in 100% units so resizing survives zoom changes.
+  let z = $derived(app.gridZoom)
+  let ROW_H = $derived(Math.round(24 * z))
+  let HEAD_H = $derived(Math.round(28 * z))
   const OVERSCAN = 10
 
   let scroller: HTMLDivElement
@@ -237,8 +248,28 @@
   let first = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN))
   let last = $derived(Math.min(order.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN))
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
-  let numW = $derived(Math.max(44, String(rows.length).length * 8 + 20))
-  let totalW = $derived(numW + widths.reduce((a, b) => a + b, 0))
+  let numW = $derived(Math.round(Math.max(44, String(rows.length).length * 8 + 20) * z))
+  let cw = $derived(widths.map((w) => Math.round(w * z)))
+  let totalW = $derived(numW + cw.reduce((a, b) => a + b, 0))
+
+  export function zoom(step: number) {
+    const steps = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
+    let i = steps.findIndex((s) => s >= app.gridZoom - 0.001)
+    if (i < 0) i = steps.length - 1
+    const next = step === 0 ? 1 : steps[Math.max(0, Math.min(steps.length - 1, i + step))]
+    if (next === app.gridZoom) return
+    // keep the first visible row in place
+    const row = scroller ? scroller.scrollTop / ROW_H : 0
+    app.gridZoom = next
+    saveWorkspaceSoon()
+    requestAnimationFrame(() => scroller && (scroller.scrollTop = row * Math.round(24 * next)))
+  }
+
+  function wheel(e: WheelEvent) {
+    if (!(e.ctrlKey || e.metaKey)) return
+    e.preventDefault()
+    zoom(e.deltaY < 0 ? 1 : -1)
+  }
 
   function onScroll() {
     scrollTop = scroller.scrollTop
@@ -295,8 +326,8 @@
     if (top < scroller.scrollTop) scroller.scrollTop = top
     else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight - HEAD_H) scroller.scrollTop = top + ROW_H - scroller.clientHeight + HEAD_H + 12
     let left = numW
-    for (let i = 0; i < c; i++) left += widths[i]
-    const right = left + widths[c]
+    for (let i = 0; i < c; i++) left += cw[i]
+    const right = left + cw[c]
     if (left - numW < scroller.scrollLeft) scroller.scrollLeft = left - numW
     else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth + 12
   }
@@ -306,6 +337,11 @@
     if (mod && e.key.toLowerCase() === 'c') {
       e.preventDefault()
       copySelection(false)
+      return
+    }
+    if (mod && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+      e.preventDefault()
+      zoom(e.key === '0' ? 0 : e.key === '-' ? -1 : 1)
       return
     }
     if (mod && e.key.toLowerCase() === 'a') {
@@ -396,7 +432,7 @@
 
   function openViewer(vi: number, c: number) {
     const ri = order[vi]
-    const canEdit = !!info?.editable && !!info.columns[c] && !st?.deleted[ri]
+    const canEdit = rowEditable(info, ri) && !!info?.columns[c] && !st?.deleted[ri]
     viewing = { col: columns[c].name, value: val(ri, c), ri, c: canEdit ? c : -1 }
   }
 
@@ -416,7 +452,7 @@
     e.stopPropagation()
     const x0 = e.clientX
     const w0 = widths[c]
-    const move = (ev: MouseEvent) => (widths[c] = Math.max(40, w0 + ev.clientX - x0))
+    const move = (ev: MouseEvent) => (widths[c] = Math.max(40, w0 + (ev.clientX - x0) / z))
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
@@ -445,6 +481,10 @@
   bind:this={scroller}
   bind:clientHeight={viewH}
   onscroll={onScroll}
+  onwheel={wheel}
+  style:--gz={z}
+  style:--row-h="{ROW_H}px"
+  style:--head-h="{HEAD_H}px"
   onkeydown={keydown}
   oncontextmenu={contextMenu}
   tabindex="0"
@@ -457,7 +497,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
           class="th"
-          style:width="{widths[c]}px"
+          style:width="{cw[c]}px"
           title={`${col.name} ${col.type}\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'}`}
           onclick={() => headerClick(c)} role="columnheader" tabindex="-1">
           {#each keyIcons(c) as k (k.icon)}
@@ -499,7 +539,7 @@
             class:added={st?.added[ri]}
             class:deleted={st?.deleted[ri]}
             class:editing={editing?.ri === ri && editing?.c === c}
-            style:width="{widths[c]}px"
+            style:width="{cw[c]}px"
             onmousedown={(e) => cellDown(e, vi, c)}
             onmouseover={(e) => cellOver(e, vi, c)}
             ondblclick={() => startEdit(vi, c)}
@@ -540,7 +580,7 @@
     <button onclick={copyInList}>IN (…) 목록으로 복사</button>
     {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>값 보기 <kbd>Shift+Enter</kbd></button>{/if}
     <button onclick={selectAll}>전체 선택</button>
-    {#if info?.editable}
+    {#if info?.editable || info?.insertable}
       <hr />
       {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>편집 <kbd>Enter</kbd></button>{/if}
       <button onclick={setNull}>NULL로 설정</button>
@@ -569,7 +609,7 @@
     outline: none;
     font-family: var(--font-mono);
     font-variant-ligatures: none;
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--gz));
     background: var(--bg);
   }
 
@@ -613,13 +653,13 @@
 
   .th .type {
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: calc(11px * var(--gz));
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .th .sort {
-    font-size: 9px;
+    font-size: calc(9px * var(--gz));
     color: var(--accent);
   }
 
@@ -636,7 +676,7 @@
     position: absolute;
     left: 0;
     display: flex;
-    height: 24px;
+    height: var(--row-h);
   }
 
   .tr.alt {
@@ -650,23 +690,23 @@
     flex-shrink: 0;
     padding: 0 8px;
     text-align: right;
-    line-height: 24px;
+    line-height: var(--row-h);
     color: var(--text-faint);
     background: var(--bg-panel);
     border-right: 1px solid var(--border);
-    font-size: 11px;
+    font-size: calc(11px * var(--gz));
     cursor: default;
   }
 
   .corner {
     z-index: 3;
-    line-height: 28px;
+    line-height: var(--head-h);
   }
 
   .td {
     flex-shrink: 0;
     padding: 0 8px;
-    line-height: 24px;
+    line-height: var(--row-h);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -750,9 +790,9 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 24px;
+    height: var(--row-h);
     padding-left: 60px;
-    line-height: 24px;
+    line-height: var(--row-h);
     color: var(--text-dim);
     font-family: var(--font-ui);
   }

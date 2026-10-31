@@ -230,3 +230,23 @@ textarea:focus {
 .dim {
   color: var(--text-dim);
 }
+
+/* Clear (×) button inside inputs: one size everywhere. */
+.x-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.x-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}

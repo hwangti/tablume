@@ -21,8 +21,12 @@ const service = "Tablume"
 type record struct {
 	dbx.ConnConfig
 	// FallbackPassword is only used when the OS keychain is unavailable.
-	FallbackPassword string `json:"fallbackPassword,omitempty"`
+	FallbackPassword    string `json:"fallbackPassword,omitempty"`
+	FallbackSSHPassword string `json:"fallbackSshPassword,omitempty"`
 }
+
+// The SSH password / key passphrase has its own keychain entry.
+func sshKey(id string) string { return id + "/ssh" }
 
 type Store struct {
 	mu   sync.Mutex
@@ -80,6 +84,7 @@ func (s *Store) List() []dbx.ConnConfig {
 	for i, r := range s.list {
 		out[i] = r.ConnConfig
 		out[i].Password = ""
+		out[i].SSHPassword = ""
 	}
 	return out
 }
@@ -96,6 +101,13 @@ func (s *Store) Get(id string) (dbx.ConnConfig, bool) {
 					c.Password = pw
 				} else {
 					c.Password = r.FallbackPassword
+				}
+			}
+			if c.SSH {
+				if pw, err := keyring.Get(service, sshKey(id)); err == nil {
+					c.SSHPassword = pw
+				} else {
+					c.SSHPassword = r.FallbackSSHPassword
 				}
 			}
 			return c, true
@@ -120,8 +132,21 @@ func (s *Store) Save(c dbx.ConnConfig) (dbx.ConnConfig, error) {
 	}
 	rec := record{ConnConfig: c}
 	rec.Password = ""
+	rec.SSHPassword = ""
 	if idx >= 0 {
 		rec.FallbackPassword = s.list[idx].FallbackPassword
+		rec.FallbackSSHPassword = s.list[idx].FallbackSSHPassword
+	}
+	switch {
+	case !c.SSH:
+		_ = keyring.Delete(service, sshKey(c.ID))
+		rec.FallbackSSHPassword = ""
+	case c.SSHPassword != "":
+		if err := keyring.Set(service, sshKey(c.ID), c.SSHPassword); err != nil {
+			rec.FallbackSSHPassword = c.SSHPassword
+		} else {
+			rec.FallbackSSHPassword = ""
+		}
 	}
 	switch {
 	case !c.SavePassword:
@@ -153,6 +178,20 @@ func (s *Store) Delete(id string) error {
 		if r.ID == id {
 			s.list = append(s.list[:i], s.list[i+1:]...)
 			_ = keyring.Delete(service, id)
+			_ = keyring.Delete(service, sshKey(id))
+			return s.save()
+		}
+	}
+	return nil
+}
+
+// SetSSHHostKey pins the SSH server key seen on the first connection.
+func (s *Store) SetSSHHostKey(id, fp string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.list {
+		if s.list[i].ID == id {
+			s.list[i].SSHHostKey = fp
 			return s.save()
 		}
 	}

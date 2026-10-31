@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strconv"
@@ -21,6 +22,14 @@ type pool struct {
 	db  *sql.DB
 	d   Dialect
 	cfg ConnConfig
+	tun *tunnel // nil without SSH
+}
+
+func (p *pool) close() {
+	p.db.Close()
+	if p.tun != nil {
+		p.tun.Close()
+	}
 }
 
 // session is one console tab: it pins a single connection so session state
@@ -64,8 +73,20 @@ func open(cfg ConnConfig) (*pool, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open(d.DriverName(), d.DSN(cfg))
+	var tun *tunnel
+	dsnCfg := cfg
+	if cfg.SSH && cfg.Driver != "sqlite" {
+		if tun, err = openTunnel(cfg); err != nil {
+			return nil, err
+		}
+		dsnCfg.Host = "127.0.0.1"
+		dsnCfg.Port = tun.localPort()
+	}
+	db, err := sql.Open(d.DriverName(), d.DSN(dsnCfg))
 	if err != nil {
+		if tun != nil {
+			tun.Close()
+		}
 		return nil, err
 	}
 	db.SetMaxIdleConns(4)
@@ -75,23 +96,38 @@ func open(cfg ConnConfig) (*pool, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	p := &pool{db: db, d: d, cfg: cfg, tun: tun}
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		p.close()
 		return nil, err
 	}
-	return &pool{db: db, d: d, cfg: cfg}, nil
+	return p, nil
 }
 
-// Test opens a throwaway connection and returns the server version.
-func Test(cfg ConnConfig) (string, error) {
+// Test opens a throwaway connection and returns the server version and,
+// with SSH, the server's host key fingerprint.
+func Test(cfg ConnConfig) (version, hostKey string, err error) {
 	p, err := open(cfg)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	defer p.db.Close()
+	defer p.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return p.d.Version(ctx, p.db), nil
+	if p.tun != nil {
+		hostKey = p.tun.HostKey()
+	}
+	return p.d.Version(ctx, p.db), hostKey, nil
+}
+
+// SSHHostKey returns the host key fingerprint seen by a connection's tunnel.
+func (m *Manager) SSHHostKey(id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p := m.pools[id]; p != nil && p.tun != nil {
+		return p.tun.HostKey()
+	}
+	return ""
 }
 
 func (m *Manager) Connect(cfg ConnConfig) (string, error) {
@@ -124,7 +160,7 @@ func (m *Manager) Disconnect(id string) {
 		s.close()
 	}
 	if p != nil {
-		p.db.Close()
+		p.close()
 	}
 }
 
@@ -609,13 +645,13 @@ func cell(v any, dbType string) any {
 	case nil:
 		return nil
 	case string:
-		return clip(x)
+		return plainFloat(clip(x), dbType)
 	case []byte:
 		if strings.EqualFold(dbType, "UNIQUEIDENTIFIER") && len(x) == 16 {
 			return mssqlGUID(x)
 		}
 		if utf8.Valid(x) && !isBinaryType(dbType) {
-			return clip(string(x))
+			return plainFloat(clip(string(x)), dbType)
 		}
 		if len(x) > maxCell/2 {
 			return fmt.Sprintf("0x%s… (%d bytes)", strings.ToUpper(hex.EncodeToString(x[:256])), len(x))
@@ -626,9 +662,9 @@ func cell(v any, dbType string) any {
 	case int64:
 		return strconv.FormatInt(x, 10)
 	case float64:
-		return strconv.FormatFloat(x, 'g', -1, 64)
+		return formatFloat(x, 64)
 	case float32:
-		return strconv.FormatFloat(float64(x), 'g', -1, 32)
+		return formatFloat(float64(x), 32)
 	case bool:
 		if x {
 			return "true"
@@ -640,6 +676,39 @@ func cell(v any, dbType string) any {
 		return clip(x.String())
 	}
 	return clip(fmt.Sprint(v))
+}
+
+// formatFloat writes floats without an exponent (2.611e+25 ->
+// 26110000000000000000000000) unless they are extreme, keeping the
+// shortest digits that round-trip.
+func formatFloat(f float64, bits int) string {
+	if a := math.Abs(f); a != 0 && (a >= 1e64 || a < 1e-30) || math.IsInf(f, 0) || math.IsNaN(f) {
+		return strconv.FormatFloat(f, 'g', -1, bits)
+	}
+	return strconv.FormatFloat(f, 'f', -1, bits)
+}
+
+// plainFloat rewrites exponent notation that some servers send as text for
+// FLOAT/DOUBLE columns (MySQL/MariaDB: "2.611e25").
+func plainFloat(s, dbType string) string {
+	if !strings.ContainsAny(s, "eE") || !isFloatType(dbType) {
+		return s
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return s
+	}
+	return formatFloat(f, 64)
+}
+
+func isFloatType(t string) bool {
+	base, _, _ := strings.Cut(strings.ToUpper(t), "(")
+	switch strings.TrimSpace(strings.TrimPrefix(base, "UNSIGNED ")) {
+	case "FLOAT", "DOUBLE", "REAL", "DOUBLE PRECISION", "FLOAT4", "FLOAT8",
+		"BINARY_FLOAT", "BINARY_DOUBLE", "NUMBER", "DECIMAL", "NUMERIC":
+		return true
+	}
+	return strings.HasPrefix(base, "FLOAT") || strings.HasPrefix(base, "DOUBLE")
 }
 
 func clip(s string) string {

@@ -156,10 +156,13 @@ func normIdent(t sqlToken, style string) string {
 // ---------------------------------------------------------------- edit info
 
 type EditInfo struct {
-	Editable bool   `json:"editable"`
-	Reason   string `json:"reason"`
-	Schema   string `json:"schema"`
-	Table    Table  `json:"table"`
+	Editable bool `json:"editable"`
+	// Insertable: new rows can be added even when existing rows can't be
+	// changed (no primary key) — inserts don't need to identify a row.
+	Insertable bool   `json:"insertable"`
+	Reason     string `json:"reason"`
+	Schema     string `json:"schema"`
+	Table      Table  `json:"table"`
 	// Columns maps each result column to its table column ("" = read-only).
 	Columns []string `json:"columns"`
 	Key     []string `json:"key"`
@@ -225,6 +228,7 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 			info.Key = append(info.Key, c.Name)
 		}
 	}
+	info.Insertable = true
 	seen := map[string]bool{}
 	for i, rc := range resultCols {
 		if c, ok := byName[strings.ToUpper(rc)]; ok && !seen[c.Name] {
@@ -247,12 +251,12 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 		}
 	}
 	if len(info.Key) == 0 {
-		info.Reason = "기본 키(PK)가 없는 테이블이나 뷰는 편집할 수 없습니다"
+		info.Reason = "기본 키(PK)가 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)"
 		return info, nil
 	}
 	for _, k := range info.Key {
 		if !seen[k] {
-			info.Reason = fmt.Sprintf("결과에 기본 키 컬럼 %s이(가) 없어 편집할 수 없습니다", k)
+			info.Reason = fmt.Sprintf("결과에 기본 키 컬럼 %s이(가) 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)", k)
 			return info, nil
 		}
 	}

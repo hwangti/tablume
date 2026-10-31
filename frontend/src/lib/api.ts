@@ -7,7 +7,7 @@ interface Api {
   ListConnections(): Promise<ConnConfig[]>
   SaveConnection(c: ConnConfig): Promise<ConnConfig>
   DeleteConnection(id: string): Promise<void>
-  TestConnection(c: ConnConfig): Promise<string>
+  TestConnection(c: ConnConfig): Promise<{ version: string; sshHostKey: string }>
   NeedsPassword(id: string): Promise<boolean>
   Connect(id: string, password: string): Promise<string>
   Disconnect(id: string): Promise<void>
@@ -34,6 +34,7 @@ interface Api {
   Cancel(tabId: string): Promise<void>
   CloseSession(tabId: string): Promise<void>
   PickSQLiteFile(): Promise<string>
+  PickKeyFile(): Promise<string>
   SaveTextFile(name: string, content: string): Promise<string>
   OpenSQLFile(): Promise<{ name: string; content: string } | null>
   LoadWorkspace(): Promise<string>

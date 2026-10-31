@@ -9,7 +9,15 @@
 
   // The dialog edits a copy of the connection it was opened with.
   const start = untrack(() => $state.snapshot(initial))
-  let c = $state<ConnConfig>({ ...start, password: '' })
+  let c = $state<ConnConfig>({
+    ...start,
+    password: '',
+    sshPassword: '',
+    sshPort: start.sshPort || 22,
+    sshAuth: start.sshAuth || 'password',
+  })
+  // A saved SSH secret exists when the connection already used SSH.
+  const sshSaved = !!start.ssh && start.id !== ''
   let isNew = start.id === ''
   let testing = $state(false)
   let saving = $state(false)
@@ -42,6 +50,11 @@
     }[c.driver],
   )
 
+  async function pickKey() {
+    const p = await api.PickKeyFile()
+    if (p) c.sshKeyFile = p
+  }
+
   async function pickFile() {
     const p = await api.PickSQLiteFile()
     if (p) {
@@ -55,7 +68,12 @@
     result = null
     try {
       const v = await api.TestConnection($state.snapshot(c))
-      result = { ok: true, text: `연결 성공 — ${v}` }
+      let text = `연결 성공 — ${v.version}`
+      if (c.ssh && v.sshHostKey) {
+        if (!c.sshHostKey) c.sshHostKey = v.sshHostKey // pinned when saved
+        text += `\nSSH 호스트 키: ${v.sshHostKey}`
+      }
+      result = { ok: true, text }
     } catch (e) {
       result = { ok: false, text: errText(e) }
     } finally {
@@ -164,6 +182,50 @@
       </div>
     {/if}
 
+    {#if c.driver !== 'sqlite'}
+      <span></span>
+      <label class="check ssh-toggle"><input type="checkbox" bind:checked={c.ssh} /> SSH 터널 사용</label>
+      {#if c.ssh}
+        <label for="f-sshhost">SSH 호스트</label>
+        <div class="row">
+          <input id="f-sshhost" bind:value={c.sshHost} placeholder="bastion.example.com" />
+          <span class="dim">포트</span>
+          <input class="port" type="number" bind:value={c.sshPort} />
+        </div>
+        <label for="f-sshuser">SSH 사용자</label>
+        <input id="f-sshuser" bind:value={c.sshUser} autocomplete="off" />
+        <span class="lbl">인증</span>
+        <div class="row">
+          <label class="check"><input type="radio" bind:group={c.sshAuth} value="password" /> 비밀번호</label>
+          <label class="check"><input type="radio" bind:group={c.sshAuth} value="key" /> 키 파일</label>
+        </div>
+        {#if c.sshAuth === 'key'}
+          <label for="f-sshkey">키 파일</label>
+          <div class="row">
+            <input id="f-sshkey" bind:value={c.sshKeyFile} placeholder="(비우면 ~/.ssh/id_ed25519, id_ecdsa, id_rsa)" />
+            <button class="btn" onclick={pickKey}>찾기…</button>
+          </div>
+        {/if}
+        <label for="f-sshpw">{c.sshAuth === 'key' ? '키 암호' : 'SSH 비밀번호'}</label>
+        <input
+          id="f-sshpw"
+          type="password"
+          bind:value={c.sshPassword}
+          placeholder={sshSaved ? '(저장됨 — 바꿀 때만 입력)' : c.sshAuth === 'key' ? '(암호가 없으면 비워 두세요)' : ''}
+          autocomplete="new-password"
+        />
+        {#if c.sshHostKey}
+          <span class="lbl">호스트 키</span>
+          <div class="row">
+            <span class="mono hostkey" title="처음 연결할 때 저장된 SSH 서버 키입니다. 다른 키를 가진 서버에는 연결하지 않습니다.">{c.sshHostKey}</span>
+            <button class="btn mini" onclick={() => (c.sshHostKey = '')}>초기화</button>
+          </div>
+        {/if}
+        <span></span>
+        <span class="hint">위의 호스트·포트는 SSH 서버에서 본 DB 주소입니다 (예: localhost:3306).</span>
+      {/if}
+    {/if}
+
     {#if showAdvanced}
       <label for="f-params">추가 옵션</label>
       <input id="f-params" class="mono" bind:value={c.params} placeholder={paramsHint} />
@@ -213,9 +275,28 @@
     gap: 10px 12px;
     align-items: center;
   }
-  .form > label {
+  .form > label,
+  .form > .lbl {
     color: var(--text-dim);
     text-align: right;
+  }
+  .form > label.ssh-toggle {
+    color: var(--text);
+    text-align: left;
+  }
+  .hostkey {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .hint {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin-top: -4px;
   }
   .row {
     display: flex;

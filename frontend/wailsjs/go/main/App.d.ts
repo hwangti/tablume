@@ -39,6 +39,8 @@ export function NeedsPassword(arg1:string):Promise<boolean>;
 
 export function OpenSQLFile():Promise<main.OpenedFile>;
 
+export function PickKeyFile():Promise<string>;
+
 export function PickSQLiteFile():Promise<string>;
 
 export function PreviewChanges(arg1:dbx.ApplyRequest):Promise<Array<string>>;
@@ -57,4 +59,4 @@ export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:string,arg
 
 export function TableDDL(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 
-export function TestConnection(arg1:dbx.ConnConfig):Promise<string>;
+export function TestConnection(arg1:dbx.ConnConfig):Promise<main.TestResult>;

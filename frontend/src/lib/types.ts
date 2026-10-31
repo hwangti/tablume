@@ -13,6 +13,14 @@ export interface ConnConfig {
   oracleSid: boolean
   params: string
   color: string
+  ssh?: boolean
+  sshHost?: string
+  sshPort?: number
+  sshUser?: string
+  sshAuth?: 'password' | 'key'
+  sshPassword?: string // password, or key passphrase
+  sshKeyFile?: string
+  sshHostKey?: string // pinned SHA256 fingerprint
 }
 
 export interface Table {
@@ -32,6 +40,8 @@ export interface Column {
   comment?: string
   unique?: boolean
   fk?: string // referenced "table.column"
+  default?: string
+  extra?: string // auto increment / identity / generated
 }
 
 export interface SchemaList {
@@ -65,6 +75,7 @@ export interface StmtResult {
 
 export interface EditInfo {
   editable: boolean
+  insertable?: boolean // new rows allowed even when not editable (no PK)
   reason: string
   schema: string
   table: Table

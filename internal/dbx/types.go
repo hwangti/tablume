@@ -18,6 +18,18 @@ type ConnConfig struct {
 	// Params are extra driver options as "key=value" pairs separated by '&'.
 	Params string `json:"params"`
 	Color  string `json:"color"`
+
+	// SSH tunnel: Host/Port above are then as seen from the SSH server.
+	SSH     bool   `json:"ssh"`
+	SSHHost string `json:"sshHost"`
+	SSHPort int    `json:"sshPort"`
+	SSHUser string `json:"sshUser"`
+	SSHAuth string `json:"sshAuth"` // password | key
+	// SSHPassword is the password, or the key passphrase with key auth.
+	SSHPassword string `json:"sshPassword,omitempty"`
+	SSHKeyFile  string `json:"sshKeyFile"`
+	// SSHHostKey pins the server's key (SHA256 fingerprint), set on first use.
+	SSHHostKey string `json:"sshHostKey"`
 }
 
 type Table struct {
@@ -40,6 +52,9 @@ type Column struct {
 	Comment  string `json:"comment"`
 	Unique   bool   `json:"unique"` // in a unique constraint/index (not the PK)
 	FK       string `json:"fk"`     // referenced "table.column" if a foreign key
+	Default  string `json:"default"`
+	// Extra: auto increment / identity / generated, for the structure view.
+	Extra string `json:"extra"`
 }
 
 type SchemaList struct {

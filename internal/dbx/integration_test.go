@@ -374,11 +374,11 @@ func TestTableMeta(t *testing.T) {
 func TestKeyColumns(t *testing.T) {
 	all := targets(t)
 	ddl := map[string]string{
-		"mariadb":  "DROP TABLE IF EXISTS item_child; CREATE TABLE item_child (id INT PRIMARY KEY, code VARCHAR(20) UNIQUE, item_id INT, FOREIGN KEY (item_id) REFERENCES items(id))",
-		"postgres": "DROP TABLE IF EXISTS item_child; CREATE TABLE item_child (id int PRIMARY KEY, code varchar(20) UNIQUE, item_id int REFERENCES items(id))",
-		"mssql":    "IF OBJECT_ID('dbo.item_child') IS NOT NULL DROP TABLE dbo.item_child;\nCREATE TABLE dbo.item_child (id int PRIMARY KEY, code varchar(20) UNIQUE, item_id int REFERENCES dbo.items(id))",
-		"oracle":   "BEGIN EXECUTE IMMEDIATE 'DROP TABLE item_child'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE TABLE item_child (id NUMBER PRIMARY KEY, code VARCHAR2(20) UNIQUE, item_id NUMBER REFERENCES items(id))",
-		"sqlite":   "CREATE TABLE item_child (id INTEGER PRIMARY KEY, code TEXT UNIQUE, item_id INTEGER REFERENCES items(id))",
+		"mariadb":  "DROP TABLE IF EXISTS item_child; CREATE TABLE item_child (id INT PRIMARY KEY, code VARCHAR(20) DEFAULT 'xd' UNIQUE, item_id INT, FOREIGN KEY (item_id) REFERENCES items(id))",
+		"postgres": "DROP TABLE IF EXISTS item_child; CREATE TABLE item_child (id int PRIMARY KEY, code varchar(20) DEFAULT 'xd' UNIQUE, item_id int REFERENCES items(id))",
+		"mssql":    "IF OBJECT_ID('dbo.item_child') IS NOT NULL DROP TABLE dbo.item_child;\nCREATE TABLE dbo.item_child (id int PRIMARY KEY, code varchar(20) DEFAULT 'xd' UNIQUE, item_id int REFERENCES dbo.items(id))",
+		"oracle":   "BEGIN EXECUTE IMMEDIATE 'DROP TABLE item_child'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE TABLE item_child (id NUMBER PRIMARY KEY, code VARCHAR2(20) DEFAULT 'xd' UNIQUE, item_id NUMBER REFERENCES items(id))",
+		"sqlite":   "CREATE TABLE item_child (id INTEGER PRIMARY KEY, code TEXT DEFAULT 'xd' UNIQUE, item_id INTEGER REFERENCES items(id))",
 	}
 	for name, d := range ddl {
 		tg := all[name]
@@ -411,6 +411,39 @@ func TestKeyColumns(t *testing.T) {
 			t.Logf("%+v", cols)
 			if !cols[0].PK || !cols[1].Unique || cols[0].Unique || !strings.HasSuffix(strings.ToLower(cols[2].FK), "items.id") {
 				t.Errorf("key flags wrong: %+v", cols)
+			}
+			if !strings.Contains(cols[1].Default, "xd") {
+				t.Errorf("default missing: %+v", cols[1])
+			}
+		})
+	}
+}
+
+func TestFloatFormat(t *testing.T) {
+	qs := map[string]string{
+		"mariadb":  "SELECT CAST(2.611e25 AS DOUBLE), CAST(1.5 AS FLOAT), 0.000123e-2",
+		"postgres": "SELECT 2.611e25::float8, 1.5::float4, 0.000123e-2::float8",
+		"mssql":    "SELECT CAST(2.611e25 AS float), CAST(1.5 AS real), CAST(0.000123e-2 AS float)",
+		"oracle":   "SELECT CAST(2.611e25 AS BINARY_DOUBLE), CAST(1.5 AS BINARY_FLOAT), CAST(0.000123e-2 AS BINARY_DOUBLE) FROM dual",
+		"sqlite":   "SELECT 2.611e25, 1.5, 0.000123e-2",
+	}
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			res, err := m.Execute(ExecRequest{TabID: "f", ConnID: tg.cfg.ID, SQL: qs[name], Cursor: -1})
+			if err != nil || res.Results[0].Error != "" {
+				t.Fatal(err, res.Results[0].Error)
+			}
+			got := res.Results[0].Rows[0]
+			want := []any{"26110000000000000000000000", "1.5", "0.00000123"}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("col %d: got %v want %v (%s)", i, got[i], want[i], res.Results[0].Columns[i].Type)
+				}
 			}
 		})
 	}
