@@ -95,9 +95,11 @@ func (a *App) CompletionColumns(id, schema string) (map[string][]string, error) 
 	return a.db.AllColumns(id, schema)
 }
 
-func (a *App) SelectSQL(id, schema string, t dbx.Table, limit int) (string, error) {
-	return a.db.SelectSQL(id, schema, t, limit)
+func (a *App) SelectSQL(id, schema string, t dbx.Table, where, orderBy string, limit int) (string, error) {
+	return a.db.SelectSQL(id, schema, t, where, orderBy, limit)
 }
+
+func (a *App) QuoteIdent(id, name string) (string, error) { return a.db.QuoteIdent(id, name) }
 
 func (a *App) TableDDL(id, schema string, t dbx.Table) (string, error) {
 	return a.db.DDL(id, schema, t)

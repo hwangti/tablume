@@ -45,13 +45,15 @@ export function PreviewChanges(arg1:dbx.ApplyRequest):Promise<Array<string>>;
 
 export function QualifiedName(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 
+export function QuoteIdent(arg1:string,arg2:string):Promise<string>;
+
 export function SaveConnection(arg1:dbx.ConnConfig):Promise<dbx.ConnConfig>;
 
 export function SaveTextFile(arg1:string,arg2:string):Promise<string>;
 
 export function SaveWorkspace(arg1:string):Promise<void>;
 
-export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:number):Promise<string>;
+export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:string,arg5:string,arg6:number):Promise<string>;
 
 export function TableDDL(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 

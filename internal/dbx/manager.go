@@ -187,12 +187,21 @@ func (m *Manager) AllColumns(id, schema string) (map[string][]string, error) {
 	return p.d.AllColumns(ctx, p.db, schema)
 }
 
-func (m *Manager) SelectSQL(id, schema string, t Table, limit int) (string, error) {
+func (m *Manager) SelectSQL(id, schema string, t Table, where, orderBy string, limit int) (string, error) {
 	p, err := m.pool(id)
 	if err != nil {
 		return "", err
 	}
-	return p.d.SelectTop(p.d.QualifiedName(schema, t), limit), nil
+	return p.d.Select(p.d.QualifiedName(schema, t), where, orderBy, limit), nil
+}
+
+// QuoteIdent quotes a column name for the connection's dialect.
+func (m *Manager) QuoteIdent(id, name string) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	return p.quote(name), nil
 }
 
 func (m *Manager) QualifiedName(id, schema string, t Table) (string, error) {

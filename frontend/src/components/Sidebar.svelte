@@ -161,7 +161,7 @@
         {
           label: 'SELECT 문을 콘솔에 넣기',
           run: async () => {
-            const sql = await api.SelectSQL(c.id, s.name, t.t, 100)
+            const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100)
             if (activeTab()?.connId === c.id) insertText(sql + ';')
             else openConsole(c.id, { schema: s.name, sql: sql + ';' })
           },
@@ -380,6 +380,12 @@
   .node:hover {
     background: var(--bg-hover);
   }
+  /* Icons keep their size; text truncates instead (comments first). */
+  .node > :global(svg),
+  .node > .chev,
+  .node > .dbicon {
+    flex-shrink: 0;
+  }
   .conn {
     height: 28px;
     box-shadow: inset 3px 0 0 var(--conn-color);
@@ -421,10 +427,11 @@
   .label {
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-shrink: 0;
-    max-width: 100%;
+    flex: 0 0 auto;
+    max-width: 70%; /* the comment gives way first */
   }
   .cmt {
+    flex: 0 1000 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

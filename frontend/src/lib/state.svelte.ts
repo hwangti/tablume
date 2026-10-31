@@ -51,7 +51,20 @@ export interface Tab {
   preview?: boolean
   // 'results' hides the editor so the grid gets the whole tab.
   layout?: 'split' | 'results'
+  // Set for table data tabs: the SELECT is rebuilt from these when the
+  // filter bar or a column header changes. Dropped if the SQL is edited.
+  tableRef?: TableRef
 }
+
+export interface TableRef {
+  schema: string
+  table: Table
+  where: string
+  orderBy: string
+  sort?: { col: string; dir: 'ASC' | 'DESC' } // set by header clicks
+}
+
+export const TABLE_LIMIT = 1000
 
 export interface Toast {
   id: number
@@ -360,26 +373,31 @@ export function cancel(tab: Tab) {
   api.Cancel(tab.id)
 }
 
+const sameTable = (a: Table, b: Table) => a.schema === b.schema && a.name === b.name
+
 export async function openTableData(connId: string, schema: string, t: Table): Promise<Tab> {
-  const sql = await api.SelectSQL(connId, schema, t, 1000)
   // A preview tab with unsaved edits is never replaced.
   let tab = app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
-  if (tab && tab.connId === connId && tab.sql === sql) {
-    app.activeTab = tab.id // same table clicked again
+  if (tab && tab.connId === connId && tab.tableRef?.schema === schema && sameTable(tab.tableRef.table, t)) {
+    app.activeTab = tab.id // same table clicked again: keep its filter
     return tab
   }
+  const sql = await api.SelectSQL(connId, schema, t, '', '', TABLE_LIMIT)
+  const ref: TableRef = { schema, table: t, where: '', orderBy: '' }
   if (tab) {
     tab.connId = connId
     tab.schema = schema
     tab.sql = sql
     tab.title = t.name
     tab.results = []
+    tab.tableRef = ref
     app.activeTab = tab.id
     saveWorkspaceSoon()
   } else {
     tab = openConsole(connId, { schema, sql, title: t.name })
     tab.preview = true
     tab.layout = 'results' // table data: the grid gets the whole tab
+    tab.tableRef = ref
   }
   await runSQL(tab, sql, -1)
   return tab
@@ -392,6 +410,21 @@ export async function openDDL(connId: string, schema: string, t: Table) {
   } catch (e) {
     toast(errText(e), 'error')
   }
+}
+
+/** Re-queries a table data tab from its filter / sort. */
+export async function reloadTable(tab: Tab) {
+  const ref = tab.tableRef
+  if (!ref) return
+  if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return
+  try {
+    tab.sql = await api.SelectSQL(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where, ref.orderBy, TABLE_LIMIT)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  saveWorkspaceSoon()
+  await runSQL(tab, tab.sql, -1)
 }
 
 export function pinTab(tab: Tab | undefined) {
@@ -419,6 +452,7 @@ export function saveWorkspaceSoon() {
         sql: t.sql,
         preview: t.preview,
         layout: t.layout,
+        tableRef: t.tableRef,
       })),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})

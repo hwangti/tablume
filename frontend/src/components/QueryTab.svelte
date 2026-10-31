@@ -16,6 +16,7 @@
     saveWorkspaceSoon,
     toast,
     confirmBox,
+    reloadTable,
     type Tab,
   } from '../lib/state.svelte'
   import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
@@ -81,6 +82,63 @@
     }
   }
 
+  // ---- table data filter bar (WHERE / ORDER BY run on the database)
+  let whereDraft = $state('')
+  let orderDraft = $state('')
+  $effect(() => {
+    whereDraft = tab.tableRef?.where ?? ''
+    orderDraft = tab.tableRef?.orderBy ?? ''
+  })
+
+  function applyFilter() {
+    const ref = tab.tableRef
+    if (!ref) return
+    if (ref.orderBy !== orderDraft) ref.sort = undefined
+    ref.where = whereDraft
+    ref.orderBy = orderDraft
+    reloadTable(tab)
+  }
+
+  function filterKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      applyFilter()
+    } else if (e.key === 'Escape') {
+      whereDraft = tab.tableRef?.where ?? ''
+      orderDraft = tab.tableRef?.orderBy ?? ''
+    }
+  }
+
+  function clearFilter(which: 'where' | 'order') {
+    if (which === 'where') whereDraft = ''
+    else orderDraft = ''
+    applyFilter()
+  }
+
+  // Header click on a table data tab: ORDER BY on the server, cycling
+  // ascending -> descending -> off.
+  async function serverSortBy(c: number) {
+    const ref = tab.tableRef
+    if (!ref || !current?.columns) return
+    const col = current.columns[c].name
+    const dir = ref.sort?.col !== col ? 'ASC' : ref.sort.dir === 'ASC' ? 'DESC' : null
+    try {
+      ref.sort = dir ? { col, dir } : undefined
+      ref.orderBy = dir ? `${await api.QuoteIdent(tab.connId, col)} ${dir}` : ''
+    } catch (e) {
+      toast(errText(e), 'error')
+      return
+    }
+    reloadTable(tab)
+  }
+
+  let serverSort = $derived.by(() => {
+    const s = tab.tableRef?.sort
+    if (!s || !current?.columns) return null
+    const col = current.columns.findIndex((c) => c.name === s.col)
+    return col < 0 ? null : { col, dir: s.dir === 'ASC' ? (1 as const) : (-1 as const) }
+  })
+
   async function rerun() {
     if (!current || !(await guardPending())) return
     await runSQL(tab, current.sql, -1)
@@ -130,7 +188,10 @@
   }
 
   function onSqlChange(v: string) {
-    if (v !== tab.sql) tab.preview = false
+    if (v !== tab.sql) {
+      tab.preview = false
+      tab.tableRef = undefined // hand-written SQL: the filter bar no longer applies
+    }
     tab.sql = v
     saveWorkspaceSoon()
   }
@@ -313,6 +374,33 @@
           <button class="btn mini" onclick={() => exportResult('json')}>JSON</button>
         {/if}
       </div>
+      {#if tab.tableRef}
+        <div class="filterbar">
+          <span class="kw">WHERE</span>
+          <div class="fwrap">
+            <input
+              class="mono"
+              bind:value={whereDraft}
+              onkeydown={filterKey}
+              placeholder="예: status = 'ACTIVE' AND created_at >= '2025-01-01'"
+              spellcheck="false"
+            />
+            {#if tab.tableRef.where}<button class="fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={11} /></button>{/if}
+          </div>
+          <span class="kw">ORDER BY</span>
+          <div class="fwrap order">
+            <input
+              class="mono"
+              bind:value={orderDraft}
+              onkeydown={filterKey}
+              placeholder="예: id DESC  (헤더 클릭으로도 정렬)"
+              spellcheck="false"
+            />
+            {#if tab.tableRef.orderBy}<button class="fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={11} /></button>{/if}
+          </div>
+          <button class="btn mini" onclick={applyFilter} disabled={tab.running} title="Enter">조회</button>
+        </div>
+      {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="rbody" onkeydown={resultsKey}>
         {#if current}
@@ -320,6 +408,8 @@
             bind:this={grid}
             result={current}
             ensureEdit={() => loadEditInfo(tab, current!)}
+            serverSort={tab.tableRef ? serverSort : undefined}
+            onsort={tab.tableRef ? serverSortBy : undefined}
             columns={current.columns!}
             rows={current.rows!}
             hasMore={current.hasMore}
@@ -470,6 +560,52 @@
     height: 6px;
     border-radius: 50%;
     background: var(--danger);
+  }
+  .filterbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+  .kw {
+    color: var(--syn-keyword);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .fwrap {
+    position: relative;
+    flex: 3;
+    min-width: 0;
+  }
+  .fwrap.order {
+    flex: 1.4;
+  }
+  .fwrap input {
+    width: 100%;
+    height: 24px;
+    padding: 2px 22px 2px 7px;
+    font-size: 12px;
+  }
+  .fclear {
+    position: absolute;
+    right: 4px;
+    top: 5px;
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-faint);
+    cursor: pointer;
+  }
+  .fclear:hover {
+    color: var(--text);
+    background: var(--bg-hover);
   }
   .pending {
     color: var(--warn);

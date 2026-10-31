@@ -13,6 +13,8 @@
     loadingMore,
     onloadmore,
     ensureEdit,
+    serverSort = null,
+    onsort,
   }: {
     result: StmtResult
     columns: ResultColumn[]
@@ -22,6 +24,11 @@
     onloadmore: () => void
     // Resolves whether this result can be edited (loads it on first use).
     ensureEdit: () => Promise<EditInfo | null>
+    // When onsort is given (table data tabs), header clicks sort on the
+    // server and serverSort is the indicator; otherwise only the loaded
+    // rows are sorted locally.
+    serverSort?: { col: number; dir: 1 | -1 } | null
+    onsort?: (col: number) => void
   } = $props()
 
   let editing = $state<{ ri: number; vi: number; c: number; value: string } | null>(null)
@@ -115,12 +122,12 @@
       if (inf) toast('읽기 전용: ' + inf.reason)
       return
     }
-    sort = null
     const ri = addRow(result)
-    const c = inf.columns.findIndex((x) => x)
-    anchor = focus = { r: ri, c: Math.max(0, c) }
-    scrollIntoView(ri, Math.max(0, c))
-    startEdit(ri, Math.max(0, c))
+    const vi = order.indexOf(ri)
+    const c = Math.max(0, inf.columns.findIndex((x) => x))
+    anchor = focus = { r: vi, c }
+    scrollIntoView(vi, c)
+    startEdit(vi, c)
   }
 
   export async function deleteRows() {
@@ -184,9 +191,13 @@
   }
 
   // Row order: identity, or sorted by one column (only loaded rows).
+  // New rows always stay at the bottom, below everything fetched so far.
   let order = $derived.by(() => {
-    const idx = rows.map((_, i) => i)
-    if (!sort) return idx
+    const added = st?.added ?? {}
+    const idx: number[] = []
+    const tail: number[] = []
+    for (let i = 0; i < rows.length; i++) (added[i] ? tail : idx).push(i)
+    if (!sort || onsort) return idx.concat(tail)
     const { col, dir } = sort
     const num = numeric[col]
     idx.sort((a, b) => {
@@ -201,8 +212,10 @@
       }
       return x.localeCompare(y, 'ko') * dir
     })
-    return idx
+    return idx.concat(tail)
   })
+
+  let shownSort = $derived(onsort ? (serverSort ?? null) : sort)
 
   let first = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN))
   let last = $derived(Math.min(order.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN))
@@ -212,7 +225,10 @@
 
   function onScroll() {
     scrollTop = scroller.scrollTop
-    if (hasMore && !loadingMore && scroller.scrollTop + scroller.clientHeight > rows.length * ROW_H - ROW_H * 20) {
+    // While new rows are pending at the bottom, don't auto-load more rows
+    // above them (they would jump away); the explicit button still works.
+    const hasAdded = !!st && Object.keys(st.added).length > 0
+    if (hasMore && !loadingMore && !hasAdded && scroller.scrollTop + scroller.clientHeight > rows.length * ROW_H - ROW_H * 20) {
       onloadmore()
     }
   }
@@ -368,6 +384,10 @@
   }
 
   function headerClick(c: number) {
+    if (onsort) {
+      onsort(c)
+      return
+    }
     if (!sort || sort.col !== c) sort = { col: c, dir: 1 }
     else if (sort.dir === 1) sort = { col: c, dir: -1 }
     else sort = null
@@ -418,9 +438,13 @@
       <div class="num corner" style:width="{numW}px"></div>
       {#each columns as col, c (c)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <div class="th" style:width="{widths[c]}px" title="{col.name} {col.type}" onclick={() => headerClick(c)} role="columnheader" tabindex="-1">
+        <div
+          class="th"
+          style:width="{widths[c]}px"
+          title={`${col.name} ${col.type}\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'}`}
+          onclick={() => headerClick(c)} role="columnheader" tabindex="-1">
           <span class="name">{col.name}</span>
-          {#if sort?.col === c}<span class="sort">{sort.dir === 1 ? '▲' : '▼'}</span>{/if}
+          {#if shownSort?.col === c}<span class="sort">{shownSort.dir === 1 ? '▲' : '▼'}</span>{/if}
           <span class="type">{col.type.toLowerCase()}</span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span class="resize" onmousedown={(e) => startResize(e, c)}></span>
