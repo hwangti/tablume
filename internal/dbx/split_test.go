@@ -72,3 +72,15 @@ func TestUTF16(t *testing.T) {
 		t.Fatal(byteOffset(s, 3))
 	}
 }
+
+func TestSortTables(t *testing.T) {
+	ts := []Table{{Name: "b"}, {Name: "_system"}, {Name: "A"}, {Name: "a_b"}, {Name: "ab"}}
+	sortTables(ts)
+	var got []string
+	for _, x := range ts {
+		got = append(got, x.Name)
+	}
+	if !reflect.DeepEqual(got, []string{"_system", "A", "a_b", "ab", "b"}) {
+		t.Fatal(got)
+	}
+}

@@ -4,6 +4,7 @@
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
+  import FilterInput from './FilterInput.svelte'
   import { api, errText } from '../lib/api'
   import { modKey, copyText } from '../lib/clipboard'
   import {
@@ -140,15 +141,14 @@
     reloadTable(tab)
   }
 
-  function filterKey(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      applyFilter()
-    } else if (e.key === 'Escape') {
-      whereDraft = tab.tableRef?.where ?? ''
-      orderDraft = tab.tableRef?.orderBy ?? ''
-    }
+  function revertFilter() {
+    whereDraft = tab.tableRef?.where ?? ''
+    orderDraft = tab.tableRef?.orderBy ?? ''
   }
+
+  const WHERE_KW = ['AND', 'OR', 'NOT', 'IN', 'LIKE', 'IS NULL', 'IS NOT NULL', 'BETWEEN', 'EXISTS', 'NULL', 'TRUE', 'FALSE']
+  const ORDER_KW = ['ASC', 'DESC', 'NULLS FIRST', 'NULLS LAST']
+  let filterCols = $derived((current?.columns ?? []).map((c) => c.name))
 
   function clearFilter(which: 'where' | 'order') {
     if (which === 'where') whereDraft = ''
@@ -472,8 +472,8 @@
             <Icon name="refresh" size={14} />
           </button>
           <div class="dropdown">
-            <button class="btn mini" onclick={toggleExport} title="결과 내보내기">
-              <Icon name="download" size={13} /> 내보내기 <Icon name="chevronDown" size={11} />
+            <button class="icon-btn split" class:active={!!exportMenu} onclick={toggleExport} title="결과 내보내기">
+              <Icon name="download" size={14} /><Icon name="chevronDown" size={10} />
             </button>
             {#if exportMenu}
               <div class="menu" style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
@@ -502,13 +502,13 @@
         <div class="filterbar">
           <span class="kw">WHERE</span>
           <div class="fwrap">
-            <input class="mono" bind:value={whereDraft} onkeydown={filterKey} spellcheck="false" />
-            {#if tab.tableRef.where}<button class="fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={11} /></button>{/if}
+            <FilterInput bind:value={whereDraft} columns={filterCols} keywords={WHERE_KW} onsubmit={applyFilter} onrevert={revertFilter} />
+            {#if tab.tableRef.where}<button class="fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
           </div>
           <span class="kw">ORDER BY</span>
           <div class="fwrap order">
-            <input class="mono" bind:value={orderDraft} onkeydown={filterKey} spellcheck="false" />
-            {#if tab.tableRef.orderBy}<button class="fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={11} /></button>{/if}
+            <FilterInput bind:value={orderDraft} columns={filterCols} keywords={ORDER_KW} onsubmit={applyFilter} onrevert={revertFilter} />
+            {#if tab.tableRef.orderBy}<button class="fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
           </div>
           <button class="btn mini" onclick={applyFilter} disabled={tab.running} title="Enter">조회</button>
         </div>
@@ -694,18 +694,13 @@
   .fwrap.order {
     flex: 1.4;
   }
-  .fwrap input {
-    width: 100%;
-    height: 24px;
-    padding: 2px 22px 2px 7px;
-    font-size: 12px;
-  }
   .fclear {
     position: absolute;
-    right: 4px;
-    top: 5px;
+    right: 3px;
+    top: 2px;
+    z-index: 1;
     display: inline-flex;
-    padding: 2px;
+    padding: 3px;
     border: none;
     border-radius: 3px;
     background: none;
@@ -718,6 +713,15 @@
   }
   .dropdown {
     position: relative;
+  }
+  .icon-btn.split {
+    width: auto;
+    gap: 1px;
+    padding: 0 3px 0 5px;
+  }
+  .icon-btn.split.active {
+    background: var(--bg-hover);
+    color: var(--text);
   }
   .dropdown .menu {
     position: fixed;

@@ -55,11 +55,42 @@
     password = ''
   }
 
+  // Tabs reorder by dragging; the array is reordered live while moving.
+  let dragging = $state<string | null>(null)
+  let tabsEl: HTMLDivElement
+
   function tabMouseDown(e: MouseEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault()
       closeTab(id)
+      return
     }
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return
+    const x0 = e.clientX
+    const move = (ev: MouseEvent) => {
+      if (!dragging && Math.abs(ev.clientX - x0) < 5) return
+      dragging = id
+      const els = [...tabsEl.querySelectorAll<HTMLElement>('.tab')]
+      const from = app.tabs.findIndex((t) => t.id === id)
+      let to = els.findIndex((el) => {
+        const r = el.getBoundingClientRect()
+        return ev.clientX < r.left + r.width / 2
+      })
+      if (to < 0) to = els.length - 1
+      else if (to > from) to -= 1
+      if (to !== from && to >= 0) {
+        const [t] = app.tabs.splice(from, 1)
+        app.tabs.splice(to, 0, t)
+      }
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      if (dragging) saveWorkspaceSoon()
+      dragging = null
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
   }
 
   let renaming = $state<string | null>(null)
@@ -73,13 +104,14 @@
   <div class="vdivider" onmousedown={startDrag}></div>
 
   <main>
-    <div class="tabs">
+    <div class="tabs" bind:this={tabsEl}>
       {#each app.tabs as t (t.id)}
         {@const c = connById(t.connId)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div
           class="tab"
           class:on={t.id === app.activeTab}
+          class:dragging={dragging === t.id}
           style:--conn-color={c?.color || 'transparent'}
           onclick={() => (app.activeTab = t.id)}
           onmousedown={(e) => tabMouseDown(e, t.id)}
@@ -220,6 +252,10 @@
     background: var(--bg);
     color: var(--text);
     box-shadow: inset 0 -2px 0 var(--accent), inset 0 3px 0 var(--conn-color);
+  }
+  .tab.dragging {
+    opacity: 0.6;
+    background: var(--bg-hover);
   }
   .tab .name {
     overflow: hidden;

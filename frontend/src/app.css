@@ -28,7 +28,7 @@
   --syn-op: #bcbec4;
   --syn-ident: #bcbec4;
   --editor-sel: #214283;
-  --editor-line: #26282e;
+  --editor-line: rgba(255, 255, 255, 0.035);
   --exec-mark: rgba(53, 116, 240, 0.14);
   --cell-num: #6cb6ff;
   --cell-date: #8fd18f;
@@ -72,7 +72,7 @@
     --syn-op: #1e1f22;
     --syn-ident: #1e1f22;
     --editor-sel: #a6d2ff;
-    --editor-line: #f5f8fe;
+    --editor-line: rgba(53, 116, 240, 0.05);
     --exec-mark: rgba(53, 116, 240, 0.1);
     --cell-num: #1750eb;
     --cell-date: #067d17;

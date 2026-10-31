@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,7 +165,32 @@ func (m *Manager) Tables(id, schema string) ([]Table, error) {
 	}
 	ctx, cancel := metaCtx()
 	defer cancel()
-	return p.d.ListTables(ctx, p.db, schema)
+	tables, err := p.d.ListTables(ctx, p.db, schema)
+	if err != nil {
+		return nil, err
+	}
+	sortTables(tables)
+	return tables, nil
+}
+
+// sortTables orders by name the way most clients do, case-insensitively by
+// character code, so "_sys" comes before "a" regardless of the server's
+// collation (which may ignore punctuation). SQL Server's dbo comes first.
+func sortTables(ts []Table) {
+	sort.SliceStable(ts, func(i, j int) bool {
+		a, b := ts[i], ts[j]
+		if a.Schema != b.Schema {
+			if (a.Schema == "dbo") != (b.Schema == "dbo") {
+				return a.Schema == "dbo"
+			}
+			return strings.ToLower(a.Schema) < strings.ToLower(b.Schema)
+		}
+		la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name)
+		if la != lb {
+			return la < lb
+		}
+		return a.Name < b.Name
+	})
 }
 
 func (m *Manager) Columns(id, schema string, t Table) ([]Column, error) {

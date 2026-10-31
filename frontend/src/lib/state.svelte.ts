@@ -64,7 +64,9 @@ export interface TableRef {
   sort?: { col: string; dir: 'ASC' | 'DESC' } // set by header clicks
 }
 
-export const TABLE_LIMIT = 1000
+// Table tabs don't limit rows: they stream in "fetch size" pages as the grid
+// scrolls, so every row is reachable.
+export const TABLE_LIMIT = 0
 
 export interface Toast {
   id: number
@@ -84,7 +86,8 @@ export const app = $state({
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
   // What the schema tree shows next to each table / column.
-  treeView: { comment: true, rows: false, size: false },
+  treeView: { comment: true, tableCount: true, rows: false, size: false },
+  tableOpen: { pkDesc: false },
 })
 
 let toastSeq = 0
@@ -382,8 +385,9 @@ export async function openTableData(connId: string, schema: string, t: Table): P
     app.activeTab = tab.id // same table clicked again: keep its filter
     return tab
   }
-  const sql = await api.SelectSQL(connId, schema, t, '', '', TABLE_LIMIT)
   const ref: TableRef = { schema, table: t, where: '', orderBy: '' }
+  if (app.tableOpen.pkDesc) await applyPkDesc(connId, ref)
+  const sql = await api.SelectSQL(connId, schema, t, ref.where, ref.orderBy, TABLE_LIMIT)
   if (tab) {
     tab.connId = connId
     tab.schema = schema
@@ -409,6 +413,19 @@ export async function openDDL(connId: string, schema: string, t: Table) {
     openConsole(connId, { schema, sql: ddl, title: `DDL: ${t.name}` })
   } catch (e) {
     toast(errText(e), 'error')
+  }
+}
+
+/** Default sort for newly opened tables: primary key, descending. */
+async function applyPkDesc(connId: string, ref: TableRef) {
+  try {
+    const pk = ((await api.ListColumns(connId, ref.schema, ref.table)) ?? []).filter((c) => c.pk)
+    if (!pk.length) return
+    const quoted = await Promise.all(pk.map((c) => api.QuoteIdent(connId, c.name)))
+    ref.orderBy = quoted.map((q) => q + ' DESC').join(', ')
+    if (pk.length === 1) ref.sort = { col: pk[0].name, dir: 'DESC' }
+  } catch {
+    /* no sort then */
   }
 }
 
@@ -444,6 +461,7 @@ export function saveWorkspaceSoon() {
       activeTab: app.activeTab,
       fetchSize: app.fetchSize,
       treeView: app.treeView,
+      tableOpen: app.tableOpen,
       tabs: app.tabs.map((t) => ({
         id: t.id,
         title: t.title,
@@ -466,6 +484,7 @@ export async function loadWorkspace() {
     const data = JSON.parse(raw)
     if (data.fetchSize) app.fetchSize = data.fetchSize
     if (data.treeView) app.treeView = { ...app.treeView, ...data.treeView }
+    if (data.tableOpen) app.tableOpen = { ...app.tableOpen, ...data.tableOpen }
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
       app.tabs.push({

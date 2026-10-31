@@ -20,7 +20,7 @@
   } from '../lib/state.svelte'
   import { api } from '../lib/api'
   import { copyText } from '../lib/clipboard'
-  import { driverLabel, type ConnConfig } from '../lib/types'
+  import { driverLabel, type ConnConfig, type Column } from '../lib/types'
 
   let filter = $state('')
   let viewMenu = $state(false)
@@ -31,6 +31,8 @@
     if (n === undefined || n < 0) return ''
     return n < 10000 ? n.toLocaleString('ko-KR') : compact.format(n)
   }
+
+
 
   function fmtSize(b: number | undefined): string {
     if (b === undefined || b < 0) return ''
@@ -44,22 +46,11 @@
     return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + units[i]
   }
 
-  function tableTitle(t: TableNode): string {
-    const lines = [t.t.name]
-    if (t.t.comment) lines.push(t.t.comment)
-    const r = fmtRows(t.t.rows)
-    if (r) lines.push(`행 수(통계 기준 추정): ${r}`)
-    const sz = fmtSize(t.t.size)
-    if (sz) lines.push(`크기: ${sz}`)
-    lines.push('', '클릭: 데이터 보기 · 더블클릭: 탭 고정 · 화살표: 컬럼 보기')
-    return lines.join('\n')
-  }
-
   function tableMeta(t: TableNode): string {
     const parts: string[] = []
     if (app.treeView.rows) {
       const r = fmtRows(t.t.rows)
-      if (r) parts.push(r + '행')
+      if (r) parts.push(r)
     }
     if (app.treeView.size) {
       const sz = fmtSize(t.t.size)
@@ -161,6 +152,189 @@
     return `${col.name} ${col.type}${col.nullable ? '' : ' NOT NULL'}${tags ? '\n' + tags : ''}${col.comment ? '\n' + col.comment : ''}`
   }
 
+  // ---------------------------------------------------------------- flat rows
+  // The tree renders as one list so every level shares the same layout and
+  // the keyboard can walk it.
+  type Row =
+    | { kind: 'conn'; key: string; depth: 0; c: ConnConfig }
+    | { kind: 'schema'; key: string; depth: 1; c: ConnConfig; s: SchemaNode }
+    | { kind: 'table'; key: string; depth: 2; c: ConnConfig; s: SchemaNode; t: TableNode }
+    | { kind: 'col'; key: string; depth: 3; c: ConnConfig; t: TableNode; col: Column }
+    | { kind: 'info'; key: string; depth: number; text: string; cls: string; run?: () => void }
+
+  const tableKey = (connId: string, schema: string, t: { schema: string; name: string }) =>
+    `t|${connId}|${schema}|${t.schema}.${t.name}`
+
+  let rows = $derived.by(() => {
+    const out: Row[] = []
+    for (const c of app.connections) {
+      const st = app.conn[c.id]
+      out.push({ kind: 'conn', key: 'c|' + c.id, depth: 0, c })
+      if (st?.status === 'error' && st.error) out.push({ kind: 'info', key: 'ce|' + c.id, depth: 1, text: st.error, cls: 'err-line' })
+      if (st?.status !== 'connected' || !st.expanded) continue
+      for (const s of shownSchemas(c.id)) {
+        out.push({ kind: 'schema', key: `s|${c.id}|${s.name}`, depth: 1, c, s })
+        if (!(s.expanded || filtering)) continue
+        if (s.error) out.push({ kind: 'info', key: `se|${c.id}|${s.name}`, depth: 2, text: s.error, cls: 'err-line' })
+        for (const t of (s.tables ?? []).filter((t) => matches(t.t.name))) {
+          const tk = tableKey(c.id, s.name, t.t)
+          out.push({ kind: 'table', key: tk, depth: 2, c, s, t })
+          if (!t.expanded) continue
+          if (t.error) out.push({ kind: 'info', key: 'te|' + tk, depth: 3, text: t.error, cls: 'err-line' })
+          for (const col of t.columns ?? []) out.push({ kind: 'col', key: `${tk}|${col.name}`, depth: 3, c, t, col })
+        }
+      }
+      if (filtering && pendingSchemas(c.id) > 0)
+        out.push({ kind: 'info', key: 'f|' + c.id, depth: 1, text: `테이블 찾는 중… (스키마 ${pendingSchemas(c.id)}개 남음)`, cls: 'searching' })
+      else if (filtering && shownSchemas(c.id).length === 0)
+        out.push({ kind: 'info', key: 'f|' + c.id, depth: 1, text: '일치하는 테이블이 없습니다', cls: 'searching' })
+      const hidden = hiddenCount(c.id)
+      if (hidden > 0 && !filtering)
+        out.push({ kind: 'info', key: 'h|' + c.id, depth: 1, text: `시스템 스키마 ${hidden}개 더 보기`, cls: 'more', run: () => (st.showAllSchemas = true) })
+    }
+    return out
+  })
+
+  // Table of the active tab, highlighted in the tree.
+  let activeKey = $derived.by(() => {
+    const tab = activeTab()
+    const ref = tab?.tableRef
+    return ref ? tableKey(tab!.connId, ref.schema, ref.table) : ''
+  })
+
+  let cursor = $state('')
+  let treeEl: HTMLDivElement
+
+  function isOpen(r: Row): boolean {
+    if (r.kind === 'conn') return app.conn[r.c.id]?.status === 'connected' && !!app.conn[r.c.id]?.expanded
+    if (r.kind === 'schema') return r.s.expanded || filtering
+    if (r.kind === 'table') return r.t.expanded
+    return false
+  }
+
+  async function toggle(r: Row) {
+    if (r.kind === 'conn') await toggleConn(r.c)
+    else if (r.kind === 'schema') await toggleSchema(r.c.id, r.s)
+    else if (r.kind === 'table') await toggleTable(r.c.id, r.s.name, r.t)
+  }
+
+  function rowClick(r: Row) {
+    cursor = r.key
+    treeEl.focus({ preventScroll: true })
+    if (r.kind === 'conn' || r.kind === 'schema') toggle(r)
+    else if (r.kind === 'info') r.run?.()
+  }
+
+  function rowDblClick(r: Row) {
+    if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
+    else if (r.kind === 'conn' && app.conn[r.c.id]?.status === 'connected') openConsole(r.c.id)
+  }
+
+  function moveCursor(key: string) {
+    cursor = key
+    requestAnimationFrame(() => treeEl.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' }))
+  }
+
+  function treeKey(e: KeyboardEvent) {
+    const nav = rows.filter((r) => r.kind !== 'info')
+    if (!nav.length) return
+    let i = nav.findIndex((r) => r.key === cursor)
+    const r = i >= 0 ? nav[i] : null
+    switch (e.key) {
+      case 'ArrowDown':
+        moveCursor(nav[Math.min(nav.length - 1, i + 1)].key)
+        break
+      case 'ArrowUp':
+        moveCursor(nav[Math.max(0, i - 1)].key)
+        break
+      case 'Home':
+        moveCursor(nav[0].key)
+        break
+      case 'End':
+        moveCursor(nav[nav.length - 1].key)
+        break
+      case 'ArrowRight':
+        if (!r || r.kind === 'col') break
+        if (!isOpen(r)) toggle(r)
+        else if (nav[i + 1] && nav[i + 1].depth > r.depth) moveCursor(nav[i + 1].key)
+        break
+      case 'ArrowLeft':
+        if (!r) break
+        if (r.kind !== 'col' && isOpen(r) && !(r.kind === 'schema' && filtering)) toggle(r)
+        else {
+          while (i > 0 && nav[i].depth >= r.depth) i--
+          if (nav[i].depth < r.depth) moveCursor(nav[i].key)
+        }
+        break
+      case 'Enter':
+        if (!r) break
+        if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
+        else if (r.kind !== 'col') toggle(r)
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+  }
+
+  // ---------------------------------------------------------------- tooltip
+  // A floating panel next to the tree: shows the full comment, unlike the
+  // native title which truncates and appears late.
+  let tip = $state<null | { top: number; left: number; title: string; lines: string[] }>(null)
+  let tipTimer: ReturnType<typeof setTimeout> | undefined
+
+  function tipFor(r: Row): { title: string; lines: string[] } | null {
+    if (r.kind === 'table') {
+      const lines: string[] = []
+      if (r.t.t.comment) lines.push(r.t.t.comment)
+      const meta = [
+        r.t.t.type !== 'TABLE' ? r.t.t.type : '',
+        fmtRows(r.t.t.rows) && `행 ${fmtRows(r.t.t.rows)} (추정)`,
+        fmtSize(r.t.t.size) && `크기 ${fmtSize(r.t.t.size)}`,
+      ].filter(Boolean)
+      if (meta.length) lines.push(meta.join(' · '))
+      lines.push('더블클릭 / Enter: 데이터 열기')
+      return { title: r.t.t.name, lines }
+    }
+    if (r.kind === 'col') {
+      const col = r.col
+      const tags = [col.pk && 'PK', col.unique && 'UNIQUE', col.fk && `FK → ${col.fk}`].filter(Boolean).join(' · ')
+      const lines = [`${col.type}${col.nullable ? '' : ' NOT NULL'}`]
+      if (tags) lines.push(tags)
+      if (col.comment) lines.push(col.comment)
+      return { title: col.name, lines }
+    }
+    return null
+  }
+
+  function rowEnter(e: MouseEvent, r: Row) {
+    clearTimeout(tipTimer)
+    const content = tipFor(r)
+    if (!content) {
+      tip = null
+      return
+    }
+    const el = e.currentTarget as HTMLElement
+    tipTimer = setTimeout(() => {
+      const rect = el.getBoundingClientRect()
+      const side = treeEl.getBoundingClientRect()
+      tip = { top: Math.min(rect.top, window.innerHeight - 120), left: side.right + 6, ...content }
+    }, tip ? 80 : 450)
+  }
+
+  function rowLeave() {
+    clearTimeout(tipTimer)
+    tipTimer = setTimeout(() => (tip = null), 60)
+  }
+
+  function rowMenu(e: MouseEvent, r: Row) {
+    cursor = r.key
+    tip = null
+    if (r.kind === 'conn') connMenu(e, r.c)
+    else if (r.kind === 'schema') schemaMenu(e, r.c, r.s)
+    else if (r.kind === 'table') tableMenu(e, r.c, r.s, r.t)
+  }
+
   function hiddenCount(id: string) {
     return (app.conn[id]?.schemas.length ?? 0) - visibleSchemas(id).length
   }
@@ -202,6 +376,7 @@
       y: e.clientY,
       items: [
         { label: 'DDL 보기', run: () => openDDL(c.id, s.name, t.t) },
+        { label: '데이터 보기', run: () => openTable(c.id, s.name, t) },
         { label: '새 탭에서 데이터 보기', run: () => pinTable(c.id, s.name, t) },
         {
           label: 'SELECT 문을 콘솔에 넣기',
@@ -254,8 +429,11 @@
         <div class="viewmenu" onclick={(e) => e.stopPropagation()}>
           <div class="vm-title">트리에 표시</div>
           <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
-          <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 행 수 (통계 기준 추정)</label>
-          <label><input type="checkbox" bind:checked={app.treeView.size} onchange={saveWorkspaceSoon} /> 크기</label>
+          <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
+          <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 테이블 행 수 (통계 기준 추정)</label>
+          <label><input type="checkbox" bind:checked={app.treeView.size} onchange={saveWorkspaceSoon} /> 테이블 크기</label>
+          <div class="vm-title sep">테이블 열 때</div>
+          <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> 기본 정렬: PK 내림차순</label>
         </div>
       {/if}
     </div>
@@ -264,10 +442,11 @@
   <div class="filter">
     <Icon name="filter" size={14} />
     <input bind:value={filter} placeholder="테이블 필터" spellcheck="false" />
-    {#if filter}<button class="icon-btn small" onclick={() => (filter = '')}><Icon name="close" size={12} /></button>{/if}
+    {#if filter}<button class="icon-btn clear" title="필터 지우기" onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
   </div>
 
-  <div class="tree">
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div class="tree" bind:this={treeEl} tabindex="0" role="tree" onkeydown={treeKey} onscroll={() => (tip = null)}>
     {#if app.connections.length === 0}
       <div class="hint">
         <p>저장된 연결이 없습니다.</p>
@@ -275,97 +454,82 @@
       </div>
     {/if}
 
-    {#each app.connections as c (c.id)}
-      {@const st = app.conn[c.id]}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div
-        class="node conn"
-        style:--conn-color={c.color || 'transparent'}
-        onclick={() => toggleConn(c)}
-        ondblclick={() => st?.status === 'connected' && openConsole(c.id)}
-        oncontextmenu={(e) => connMenu(e, c)}
-        title="{driverLabel(c.driver)}{st?.version ? ' · ' + st.version : ''}"
-      >
-        <span class="chev" class:open={st?.expanded && st?.status === 'connected'}><Icon name="chevron" size={12} /></span>
-        <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
-        <span class="label">{c.name}</span>
-        {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
-        <span class="drv">{driverLabel(c.driver)}</span>
-        <button class="icon-btn small act" title="새 콘솔" onclick={(e) => (e.stopPropagation(), openConsole(c.id))}>
-          <Icon name="console" size={14} />
-        </button>
-      </div>
-
-      {#if st?.status === 'connected' && st.expanded}
-        {#each shownSchemas(c.id) as s (s.name)}
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="node" style:padding-left="22px" onclick={() => toggleSchema(c.id, s)} oncontextmenu={(e) => schemaMenu(e, c, s)}>
-            <span class="chev" class:open={s.expanded || filtering}><Icon name="chevron" size={12} /></span>
-            <Icon name="schema" size={15} color="var(--warn)" />
-            <span class="label" class:current={s.name === st.current}>{s.name}</span>
-            {#if s.loading}<span class="spin"></span>{/if}
-            {#if s.tables}<span class="count">{s.tables.length}</span>{/if}
-          </div>
-          {#if s.expanded || filtering}
-            {#if s.error}<div class="err-line" style:padding-left="44px">{s.error}</div>{/if}
-            {#each (s.tables ?? []).filter((t) => matches(t.t.name)) as t (t.t.schema + '.' + t.t.name)}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div
-                class="node"
-                style:padding-left="38px"
-                onclick={() => openTable(c.id, s.name, t)}
-                ondblclick={() => pinTable(c.id, s.name, t)}
-                oncontextmenu={(e) => tableMenu(e, c, s, t)}
-                title={tableTitle(t)}
-              >
-                <button
-                  class="chev btn-chev"
-                  class:open={t.expanded}
-                  onclick={(e) => (e.stopPropagation(), toggleTable(c.id, s.name, t))}
-                  ondblclick={(e) => e.stopPropagation()}
-                  aria-label="컬럼 펼치기"
-                >
-                  <Icon name="chevron" size={12} />
-                </button>
-                <Icon name={t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
-                <span class="label">{tableLabel(t, c.driver)}</span>
-                {#if app.treeView.comment && t.t.comment}<span class="cmt">{t.t.comment}</span>{/if}
-                {#if t.loading}<span class="spin"></span>{/if}
-                {#if tableMeta(t)}<span class="tmeta">{tableMeta(t)}</span>{/if}
-              </div>
-              {#if t.expanded && t.columns}
-                {#each t.columns as col (col.name)}
-                  <div
-                    class="node col"
-                    style:padding-left="70px"
-                    title={columnTitle(col)}
-                  >
-                    <Icon name={keyIcon(col).name} size={13} color={keyIcon(col).color} />
-                    <span class="label">{col.name}</span>
-                    {#if app.treeView.comment && col.comment}<span class="cmt">{col.comment}</span>{/if}
-                    <span class="ctype">{col.type.toLowerCase()}{col.nullable ? '' : ' !'}</span>
-                  </div>
-                {/each}
-              {/if}
-              {#if t.expanded && t.error}<div class="err-line" style:padding-left="70px">{t.error}</div>{/if}
-            {/each}
+    {#each rows as r (r.key)}
+      {#if r.kind === 'info'}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="node info {r.cls}" style:padding-left="{8 + r.depth * 16 + 18}px" title={r.text} onclick={() => r.run?.()}>
+          {#if r.cls === 'searching' && r.text.includes('찾는 중')}<span class="spin"></span>{/if}
+          <span class="label">{r.text}</span>
+        </div>
+      {:else}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div
+          class="node {r.kind}"
+          class:cursor={cursor === r.key}
+          class:active={r.key === activeKey}
+          data-key={r.key}
+          style:padding-left="{8 + r.depth * 16}px"
+          style:--conn-color={r.kind === 'conn' ? r.c.color || 'transparent' : null}
+          onclick={() => rowClick(r)}
+          ondblclick={() => rowDblClick(r)}
+          oncontextmenu={(e) => rowMenu(e, r)}
+          onmouseenter={(e) => rowEnter(e, r)}
+          onmouseleave={rowLeave}
+          title={r.kind === 'conn' ? `${driverLabel(r.c.driver)}${app.conn[r.c.id]?.version ? ' · ' + app.conn[r.c.id]?.version : ''}` : undefined}
+        >
+          {#if r.kind === 'col'}
+            <span class="chev-slot"></span>
+          {:else}
+            <button
+              class="chev-slot chev"
+              class:open={isOpen(r)}
+              tabindex="-1"
+              aria-label="펼치기"
+              onclick={(e) => (e.stopPropagation(), (cursor = r.key), toggle(r))}
+              ondblclick={(e) => e.stopPropagation()}
+            >
+              <Icon name="chevron" size={12} />
+            </button>
           {/if}
-        {/each}
-        {#if filtering && pendingSchemas(c.id) > 0}
-          <div class="searching"><span class="spin"></span> 테이블 찾는 중… (스키마 {pendingSchemas(c.id)}개 남음)</div>
-        {:else if filtering && shownSchemas(c.id).length === 0}
-          <div class="searching">일치하는 테이블이 없습니다</div>
-        {/if}
-        {#if hiddenCount(c.id) > 0 && !filtering}
-          <button class="more" onclick={() => (st.showAllSchemas = true)}>시스템 스키마 {hiddenCount(c.id)}개 더 보기</button>
-        {/if}
-      {/if}
-      {#if st?.status === 'error' && st.error}
-        <div class="err-line" style:padding-left="22px" title={st.error}>{st.error}</div>
+
+          {#if r.kind === 'conn'}
+            {@const st = app.conn[r.c.id]}
+            <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
+            <span class="label">{r.c.name}</span>
+            {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
+            <span class="drv">{driverLabel(r.c.driver)}</span>
+            <button class="icon-btn small act" title="새 콘솔" onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
+              <Icon name="console" size={14} />
+            </button>
+          {:else if r.kind === 'schema'}
+            <Icon name="schema" size={15} color="var(--warn)" />
+            <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
+            {#if r.s.loading}<span class="spin"></span>{/if}
+            {#if r.s.tables && app.treeView.tableCount}<span class="count">{r.s.tables.length}</span>{/if}
+          {:else if r.kind === 'table'}
+            <Icon name={r.t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
+            <span class="label">{tableLabel(r.t, r.c.driver)}</span>
+            {#if app.treeView.comment && r.t.t.comment}<span class="cmt">{r.t.t.comment}</span>{/if}
+            {#if r.t.loading}<span class="spin"></span>{/if}
+            {#if tableMeta(r.t)}<span class="tmeta">{tableMeta(r.t)}</span>{/if}
+          {:else if r.kind === 'col'}
+            <Icon name={keyIcon(r.col).name} size={13} color={keyIcon(r.col).color} />
+            <span class="label">{r.col.name}</span>
+            {#if app.treeView.comment && r.col.comment}<span class="cmt">{r.col.comment}</span>{/if}
+            <span class="ctype">{r.col.type.toLowerCase()}{r.col.nullable ? '' : ' !'}</span>
+          {/if}
+        </div>
       {/if}
     {/each}
   </div>
 </aside>
+
+{#if tip}
+  <div class="tip" style:top="{tip.top}px" style:left="{tip.left}px">
+    <div class="tip-title">{tip.title}</div>
+    {#each tip.lines as l, i (i)}<div class="tip-line">{l}</div>{/each}
+  </div>
+{/if}
 
 {#if menu}
   <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px">
@@ -417,6 +581,86 @@
     flex: 1;
     overflow: auto;
     padding-bottom: 20px;
+    outline: none;
+  }
+  .node.cursor {
+    background: var(--bg-hover);
+  }
+  .tree:focus .node.cursor {
+    background: var(--bg-select);
+  }
+  .node.active {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .node.table.active .label {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .chev-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+    height: 18px;
+    margin-right: 1px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-faint);
+  }
+  button.chev-slot {
+    cursor: pointer;
+  }
+  button.chev-slot:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .chev-slot :global(svg) {
+    transition: transform 0.1s;
+  }
+  .chev-slot.open :global(svg) {
+    transform: rotate(90deg);
+  }
+  .info {
+    cursor: default;
+  }
+  .icon-btn.clear {
+    width: 22px;
+    height: 22px;
+    margin-right: -3px;
+  }
+  .tip {
+    position: fixed;
+    z-index: 120;
+    max-width: 380px;
+    padding: 8px 10px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    line-height: 1.45;
+  }
+  .tip-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+    word-break: break-all;
+  }
+  .tip-line {
+    color: var(--text-dim);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tip-line:last-child:not(:first-of-type) {
+    color: var(--text-faint);
+  }
+  .vm-title.sep {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
   }
   .node {
     display: flex;
@@ -439,30 +683,6 @@
   .conn {
     height: 28px;
     box-shadow: inset 3px 0 0 var(--conn-color);
-  }
-  .chev {
-    display: inline-flex;
-    width: 12px;
-    color: var(--text-faint);
-    transition: transform 0.1s;
-  }
-  .chev.open {
-    transform: rotate(90deg);
-  }
-  .btn-chev {
-    justify-content: center;
-    width: 16px;
-    height: 18px;
-    margin: 0 -2px;
-    padding: 0;
-    border: none;
-    border-radius: 3px;
-    background: none;
-    cursor: pointer;
-  }
-  .btn-chev:hover {
-    background: var(--bg-hover);
-    color: var(--text);
   }
   .dbicon {
     display: inline-flex;
@@ -571,32 +791,22 @@
     width: 20px;
     height: 20px;
   }
-  .err-line {
-    padding: 2px 8px;
+  .node.err-line {
     color: var(--danger);
     font-size: 11.5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .more {
-    display: block;
-    margin: 2px 0 4px 44px;
-    padding: 0;
-    border: none;
-    background: none;
+  .node.more {
     color: var(--text-dim);
     font-size: 11.5px;
     cursor: pointer;
   }
-  .more:hover {
+  .node.more:hover {
     color: var(--accent);
   }
-  .searching {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 8px 3px 26px;
+  .node.searching {
     color: var(--text-faint);
     font-size: 11.5px;
   }

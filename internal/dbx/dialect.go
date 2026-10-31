@@ -29,7 +29,8 @@ type Dialect interface {
 	AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error)
 	UseSchema(schema string) string
 	QualifiedName(schema string, t Table) string
-	// Select builds SELECT * with an optional WHERE / ORDER BY and a row limit.
+	// Select builds SELECT * with an optional WHERE / ORDER BY and a row
+	// limit; n <= 0 means no limit (rows are then fetched incrementally).
 	Select(qualified, where, orderBy string, n int) string
 	Version(ctx context.Context, q Querier) string
 	// DDL returns CREATE statements; it gets its own connection because
@@ -268,7 +269,7 @@ func (mysqlDialect) QualifiedName(schema string, t Table) string {
 	return quoteWith(schema, "`", "`") + "." + quoteWith(t.Name, "`", "`")
 }
 func (mysqlDialect) Select(q, where, orderBy string, n int) string {
-	return selectWithLimit(q, where, orderBy, fmt.Sprintf(" LIMIT %d", n))
+	return selectWithLimit(q, where, orderBy, limitClause(n))
 }
 func (mysqlDialect) Version(ctx context.Context, q Querier) string {
 	return firstString(ctx, q, "SELECT VERSION()")
@@ -359,7 +360,7 @@ func (pgDialect) QualifiedName(schema string, t Table) string {
 	return quoteWith(schema, `"`, `"`) + "." + quoteWith(t.Name, `"`, `"`)
 }
 func (pgDialect) Select(q, where, orderBy string, n int) string {
-	return selectWithLimit(q, where, orderBy, fmt.Sprintf(" LIMIT %d", n))
+	return selectWithLimit(q, where, orderBy, limitClause(n))
 }
 func (pgDialect) Version(ctx context.Context, q Querier) string {
 	return firstString(ctx, q, "SHOW server_version")
@@ -474,6 +475,9 @@ func (mssqlDialect) QualifiedName(db string, t Table) string {
 	return msq(db) + "." + msq(s) + "." + msq(t.Name)
 }
 func (mssqlDialect) Select(q, where, orderBy string, n int) string {
+	if n <= 0 {
+		return selectWithLimit(q, where, orderBy, "")
+	}
 	sql := fmt.Sprintf("SELECT TOP %d * FROM %s", n, q)
 	if w := strings.TrimSpace(where); w != "" {
 		sql += " WHERE " + w
@@ -582,6 +586,9 @@ func (oracleDialect) QualifiedName(schema string, t Table) string {
 func (oracleDialect) Select(q, where, orderBy string, n int) string {
 	// ROWNUM works on every version, including 11g; with ORDER BY the limit
 	// has to wrap a subquery so it applies after sorting.
+	if n <= 0 {
+		return selectWithLimit(q, where, orderBy, "")
+	}
 	if strings.TrimSpace(orderBy) == "" {
 		if strings.TrimSpace(where) == "" {
 			return fmt.Sprintf("SELECT * FROM %s WHERE ROWNUM <= %d", q, n)
@@ -642,7 +649,7 @@ func (sqliteDialect) QualifiedName(schema string, t Table) string {
 	return quoteWith(schema, `"`, `"`) + "." + quoteWith(t.Name, `"`, `"`)
 }
 func (sqliteDialect) Select(q, where, orderBy string, n int) string {
-	return selectWithLimit(q, where, orderBy, fmt.Sprintf(" LIMIT %d", n))
+	return selectWithLimit(q, where, orderBy, limitClause(n))
 }
 func (sqliteDialect) Version(ctx context.Context, q Querier) string {
 	return "SQLite " + firstString(ctx, q, "SELECT sqlite_version()")
@@ -711,6 +718,13 @@ func stripLeadingComments(s string) string {
 			return s
 		}
 	}
+}
+
+func limitClause(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" LIMIT %d", n)
 }
 
 func selectWithLimit(q, where, orderBy, limit string) string {

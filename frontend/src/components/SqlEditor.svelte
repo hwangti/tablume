@@ -29,7 +29,7 @@
   import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from '@codemirror/commands'
   import { sql, MySQL, MariaSQL, PostgreSQL, MSSQL, PLSQL, SQLite, StandardSQL, type SQLDialect } from '@codemirror/lang-sql'
   import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language'
-  import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+  import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, acceptCompletion } from '@codemirror/autocomplete'
   import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
   import { tags as t } from '@lezer/highlight'
   import type { Driver } from '../lib/types'
@@ -98,6 +98,7 @@
     '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--accent) 22%, transparent)' },
     '&.cm-focused .cm-matchingBracket': { backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)', outline: 'none' },
     '.cm-tooltip': { backgroundColor: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)', fontSize: '12.5px' },
     '.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px !important' },
     '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'var(--bg-select)', color: 'var(--text)' },
     '.cm-completionDetail': { color: 'var(--text-dim)', fontStyle: 'normal', marginLeft: '8px' },
@@ -108,12 +109,25 @@
     '.cm-searchMatch': { backgroundColor: 'color-mix(in srgb, var(--warn) 30%, transparent)' },
   })
 
+  // Tab accepts the completion and replaces the whole word under the caret
+  // (Enter keeps the rest of the word), like JetBrains IDEs.
+  function acceptReplacing(v: EditorView): boolean {
+    if (completionStatus(v.state) !== 'active') return false
+    if (!acceptCompletion(v)) return false
+    const pos = v.state.selection.main.head
+    const line = v.state.doc.lineAt(pos)
+    const rest = /^[\p{L}\p{N}_$#]*/u.exec(line.text.slice(pos - line.from))![0]
+    if (rest) v.dispatch({ changes: { from: pos, to: pos + rest.length } })
+    return true
+  }
+
   onMount(() => {
     const runKeys = Prec.highest(
       keymap.of([
         { key: 'Mod-Enter', run: () => (onrun(), true) },
         { key: 'Shift-Mod-Enter', run: () => (onrunall(), true) },
         { key: 'Mod-/', run: toggleComment },
+        { key: 'Tab', run: acceptReplacing },
       ]),
     )
     view = new EditorView({
