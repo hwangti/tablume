@@ -5,7 +5,7 @@
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import { api, errText } from '../lib/api'
-  import { modKey } from '../lib/clipboard'
+  import { modKey, copyText } from '../lib/clipboard'
   import {
     app,
     connById,
@@ -17,6 +17,7 @@
     toast,
     confirmBox,
     reloadTable,
+    openConsole,
     type Tab,
   } from '../lib/state.svelte'
   import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
@@ -37,7 +38,47 @@
     return tab.schema && !list.includes(tab.schema) ? [tab.schema, ...list] : list
   })
   let completion = $derived(app.completion[tab.connId + '|' + tab.schema] ?? {})
-  let current = $derived<StmtResult | undefined>(tab.activeResult >= 0 ? tab.results[tab.activeResult] : undefined)
+  // Table data tabs (opened from the tree) show only the data, its DDL and a log.
+  let isTable = $derived(!!tab.tableRef)
+  let tableView = $state<'data' | 'ddl' | 'log'>('data')
+  let current = $derived<StmtResult | undefined>(
+    isTable ? tab.results[0] : tab.activeResult >= 0 ? tab.results[tab.activeResult] : undefined,
+  )
+  // Positioned against the window: the result bar clips overflow.
+  let exportMenu = $state<{ right: number; top: number } | null>(null)
+
+  function toggleExport(e: MouseEvent) {
+    e.stopPropagation()
+    if (exportMenu) {
+      exportMenu = null
+      return
+    }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    exportMenu = { right: window.innerWidth - r.right, top: r.bottom + 4 }
+  }
+
+  // DDL for table tabs, loaded when first shown and again if the tab is
+  // reused for another table.
+  let ddl = $state<string | null>(null)
+  let ddlError = $state('')
+  let ddlFor = ''
+  $effect(() => {
+    const ref = tab.tableRef
+    if (!ref || tableView !== 'ddl') return
+    const key = `${tab.connId}|${ref.schema}|${ref.table.schema}.${ref.table.name}`
+    if (key === ddlFor) return
+    ddlFor = key
+    ddl = null
+    ddlError = ''
+    api
+      .TableDDL(tab.connId, ref.schema, $state.snapshot(ref.table))
+      .then((d) => key === ddlFor && (ddl = d))
+      .catch((e) => key === ddlFor && (ddlError = errText(e)))
+  })
+
+  function openAsConsole() {
+    openConsole(tab.connId, { schema: tab.tableRef?.schema ?? tab.schema, sql: tab.sql + ';' })
+  }
 
   $effect(() => {
     if (connected && tab.schema) loadCompletion(tab.connId, tab.schema)
@@ -240,27 +281,49 @@
     }
   }
 
-  function csvCell(v: Cell): string {
+  function csvCell(v: Cell, sep: string): string {
     if (v === null) return ''
-    return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v
+    return v.includes(sep) || /["\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v
   }
 
-  async function exportResult(kind: 'csv' | 'json') {
+  const numericType = /^(UNSIGNED )?(TINYINT|SMALLINT|MEDIUMINT|INT|INTEGER|BIGINT|INT[248]|NUMBER|NUMERIC|DECIMAL|FLOAT[48]?|DOUBLE|REAL|MONEY|SMALLMONEY|BINARY_FLOAT|BINARY_DOUBLE)\b/
+
+  async function insertStatements(r: StmtResult): Promise<string> {
+    const cols = r.columns!
+    const info = r.edit?.info
+    const target =
+      info && info.table.name
+        ? await api.QualifiedName(tab.connId, info.schema, $state.snapshot(info.table))
+        : r.source?.join('.') || 'table_name'
+    const names = await Promise.all(cols.map((c) => api.QuoteIdent(tab.connId, c.name)))
+    const num = cols.map((c) => numericType.test(c.type))
+    const lit = (v: Cell, i: number) => (v === null ? 'NULL' : num[i] ? v : "'" + v.replace(/'/g, "''") + "'")
+    const head = `INSERT INTO ${target} (${names.join(', ')}) VALUES `
+    return r.rows!.map((row) => head + '(' + row.map(lit).join(', ') + ');').join('\n') + '\n'
+  }
+
+  async function exportResult(kind: 'csv' | 'tsv' | 'json' | 'sql') {
+    exportMenu = null
     const r = current
     if (!r || !r.columns) return
     const cols = r.columns.map((c) => c.name)
     let text: string
-    if (kind === 'csv') {
-      text = '﻿' + [cols.map(csvCell).join(','), ...r.rows!.map((row) => row.map(csvCell).join(','))].join('\r\n')
-    } else {
-      text = JSON.stringify(
-        r.rows!.map((row) => Object.fromEntries(cols.map((c, i) => [c, row[i]]))),
-        null,
-        2,
-      )
-    }
     try {
-      const p = await api.SaveTextFile(`result.${kind}`, text)
+      if (kind === 'csv' || kind === 'tsv') {
+        const sep = kind === 'csv' ? ',' : '\t'
+        const line = (vals: Cell[]) => vals.map((v) => csvCell(v, sep)).join(sep)
+        text = (kind === 'csv' ? '\ufeff' : '') + [line(cols), ...r.rows!.map(line)].join('\r\n')
+      } else if (kind === 'json') {
+        text = JSON.stringify(
+          r.rows!.map((row) => Object.fromEntries(cols.map((c, i) => [c, row[i]]))),
+          null,
+          2,
+        )
+      } else {
+        text = await insertStatements(r)
+      }
+      const base = (r.edit?.info?.table.name || r.source?.[r.source.length - 1] || 'result').replace(/[\\/:*?"<>|]/g, '_')
+      const p = await api.SaveTextFile(`${base}.${kind}`, text)
       if (p) toast(`${r.rows!.length}행 내보냄${r.hasMore ? ' (불러온 행만)' : ''}: ${p}`)
     } catch (e) {
       toast(errText(e), 'error')
@@ -278,82 +341,121 @@
   })
 </script>
 
-<div class="tab">
-  <div class="toolbar">
-    <button class="icon-btn run" title="실행 ({modKey}Enter) — 커서 위치 문장 또는 선택 영역" onclick={run} disabled={tab.running}>
-      <Icon name="play" />
-    </button>
-    <button class="icon-btn run" title="전체 실행 ({modKey}Shift+Enter)" onclick={runAll} disabled={tab.running}>
-      <Icon name="playAll" />
-    </button>
-    <button class="icon-btn stop" title="취소" onclick={() => cancel(tab)} disabled={!tab.running}>
-      <Icon name="stop" />
-    </button>
-    <span class="sep"></span>
-    <select value={tab.connId} onchange={(e) => changeConn(e.currentTarget.value)} title="연결">
-      {#each app.connections as c (c.id)}
-        <option value={c.id}>{c.name}</option>
-      {/each}
-    </select>
-    <select
-      bind:value={tab.schema}
-      onchange={saveWorkspaceSoon}
-      disabled={!connected || conn?.driver === 'sqlite'}
-      title="기본 스키마 / 데이터베이스"
-    >
-      {#if !schemaOptions.length}<option value="">(스키마)</option>{/if}
-      {#each schemaOptions as s (s)}
-        <option value={s}>{s}</option>
-      {/each}
-    </select>
-    <span class="sep"></span>
-    <button class="icon-btn" title="SQL 파일 열기" onclick={openFile}><Icon name="open" /></button>
-    <button class="icon-btn" title="SQL 파일로 저장" onclick={saveFile}><Icon name="save" /></button>
-    <span class="grow"></span>
-    {#if tab.running}
-      <span class="running"><span class="spin"></span> 실행 중 {elapsed}</span>
+<svelte:window onclick={() => (exportMenu = null)} />
+
+{#snippet logList(hint: boolean)}
+  <div class="messages">
+    {#if tab.messages.length === 0 && hint}
+      <div class="placeholder">
+        <p>{modKey}Enter — 커서가 있는 문장 실행 (선택했으면 선택 영역)</p>
+        <p>{modKey}Shift+Enter — 전체 실행</p>
+      </div>
     {/if}
-    <label class="fetch" title="한 번에 가져올 행 수">
-      가져오기
-      <select bind:value={app.fetchSize} onchange={saveWorkspaceSoon}>
-        {#each [100, 500, 1000, 5000, 10000] as n (n)}<option value={n}>{n}</option>{/each}
-      </select>
-    </label>
+    {#each tab.messages.slice().reverse() as m, i (tab.messages.length - i)}
+      <div class="msg" class:error={m.kind === 'error'}>
+        <span class="time">{m.time}</span>
+        <pre>{m.text}</pre>
+      </div>
+    {/each}
   </div>
+{/snippet}
+
+<div class="tab">
+  {#if !isTable}
+    <div class="toolbar">
+      <button class="icon-btn run" title="실행 ({modKey}Enter) — 커서 위치 문장 또는 선택 영역" onclick={run} disabled={tab.running}>
+        <Icon name="play" />
+      </button>
+      <button class="icon-btn run" title="전체 실행 ({modKey}Shift+Enter)" onclick={runAll} disabled={tab.running}>
+        <Icon name="playAll" />
+      </button>
+      <button class="icon-btn stop" title="취소" onclick={() => cancel(tab)} disabled={!tab.running}>
+        <Icon name="stop" />
+      </button>
+      <span class="sep"></span>
+      <select value={tab.connId} onchange={(e) => changeConn(e.currentTarget.value)} title="연결">
+        {#each app.connections as c (c.id)}
+          <option value={c.id}>{c.name}</option>
+        {/each}
+      </select>
+      <select
+        bind:value={tab.schema}
+        onchange={saveWorkspaceSoon}
+        disabled={!connected || conn?.driver === 'sqlite'}
+        title="기본 스키마 / 데이터베이스"
+      >
+        {#if !schemaOptions.length}<option value="">(스키마)</option>{/if}
+        {#each schemaOptions as s (s)}
+          <option value={s}>{s}</option>
+        {/each}
+      </select>
+      <span class="sep"></span>
+      <button class="icon-btn" title="SQL 파일 열기" onclick={openFile}><Icon name="open" /></button>
+      <button class="icon-btn" title="SQL 파일로 저장" onclick={saveFile}><Icon name="save" /></button>
+      <span class="grow"></span>
+      {#if tab.running}
+        <span class="running"><span class="spin"></span> 실행 중 {elapsed}</span>
+      {/if}
+      <label class="fetch" title="한 번에 가져올 행 수">
+        가져오기
+        <select bind:value={app.fetchSize} onchange={saveWorkspaceSoon}>
+          {#each [100, 500, 1000, 5000, 10000] as n (n)}<option value={n}>{n}</option>{/each}
+        </select>
+      </label>
+    </div>
+  {/if}
 
   <div class="body" bind:this={body}>
-    <div class="editor" class:collapsed={tab.layout === 'results'} style:height="{split}%">
-      <SqlEditor value={tab.sql} driver={conn?.driver} schema={completion} onchange={onSqlChange} onrun={run} onrunall={runAll} bind:view />
-    </div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="divider"
-      class:collapsed={tab.layout === 'results'}
-      onmousedown={startDrag}
-      ondblclick={toggleLayout}
-      title="드래그: 크기 조절 · 더블클릭: 결과만 보기"
-    ></div>
+    {#if !isTable}
+      <div class="editor" class:collapsed={tab.layout === 'results'} style:height="{split}%">
+        <SqlEditor value={tab.sql} driver={conn?.driver} schema={completion} onchange={onSqlChange} onrun={run} onrunall={runAll} bind:view />
+      </div>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="divider"
+        class:collapsed={tab.layout === 'results'}
+        onmousedown={startDrag}
+        ondblclick={toggleLayout}
+        title="드래그: 크기 조절 · 더블클릭: 결과만 보기"
+      ></div>
+    {/if}
     <div class="results">
       <div class="rtabs">
-        {#each tab.results as r, i (i)}
-          <button class="rtab" class:on={tab.activeResult === i} onclick={() => (tab.activeResult = i)}>
-            <Icon name="table" size={13} />
-            {resultLabel(r, i)}
+        {#if isTable}
+          <button class="rtab" class:on={tableView === 'data'} onclick={() => (tableView = 'data')}>
+            <Icon name="table" size={13} /> 데이터
           </button>
-        {/each}
-        <button class="rtab" class:on={tab.activeResult === -1} onclick={() => (tab.activeResult = -1)}>
-          메시지
-          {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
-        </button>
+          <button class="rtab" class:on={tableView === 'ddl'} onclick={() => (tableView = 'ddl')}>
+            <Icon name="ddl" size={13} /> DDL
+          </button>
+          <button class="rtab" class:on={tableView === 'log'} onclick={() => (tableView = 'log')}>
+            로그
+            {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
+          </button>
+          {#if tab.running}<span class="running small"><span class="spin"></span> {elapsed}</span>{/if}
+        {:else}
+          {#each tab.results as r, i (i)}
+            <button class="rtab" class:on={tab.activeResult === i} onclick={() => (tab.activeResult = i)}>
+              <Icon name="table" size={13} />
+              {resultLabel(r, i)}
+            </button>
+          {/each}
+          <button class="rtab" class:on={tab.activeResult === -1} onclick={() => (tab.activeResult = -1)}>
+            로그
+            {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
+          </button>
+        {/if}
         <span class="grow"></span>
-        <button
-          class="icon-btn"
-          title={tab.layout === 'results' ? 'SQL 에디터 보이기' : '결과만 크게 보기'}
-          onclick={toggleLayout}
-        >
-          <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
-        </button>
-        {#if current}
+        {#if !isTable}
+          <button
+            class="icon-btn"
+            title={tab.layout === 'results' ? 'SQL 에디터 보이기' : '결과만 크게 보기'}
+            onclick={toggleLayout}
+          >
+            <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
+          </button>
+        {/if}
+        {#if current && (!isTable || tableView === 'data')}
           {#if pending > 0}
             <span class="pending">변경 {pending}건</span>
             <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}S)"><Icon name="check" size={13} /> 적용</button>
@@ -366,36 +468,46 @@
           {:else if editInfo}
             <span class="ro" title={'읽기 전용: ' + editInfo.reason}><Icon name="lock" size={13} /> 읽기 전용</span>
           {/if}
-          <button class="icon-btn" title="다시 실행" onclick={rerun} disabled={tab.running}><Icon name="refresh" size={14} /></button>
+          <button class="icon-btn" title="다시 조회" onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
+            <Icon name="refresh" size={14} />
+          </button>
+          <div class="dropdown">
+            <button class="btn mini" onclick={toggleExport} title="결과 내보내기">
+              <Icon name="download" size={13} /> 내보내기 <Icon name="chevronDown" size={11} />
+            </button>
+            {#if exportMenu}
+              <div class="menu" style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
+                <button onclick={() => exportResult('csv')}>CSV <span class="dim">.csv</span></button>
+                <button onclick={() => exportResult('tsv')}>TSV <span class="dim">.tsv</span></button>
+                <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
+                <button onclick={() => exportResult('sql')}>INSERT 문 <span class="dim">.sql</span></button>
+                <div class="hint">불러온 {current.rows!.length.toLocaleString()}행{current.hasMore ? ' (전체 아님)' : ''}</div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        {#if isTable && tableView === 'ddl' && ddl}
+          <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
+        {/if}
+        {#if isTable}
+          <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
+        {/if}
+        {#if current && (!isTable || tableView === 'data')}
           <span class="meta">
             {current.rows!.length.toLocaleString()}{current.hasMore ? '+' : ''}행 · {current.elapsedMs}ms
           </span>
-          <button class="icon-btn" title="CSV로 내보내기" onclick={() => exportResult('csv')}><Icon name="download" size={14} /></button>
-          <button class="btn mini" onclick={() => exportResult('json')}>JSON</button>
         {/if}
       </div>
-      {#if tab.tableRef}
+      {#if isTable && tableView === 'data' && tab.tableRef}
         <div class="filterbar">
           <span class="kw">WHERE</span>
           <div class="fwrap">
-            <input
-              class="mono"
-              bind:value={whereDraft}
-              onkeydown={filterKey}
-              placeholder="예: status = 'ACTIVE' AND created_at >= '2025-01-01'"
-              spellcheck="false"
-            />
+            <input class="mono" bind:value={whereDraft} onkeydown={filterKey} spellcheck="false" />
             {#if tab.tableRef.where}<button class="fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={11} /></button>{/if}
           </div>
           <span class="kw">ORDER BY</span>
           <div class="fwrap order">
-            <input
-              class="mono"
-              bind:value={orderDraft}
-              onkeydown={filterKey}
-              placeholder="예: id DESC  (헤더 클릭으로도 정렬)"
-              spellcheck="false"
-            />
+            <input class="mono" bind:value={orderDraft} onkeydown={filterKey} spellcheck="false" />
             {#if tab.tableRef.orderBy}<button class="fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={11} /></button>{/if}
           </div>
           <button class="btn mini" onclick={applyFilter} disabled={tab.running} title="Enter">조회</button>
@@ -403,13 +515,23 @@
       {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="rbody" onkeydown={resultsKey}>
-        {#if current}
+        {#if isTable && tableView === 'ddl'}
+          {#if ddlError}
+            <div class="msg error"><pre>{ddlError}</pre></div>
+          {:else if ddl === null}
+            <div class="placeholder"><span class="spin"></span> DDL 불러오는 중…</div>
+          {:else}
+            <SqlEditor value={ddl} driver={conn?.driver} readonly onchange={() => {}} onrun={() => {}} onrunall={() => {}} />
+          {/if}
+        {:else if isTable && tableView === 'log'}
+          {@render logList(false)}
+        {:else if current}
           <ResultGrid
             bind:this={grid}
             result={current}
             ensureEdit={() => loadEditInfo(tab, current!)}
-            serverSort={tab.tableRef ? serverSort : undefined}
-            onsort={tab.tableRef ? serverSortBy : undefined}
+            serverSort={isTable ? serverSort : undefined}
+            onsort={isTable ? serverSortBy : undefined}
             columns={current.columns!}
             rows={current.rows!}
             hasMore={current.hasMore}
@@ -417,20 +539,7 @@
             onloadmore={() => fetchMore(tab, current!)}
           />
         {:else}
-          <div class="messages">
-            {#if tab.messages.length === 0}
-              <div class="placeholder">
-                <p>{modKey}Enter — 커서가 있는 문장 실행 (선택했으면 선택 영역)</p>
-                <p>{modKey}Shift+Enter — 전체 실행</p>
-              </div>
-            {/if}
-            {#each tab.messages.slice().reverse() as m, i (tab.messages.length - i)}
-              <div class="msg" class:error={m.kind === 'error'}>
-                <span class="time">{m.time}</span>
-                <pre>{m.text}</pre>
-              </div>
-            {/each}
-          </div>
+          {@render logList(!isTable)}
         {/if}
       </div>
     </div>
@@ -607,6 +716,45 @@
     color: var(--text);
     background: var(--bg-hover);
   }
+  .dropdown {
+    position: relative;
+  }
+  .dropdown .menu {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    min-width: 170px;
+    padding: 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .dropdown .menu button {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dropdown .menu button:hover {
+    background: var(--bg-select);
+  }
+  .dropdown .hint {
+    padding: 5px 10px 3px;
+    border-top: 1px solid var(--border);
+    margin-top: 3px;
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+  .running.small {
+    margin: 0 0 0 8px;
+    font-size: 12px;
+  }
   .pending {
     color: var(--warn);
     font-weight: 600;
@@ -647,7 +795,7 @@
   }
   .meta {
     color: var(--text-dim);
-    margin-right: 4px;
+    margin: 0 4px 0 8px;
     white-space: nowrap;
   }
   .mini {

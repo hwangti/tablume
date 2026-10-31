@@ -38,6 +38,8 @@ type Column struct {
 	Nullable bool   `json:"nullable"`
 	PK       bool   `json:"pk"`
 	Comment  string `json:"comment"`
+	Unique   bool   `json:"unique"` // in a unique constraint/index (not the PK)
+	FK       string `json:"fk"`     // referenced "table.column" if a foreign key
 }
 
 type SchemaList struct {

@@ -80,6 +80,8 @@ export namespace dbx {
 	    nullable: boolean;
 	    pk: boolean;
 	    comment: string;
+	    unique: boolean;
+	    fk: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Column(source);
@@ -92,6 +94,8 @@ export namespace dbx {
 	        this.nullable = source["nullable"];
 	        this.pk = source["pk"];
 	        this.comment = source["comment"];
+	        this.unique = source["unique"];
+	        this.fk = source["fk"];
 	    }
 	}
 	export class ConnConfig {
@@ -135,6 +139,8 @@ export namespace dbx {
 	    table: Table;
 	    columns: string[];
 	    key: string[];
+	    keys: string[];
+	    refs: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new EditInfo(source);
@@ -148,6 +154,8 @@ export namespace dbx {
 	        this.table = this.convertValues(source["table"], Table);
 	        this.columns = source["columns"];
 	        this.key = source["key"];
+	        this.keys = source["keys"];
+	        this.refs = source["refs"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

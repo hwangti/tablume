@@ -5,6 +5,7 @@
   import ConnectionDialog from './components/ConnectionDialog.svelte'
   import Modal from './components/Modal.svelte'
   import Icon from './components/Icon.svelte'
+  import logo from './assets/logo.svg'
   import { app, loadConnections, loadWorkspace, openConsole, closeTab, connById, activeTab, saveWorkspaceSoon, pinTab } from './lib/state.svelte'
   import { driverLabel } from './lib/types'
 
@@ -85,7 +86,7 @@
           ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
         >
-          {#if t.running}<span class="spin"></span>{:else}<Icon name="console" size={13} />{/if}
+          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
           {#if renaming === t.id}
             <!-- svelte-ignore a11y_autofocus -->
             <input
@@ -120,7 +121,7 @@
       {/each}
       {#if ready && app.tabs.length === 0}
         <div class="welcome">
-          <Icon name="db" size={48} color="var(--text-faint)" />
+          <img src={logo} width="64" height="64" alt="" />
           <h2>Tablume</h2>
           {#if app.connections.length === 0}
             <p>왼쪽의 <b>+</b> 버튼으로 첫 연결을 추가하세요.</p>

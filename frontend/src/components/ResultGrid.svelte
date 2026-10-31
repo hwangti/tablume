@@ -4,6 +4,7 @@
   import { toast } from '../lib/state.svelte'
   import { cellValue, isEdited, setCell, addRow, toggleDelete, revert } from '../lib/editing.svelte'
   import CellViewer from './CellViewer.svelte'
+  import Icon from './Icon.svelte'
 
   let {
     result,
@@ -157,6 +158,22 @@
   const numericRe =
     /^(UNSIGNED )?(TINYINT|SMALLINT|MEDIUMINT|INT|INTEGER|BIGINT|INT[248]|NUMBER|NUMERIC|DECIMAL|FLOAT[48]?|DOUBLE|REAL|MONEY|SMALLMONEY|BINARY_FLOAT|BINARY_DOUBLE|IBFLOAT|IBDOUBLE)\b/
   let numeric = $derived(columns.map((c) => numericRe.test(c.type)))
+  const dateRe = /^(DATE|TIME|DATETIME|TIMESTAMP|SMALLDATETIME|YEAR|INTERVAL)/
+  const boolRe = /^(BOOL|BIT$)/
+  // Value colour per column: numbers, dates and booleans stand out from text.
+  let kind = $derived(
+    columns.map((c, i) => (numeric[i] ? 'num' : dateRe.test(c.type) ? 'date' : boolRe.test(c.type) ? 'bool' : '')),
+  )
+
+  function keyIcons(c: number): { icon: string; color: string; label: string }[] {
+    const k = info?.keys?.[c]
+    if (!k) return []
+    const out = []
+    if (k.includes('PK')) out.push({ icon: 'key', color: 'var(--key-pk)', label: '기본 키 (PK)' })
+    if (k.includes('FK')) out.push({ icon: 'link', color: 'var(--key-fk)', label: `외래 키 (FK) → ${info?.refs?.[c] ?? ''}` })
+    if (k.includes('UK')) out.push({ icon: 'unique', color: 'var(--key-uk)', label: '유니크 (UK)' })
+    return out
+  }
 
   // Reset per-result state when a new result set arrives.
   let lastColumns: ResultColumn[] | null = null
@@ -443,6 +460,9 @@
           style:width="{widths[c]}px"
           title={`${col.name} ${col.type}\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'}`}
           onclick={() => headerClick(c)} role="columnheader" tabindex="-1">
+          {#each keyIcons(c) as k (k.icon)}
+            <span class="kicon" title={k.label}><Icon name={k.icon} size={12} color={k.color} /></span>
+          {/each}
           <span class="name">{col.name}</span>
           {#if shownSort?.col === c}<span class="sort">{shownSort.dir === 1 ? '▲' : '▼'}</span>{/if}
           <span class="type">{col.type.toLowerCase()}</span>
@@ -472,6 +492,9 @@
             class:sel={isSel(vi, c)}
             class:focus={focus?.r === vi && focus?.c === c}
             class:right={numeric[c]}
+            class:v-num={kind[c] === 'num'}
+            class:v-date={kind[c] === 'date'}
+            class:v-bool={kind[c] === 'bool'}
             class:edited={isEdited(result, ri, c)}
             class:added={st?.added[ri]}
             class:deleted={st?.deleted[ri]}
@@ -654,6 +677,24 @@
 
   .td.right {
     text-align: right;
+  }
+
+  .td.v-num {
+    color: var(--cell-num);
+  }
+
+  .td.v-date {
+    color: var(--cell-date);
+  }
+
+  .td.v-bool {
+    color: var(--cell-bool);
+  }
+
+  .kicon {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: -3px;
   }
 
   .td.sel {

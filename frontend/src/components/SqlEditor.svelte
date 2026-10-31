@@ -41,6 +41,7 @@
     onchange,
     onrun,
     onrunall,
+    readonly = false,
     view = $bindable(),
   }: {
     value: string
@@ -49,6 +50,7 @@
     onchange: (v: string) => void
     onrun: () => void
     onrunall: () => void
+    readonly?: boolean
     view?: EditorView
   } = $props()
 
@@ -140,6 +142,7 @@
           lang.of(langExt()),
           execMark,
           theme,
+          EditorState.readOnly.of(readonly),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onchange(u.state.doc.toString())
           }),

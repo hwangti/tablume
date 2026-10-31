@@ -30,6 +30,12 @@
   --editor-sel: #214283;
   --editor-line: #26282e;
   --exec-mark: rgba(53, 116, 240, 0.14);
+  --cell-num: #6cb6ff;
+  --cell-date: #8fd18f;
+  --cell-bool: #e0a0d8;
+  --key-pk: #e0b44b;
+  --key-fk: #6ca8ff;
+  --key-uk: #b48ead;
 
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
   --font-mono: 'JetBrains Mono', 'D2Coding', 'SF Mono', Menlo, Consolas, 'Malgun Gothic', monospace;
@@ -68,6 +74,12 @@
     --editor-sel: #a6d2ff;
     --editor-line: #f5f8fe;
     --exec-mark: rgba(53, 116, 240, 0.1);
+    --cell-num: #1750eb;
+    --cell-date: #067d17;
+    --cell-bool: #871094;
+    --key-pk: #b5730f;
+    --key-fk: #2f6fdc;
+    --key-uk: #8a4fb0;
     color-scheme: light;
   }
 }

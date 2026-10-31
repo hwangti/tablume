@@ -30,6 +30,8 @@ export interface Column {
   nullable: boolean
   pk: boolean
   comment?: string
+  unique?: boolean
+  fk?: string // referenced "table.column"
 }
 
 export interface SchemaList {
@@ -68,6 +70,8 @@ export interface EditInfo {
   table: Table
   columns: string[] // table column per result column, '' = read-only
   key: string[]
+  keys?: string[] // per result column: "PK", "UK", "FK" (comma separated)
+  refs?: string[] // per result column: FK target "table.column"
 }
 
 export interface EditState {

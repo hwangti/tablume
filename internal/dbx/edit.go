@@ -163,6 +163,10 @@ type EditInfo struct {
 	// Columns maps each result column to its table column ("" = read-only).
 	Columns []string `json:"columns"`
 	Key     []string `json:"key"`
+	// Keys describes each result column for header icons: "PK", "UK",
+	// "FK" (comma separated) or ""; Refs holds the FK target.
+	Keys []string `json:"keys"`
+	Refs []string `json:"refs"`
 }
 
 func (m *Manager) resolveSource(p *pool, current string, parts []string) (string, Table) {
@@ -212,7 +216,8 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 	if len(cols) == 0 {
 		return EditInfo{Reason: fmt.Sprintf("테이블 %s을(를) 찾을 수 없습니다", strings.Join(source, "."))}, nil
 	}
-	info := EditInfo{Schema: schema, Table: t, Columns: make([]string, len(resultCols))}
+	info := EditInfo{Schema: schema, Table: t, Columns: make([]string, len(resultCols)),
+		Keys: make([]string, len(resultCols)), Refs: make([]string, len(resultCols))}
 	byName := map[string]Column{}
 	for _, c := range cols {
 		byName[strings.ToUpper(c.Name)] = c
@@ -224,6 +229,18 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 	for i, rc := range resultCols {
 		if c, ok := byName[strings.ToUpper(rc)]; ok && !seen[c.Name] {
 			seen[c.Name] = true
+			var kinds []string
+			if c.PK {
+				kinds = append(kinds, "PK")
+			}
+			if c.Unique {
+				kinds = append(kinds, "UK")
+			}
+			if c.FK != "" {
+				kinds = append(kinds, "FK")
+				info.Refs[i] = c.FK
+			}
+			info.Keys[i] = strings.Join(kinds, ",")
 			if editableType(c.Type) {
 				info.Columns[i] = c.Name
 			}

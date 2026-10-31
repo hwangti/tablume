@@ -370,3 +370,48 @@ func TestTableMeta(t *testing.T) {
 		})
 	}
 }
+
+func TestKeyColumns(t *testing.T) {
+	all := targets(t)
+	ddl := map[string]string{
+		"mariadb":  "DROP TABLE IF EXISTS item_child; CREATE TABLE item_child (id INT PRIMARY KEY, code VARCHAR(20) UNIQUE, item_id INT, FOREIGN KEY (item_id) REFERENCES items(id))",
+		"postgres": "DROP TABLE IF EXISTS item_child; CREATE TABLE item_child (id int PRIMARY KEY, code varchar(20) UNIQUE, item_id int REFERENCES items(id))",
+		"mssql":    "IF OBJECT_ID('dbo.item_child') IS NOT NULL DROP TABLE dbo.item_child;\nCREATE TABLE dbo.item_child (id int PRIMARY KEY, code varchar(20) UNIQUE, item_id int REFERENCES dbo.items(id))",
+		"oracle":   "BEGIN EXECUTE IMMEDIATE 'DROP TABLE item_child'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE TABLE item_child (id NUMBER PRIMARY KEY, code VARCHAR2(20) UNIQUE, item_id NUMBER REFERENCES items(id))",
+		"sqlite":   "CREATE TABLE item_child (id INTEGER PRIMARY KEY, code TEXT UNIQUE, item_id INTEGER REFERENCES items(id))",
+	}
+	for name, d := range ddl {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			// The child references items; drop it so other tests can recreate items.
+			defer m.Execute(ExecRequest{TabID: "k", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE item_child", Cursor: -1})
+			for _, q := range []string{tg.setup, d} {
+				res, err := m.Execute(ExecRequest{TabID: "k", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+				if err != nil || res.Results[len(res.Results)-1].Error != "" {
+					t.Fatalf("%v %+v", err, res.Results)
+				}
+			}
+			name := "item_child"
+			if tg.cfg.Driver == "oracle" {
+				name = "ITEM_CHILD"
+			}
+			tbl := Table{Name: name}
+			if tg.cfg.Driver == "mssql" {
+				tbl.Schema = "dbo"
+			}
+			cols, err := m.Columns(tg.cfg.ID, tg.schema, tbl)
+			if err != nil || len(cols) != 3 {
+				t.Fatalf("%v %+v", err, cols)
+			}
+			t.Logf("%+v", cols)
+			if !cols[0].PK || !cols[1].Unique || cols[0].Unique || !strings.HasSuffix(strings.ToLower(cols[2].FK), "items.id") {
+				t.Errorf("key flags wrong: %+v", cols)
+			}
+		})
+	}
+}

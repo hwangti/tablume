@@ -116,6 +116,51 @@
     return st.schemas.filter((s) => !sys.has(s.name) || s.name === st.current || s.expanded)
   }
 
+  // While filtering, every schema's table list is loaded in the background
+  // and only schemas with a matching table are shown, already expanded.
+  let filtering = $derived(filter.trim() !== '')
+
+  function shownSchemas(id: string): SchemaNode[] {
+    const list = visibleSchemas(id)
+    if (!filtering) return list
+    return list.filter((s) => (s.tables ?? []).some((t) => matches(t.t.name)))
+  }
+
+  function pendingSchemas(id: string): number {
+    return filtering ? visibleSchemas(id).filter((s) => s.tables === null || s.loading).length : 0
+  }
+
+  let loadingAll = false
+  $effect(() => {
+    if (!filtering || loadingAll) return
+    const todo: [string, SchemaNode][] = []
+    for (const c of app.connections) {
+      if (app.conn[c.id]?.status !== 'connected') continue
+      for (const s of visibleSchemas(c.id)) if (s.tables === null && !s.loading) todo.push([c.id, s])
+    }
+    if (!todo.length) return
+    loadingAll = true
+    ;(async () => {
+      // A few at a time, so a server with many schemas isn't flooded.
+      for (let i = 0; i < todo.length; i += 4) {
+        await Promise.all(todo.slice(i, i + 4).map(([id, s]) => loadTables(id, s)))
+      }
+      loadingAll = false
+    })()
+  })
+
+  function keyIcon(col: { pk: boolean; unique?: boolean; fk?: string }): { name: string; color: string } {
+    if (col.pk) return { name: 'key', color: 'var(--key-pk)' }
+    if (col.fk) return { name: 'link', color: 'var(--key-fk)' }
+    if (col.unique) return { name: 'unique', color: 'var(--key-uk)' }
+    return { name: 'column', color: 'var(--text-faint)' }
+  }
+
+  function columnTitle(col: { name: string; type: string; nullable: boolean; pk: boolean; unique?: boolean; fk?: string; comment?: string }) {
+    const tags = [col.pk && 'PK', col.unique && 'UNIQUE', col.fk && `FK → ${col.fk}`].filter(Boolean).join(', ')
+    return `${col.name} ${col.type}${col.nullable ? '' : ' NOT NULL'}${tags ? '\n' + tags : ''}${col.comment ? '\n' + col.comment : ''}`
+  }
+
   function hiddenCount(id: string) {
     return (app.conn[id]?.schemas.length ?? 0) - visibleSchemas(id).length
   }
@@ -252,16 +297,16 @@
       </div>
 
       {#if st?.status === 'connected' && st.expanded}
-        {#each visibleSchemas(c.id) as s (s.name)}
+        {#each shownSchemas(c.id) as s (s.name)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="node" style:padding-left="22px" onclick={() => toggleSchema(c.id, s)} oncontextmenu={(e) => schemaMenu(e, c, s)}>
-            <span class="chev" class:open={s.expanded}><Icon name="chevron" size={12} /></span>
+            <span class="chev" class:open={s.expanded || filtering}><Icon name="chevron" size={12} /></span>
             <Icon name="schema" size={15} color="var(--warn)" />
             <span class="label" class:current={s.name === st.current}>{s.name}</span>
             {#if s.loading}<span class="spin"></span>{/if}
             {#if s.tables}<span class="count">{s.tables.length}</span>{/if}
           </div>
-          {#if s.expanded}
+          {#if s.expanded || filtering}
             {#if s.error}<div class="err-line" style:padding-left="44px">{s.error}</div>{/if}
             {#each (s.tables ?? []).filter((t) => matches(t.t.name)) as t (t.t.schema + '.' + t.t.name)}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -293,9 +338,9 @@
                   <div
                     class="node col"
                     style:padding-left="70px"
-                    title="{col.name} {col.type}{col.nullable ? '' : ' NOT NULL'}{col.comment ? '\n' + col.comment : ''}"
+                    title={columnTitle(col)}
                   >
-                    <Icon name={col.pk ? 'key' : 'column'} size={13} color={col.pk ? 'var(--warn)' : 'var(--text-faint)'} />
+                    <Icon name={keyIcon(col).name} size={13} color={keyIcon(col).color} />
                     <span class="label">{col.name}</span>
                     {#if app.treeView.comment && col.comment}<span class="cmt">{col.comment}</span>{/if}
                     <span class="ctype">{col.type.toLowerCase()}{col.nullable ? '' : ' !'}</span>
@@ -306,7 +351,12 @@
             {/each}
           {/if}
         {/each}
-        {#if hiddenCount(c.id) > 0}
+        {#if filtering && pendingSchemas(c.id) > 0}
+          <div class="searching"><span class="spin"></span> 테이블 찾는 중… (스키마 {pendingSchemas(c.id)}개 남음)</div>
+        {:else if filtering && shownSchemas(c.id).length === 0}
+          <div class="searching">일치하는 테이블이 없습니다</div>
+        {/if}
+        {#if hiddenCount(c.id) > 0 && !filtering}
           <button class="more" onclick={() => (st.showAllSchemas = true)}>시스템 스키마 {hiddenCount(c.id)}개 더 보기</button>
         {/if}
       {/if}
@@ -541,6 +591,14 @@
   }
   .more:hover {
     color: var(--accent);
+  }
+  .searching {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px 3px 26px;
+    color: var(--text-faint);
+    font-size: 11.5px;
   }
   .hint {
     padding: 30px 16px;

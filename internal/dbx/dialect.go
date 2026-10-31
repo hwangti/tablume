@@ -135,8 +135,9 @@ func toInt64(v any) int64 {
 	return toInt64(fmt.Sprint(v))
 }
 
-// scanColumns expects rows of (name, type, nullable, pk) where nullable and
-// pk come back as anything truthy ("YES", "Y", 1, true ...).
+// scanColumns expects rows of (name, type, nullable, pk, comment, unique,
+// fk) where the flags come back as anything truthy ("YES", "Y", 1, true ...)
+// and fk is the referenced "table.column" or NULL.
 func scanColumns(ctx context.Context, q Querier, query string, args ...any) ([]Column, error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -145,12 +146,13 @@ func scanColumns(ctx context.Context, q Querier, query string, args ...any) ([]C
 	defer rows.Close()
 	out := []Column{}
 	for rows.Next() {
-		var name, typ, comment sql.NullString
-		var nullable, pk any
-		if err := rows.Scan(&name, &typ, &nullable, &pk, &comment); err != nil {
+		var name, typ, comment, fk sql.NullString
+		var nullable, pk, unique any
+		if err := rows.Scan(&name, &typ, &nullable, &pk, &comment, &unique, &fk); err != nil {
 			return nil, err
 		}
-		out = append(out, Column{Name: name.String, Type: typ.String, Nullable: truthy(nullable), PK: truthy(pk), Comment: comment.String})
+		out = append(out, Column{Name: name.String, Type: typ.String, Nullable: truthy(nullable), PK: truthy(pk),
+			Comment: comment.String, Unique: truthy(unique), FK: fk.String})
 	}
 	return out, rows.Err()
 }
@@ -247,8 +249,13 @@ func (mysqlDialect) ListTables(ctx context.Context, q Querier, schema string) ([
 }
 
 func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
-	return scanColumns(ctx, q, `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY = 'PRI', COLUMN_COMMENT
-		FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION`, schema, t.Name)
+	return scanColumns(ctx, q, `SELECT c.COLUMN_NAME, c.COLUMN_TYPE, c.IS_NULLABLE, c.COLUMN_KEY = 'PRI', c.COLUMN_COMMENT,
+		EXISTS (SELECT 1 FROM information_schema.STATISTICS s WHERE s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME
+			AND s.COLUMN_NAME = c.COLUMN_NAME AND s.NON_UNIQUE = 0 AND s.INDEX_NAME <> 'PRIMARY'),
+		(SELECT CONCAT(k.REFERENCED_TABLE_NAME, '.', k.REFERENCED_COLUMN_NAME) FROM information_schema.KEY_COLUMN_USAGE k
+			WHERE k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME AND k.COLUMN_NAME = c.COLUMN_NAME
+			AND k.REFERENCED_TABLE_NAME IS NOT NULL LIMIT 1)
+		FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION`, schema, t.Name)
 }
 
 func (mysqlDialect) AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error) {
@@ -330,7 +337,12 @@ func (pgDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Ta
 func (pgDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
 	return scanColumns(ctx, q, `SELECT a.attname, format_type(a.atttypid, a.atttypmod), NOT a.attnotnull,
 		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)),
-		COALESCE(col_description(a.attrelid, a.attnum), '')
+		COALESCE(col_description(a.attrelid, a.attnum), ''),
+		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisunique AND NOT i.indisprimary AND a.attnum = ANY(i.indkey)),
+		(SELECT rc.relname || '.' || ra.attname FROM pg_constraint con
+			JOIN pg_class rc ON rc.oid = con.confrelid
+			JOIN pg_attribute ra ON ra.attrelid = con.confrelid AND ra.attnum = con.confkey[array_position(con.conkey, a.attnum)]
+			WHERE con.conrelid = a.attrelid AND con.contype = 'f' AND a.attnum = ANY(con.conkey) LIMIT 1)
 		FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum`, schema, t.Name)
 }
@@ -433,7 +445,19 @@ func (mssqlDialect) ListColumns(ctx context.Context, q Querier, db string, t Tab
 		COALESCE((SELECT CAST(ep.value AS nvarchar(4000)) FROM `+d+`.sys.extended_properties ep
 			JOIN `+d+`.sys.columns sc ON sc.object_id = ep.major_id AND sc.column_id = ep.minor_id
 			WHERE ep.class = 1 AND ep.name = 'MS_Description' AND sc.name = c.COLUMN_NAME
-			AND ep.major_id = OBJECT_ID(QUOTENAME(c.TABLE_CATALOG) + '.' + QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME))), '')
+			AND ep.major_id = OBJECT_ID(QUOTENAME(c.TABLE_CATALOG) + '.' + QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME))), ''),
+		CASE WHEN EXISTS (SELECT 1 FROM `+d+`.sys.indexes i
+			JOIN `+d+`.sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+			JOIN `+d+`.sys.columns sc ON sc.object_id = ic.object_id AND sc.column_id = ic.column_id
+			WHERE i.is_unique = 1 AND i.is_primary_key = 0 AND ic.is_included_column = 0 AND sc.name = c.COLUMN_NAME
+			AND i.object_id = OBJECT_ID(QUOTENAME(c.TABLE_CATALOG) + '.' + QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)))
+			THEN 1 ELSE 0 END,
+		(SELECT TOP 1 rt.name + '.' + rc.name FROM `+d+`.sys.foreign_key_columns fkc
+			JOIN `+d+`.sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+			JOIN `+d+`.sys.objects rt ON rt.object_id = fkc.referenced_object_id
+			JOIN `+d+`.sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+			WHERE pc.name = c.COLUMN_NAME
+			AND fkc.parent_object_id = OBJECT_ID(QUOTENAME(c.TABLE_CATALOG) + '.' + QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)))
 		FROM `+d+`.INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA = @p1 AND c.TABLE_NAME = @p2 ORDER BY c.ORDINAL_POSITION`, t.Schema, t.Name)
 }
 
@@ -532,7 +556,14 @@ func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, 
 		CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
 			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'P' AND kc.column_name = c.column_name)
 			THEN 1 ELSE 0 END,
-		cc.comments
+		cc.comments,
+		CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
+			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'U' AND kc.column_name = c.column_name)
+			THEN 1 ELSE 0 END,
+		(SELECT MIN(rc.table_name || '.' || rc.column_name) FROM all_constraints k
+			JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
+			JOIN all_cons_columns rc ON rc.owner = k.r_owner AND rc.constraint_name = k.r_constraint_name AND rc.position = kc.position
+			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'R' AND kc.column_name = c.column_name)
 		FROM all_tab_columns c
 		LEFT JOIN all_col_comments cc ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
 		WHERE c.owner = :1 AND c.table_name = :2 ORDER BY c.column_id`, schema, t.Name)
@@ -591,7 +622,11 @@ func (sqliteDialect) ListTables(ctx context.Context, q Querier, schema string) (
 }
 
 func (sqliteDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
-	return scanColumns(ctx, q, `SELECT name, type, NOT "notnull", pk > 0, '' FROM pragma_table_info(?, ?)`, t.Name, schema)
+	return scanColumns(ctx, q, `SELECT p.name, p.type, NOT p."notnull", p.pk > 0, '',
+		EXISTS (SELECT 1 FROM pragma_index_list(?1, ?2) il, pragma_index_info(il.name, ?2) ii
+			WHERE il."unique" = 1 AND il.origin <> 'pk' AND ii.name = p.name),
+		(SELECT f."table" || '.' || f."to" FROM pragma_foreign_key_list(?1, ?2) f WHERE f."from" = p.name)
+		FROM pragma_table_info(?1, ?2) p`, t.Name, schema)
 }
 
 func (sqliteDialect) AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error) {
