@@ -605,7 +605,7 @@
     {/if}
 
     {#each visible as { ri, vi } (ri)}
-      <div class="tr" class:alt={vi % 2 === 1} style:top="{BODY_T + vi * ROW_H}px" style:width="{totalW}px">
+      <div class="tr" class:alt={vi % 2 === 1} class:cur={!!sel && vi >= sel.r1 && vi <= sel.r2} style:top="{BODY_T + vi * ROW_H}px" style:width="{totalW}px">
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="num"
@@ -773,6 +773,17 @@
 
   .tr.alt {
     background: var(--grid-alt);
+  }
+
+  /* rows of the selected cells: easy to follow across the columns */
+  .tr.cur {
+    background: var(--grid-cur-row);
+  }
+
+  .tr.cur .num {
+    color: var(--accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
   }
 
   .num {
