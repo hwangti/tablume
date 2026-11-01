@@ -110,7 +110,7 @@ export const app = $state({
   tableOpen: { pkDesc: false },
   gridZoom: 1,
   gridColNumbers: false, // column numbers in result headers
-  ddlMode: 'sql' as 'sql' | 'table',
+  ddlMode: 'table' as 'sql' | 'table', // DDL tab: columns table first
   theme: getTheme(),
 })
 
@@ -683,7 +683,7 @@ export function saveWorkspaceSoon() {
       tableOpen: app.tableOpen,
       gridZoom: app.gridZoom,
       gridColNumbers: app.gridColNumbers,
-      ddlMode: app.ddlMode,
+      ddlView: app.ddlMode,
       theme: app.theme,
       tabs: app.tabs.map((t) => ({
         id: t.id,
@@ -714,7 +714,8 @@ export async function loadWorkspace() {
       app.theme = data.theme
       setTheme(data.theme)
     }
-    if (data.ddlMode === 'table' || data.ddlMode === 'sql') app.ddlMode = data.ddlMode
+    // (saved as ddlView since the table became the default; the old ddlMode key is ignored)
+    if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
     if (typeof data.gridZoom === 'number' && data.gridZoom >= 0.5 && data.gridZoom <= 3) app.gridZoom = data.gridZoom
     for (const t of data.tabs ?? []) {

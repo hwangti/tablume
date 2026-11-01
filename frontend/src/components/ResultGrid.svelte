@@ -192,6 +192,8 @@
   let scroller: HTMLDivElement
   let scrollTop = $state(0)
   let viewH = $state(400)
+  let viewW = $state(800)
+  let scrollLeft = $state(0)
   let widths = $state<number[]>([])
   let sort = $state<{ col: number; dir: 1 | -1 } | null>(null)
   let anchor = $state<{ r: number; c: number } | null>(null)
@@ -390,6 +392,7 @@
 
   function onScroll() {
     scrollTop = scroller.scrollTop
+    scrollLeft = scroller.scrollLeft
     // While new rows are pending at the bottom, don't auto-load more rows
     // above them (they would jump away); the explicit button still works.
     const hasAdded = !!st && Object.keys(st.added).length > 0
@@ -687,6 +690,7 @@
   class="grid"
   bind:this={scroller}
   bind:clientHeight={viewH}
+  bind:clientWidth={viewW}
   onscroll={onScroll}
   onwheel={wheel}
   style:--gz={z}
@@ -716,7 +720,7 @@
           class="th"
           class:dragging={drag?.from === p}
           style:width="{cw[c]}px"
-          title={`${col.name} ${col.type}\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'} · 드래그: 순서 변경`}
+          title={`${col.name} ${col.type.toLowerCase()}${info?.comments?.[c] ? '\n' + info.comments[c] : ''}\n\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'} · 드래그: 순서 변경`}
           onmousedown={(e) => headDown(e, p)}
           onclick={() => headerClick(c)}
           oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation(), (headMenu = { x: e.clientX, y: e.clientY, c }))}
@@ -738,7 +742,7 @@
     {/if}
 
     {#if canLoadPrev || loadingPrev}
-      <div class="more top" style:top="{HEAD_H}px">
+      <div class="more top" style:top="{HEAD_H}px" style:left="{scrollLeft}px" style:width="{viewW}px">
         {#if loadingPrev}이전 행 불러오는 중…{:else}<button class="link" onclick={() => onloadprev?.()}>이전 행 불러오기</button>{/if}
       </div>
     {/if}
@@ -805,7 +809,7 @@
     {/each}
 
     {#if hasMore}
-      <div class="more" style:top="{BODY_T + order.length * ROW_H}px">
+      <div class="more" style:top="{BODY_T + order.length * ROW_H}px" style:left="{scrollLeft}px" style:width="{viewW}px">
         {#if loadingMore}더 불러오는 중…{:else}<button class="link" onclick={onloadmore}>더 불러오기</button>{/if}
       </div>
     {/if}
@@ -902,7 +906,7 @@
   .head {
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: 3;
     display: flex;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
@@ -1187,19 +1191,19 @@
     background: var(--bg-input);
   }
 
+  /* "load more / previous" rows: across the visible width, centred, above
+     the sticky row-number column */
   .more {
     position: absolute;
-    left: 0;
-    right: 0;
+    z-index: 2;
     height: var(--row-h);
-    padding-left: 60px;
+    text-align: center;
     line-height: var(--row-h);
     color: var(--text-dim);
     font-family: var(--font-ui);
   }
 
   .more.top {
-    z-index: 1;
     background: var(--bg-panel);
   }
 

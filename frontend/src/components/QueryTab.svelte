@@ -616,8 +616,8 @@
           <div class="grp">
             {#if tableView === 'ddl'}
               <div class="seg" role="group">
-                <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>SQL</button>
                 <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>표</button>
+                <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>SQL</button>
               </div>
               {#if app.ddlMode === 'sql' && ddl}
                 <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>

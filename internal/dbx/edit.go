@@ -171,6 +171,8 @@ type EditInfo struct {
 	// "FK" (comma separated) or ""; Refs holds the FK target.
 	Keys []string `json:"keys"`
 	Refs []string `json:"refs"`
+	// Comments holds each result column's comment (header tooltip).
+	Comments []string `json:"comments"`
 }
 
 func (m *Manager) resolveSource(p *pool, current string, parts []string) (string, Table) {
@@ -224,7 +226,8 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 		return EditInfo{Reason: fmt.Sprintf("테이블 %s을(를) 찾을 수 없습니다", strings.Join(source, "."))}, nil
 	}
 	info := EditInfo{Schema: schema, Table: t, Columns: make([]string, len(resultCols)),
-		Keys: make([]string, len(resultCols)), Refs: make([]string, len(resultCols))}
+		Keys: make([]string, len(resultCols)), Refs: make([]string, len(resultCols)),
+		Comments: make([]string, len(resultCols))}
 	byName := map[string]Column{}
 	for _, c := range cols {
 		byName[strings.ToUpper(c.Name)] = c
@@ -249,6 +252,7 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 				info.Refs[i] = c.FK
 			}
 			info.Keys[i] = strings.Join(kinds, ",")
+			info.Comments[i] = c.Comment
 			if editableType(c.Type) {
 				info.Columns[i] = c.Name
 			}

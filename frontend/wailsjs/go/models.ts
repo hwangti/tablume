@@ -162,6 +162,7 @@ export namespace dbx {
 	    key: string[];
 	    keys: string[];
 	    refs: string[];
+	    comments: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new EditInfo(source);
@@ -178,6 +179,7 @@ export namespace dbx {
 	        this.key = source["key"];
 	        this.keys = source["keys"];
 	        this.refs = source["refs"];
+	        this.comments = source["comments"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
