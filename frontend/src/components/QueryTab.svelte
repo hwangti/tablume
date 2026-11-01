@@ -242,12 +242,17 @@
     grid?.scrollToRow(fetchedCount(r) - 1)
   }
 
-  // ◀ ▶: the page before / after the first row in view.
+  // ◀ ▶: the page right before / after the loaded rows (1–1,000 loaded,
+  // page size 500: ▶ shows 1,001–1,500).
   async function goStep(dir: 1 | -1) {
     const r = current
     if (!r || !grid) return
-    const target = Math.max(0, start + grid.topRow() + dir * app.pageSize)
+    const target = dir > 0 ? start + fetchedCount(r) : Math.max(0, start - app.pageSize)
     if (r.paged) {
+      if (dir < 0 && start === 0) {
+        grid.scrollToRow(0)
+        return
+      }
       const end = r.total ?? (r.hasMore ? Infinity : start + fetchedCount(r))
       if (dir > 0 && target >= end) return
       if (!(await jumpTo(tab, r, target))) return

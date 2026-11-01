@@ -1,4 +1,12 @@
+<script module lang="ts">
+  // View state per result (scroll, column widths, sort), so switching to
+  // another result tab or the log and back keeps it.
+  type View = { columns: unknown; top: number; left: number; widths: number[]; sort: { col: number; dir: 1 | -1 } | null }
+  const views = new WeakMap<object, View>()
+</script>
+
 <script lang="ts">
+  import { onMount, untrack } from 'svelte'
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
   import { copyText, modKey } from '../lib/clipboard'
   import { app, toast, saveWorkspaceSoon } from '../lib/state.svelte'
@@ -196,16 +204,50 @@
     return out
   }
 
+  // Scroll position to put back once the grid is laid out; until then the
+  // saved view must not be overwritten with the initial 0.
+  let restoreTo: { top: number; left: number } | null = null
+
   // Reset per-result state when a new result set arrives.
   let lastColumns: ResultColumn[] | null = null
   $effect.pre(() => {
     if (columns !== lastColumns) {
       lastColumns = columns
-      widths = columns.map((c, i) => guessWidth(c, i))
-      sort = null
+      const v = views.get(result)
+      if (v && v.columns === columns && v.widths.length === columns.length) {
+        widths = v.widths
+        sort = v.sort
+        restoreTo = { top: v.top, left: v.left }
+      } else {
+        widths = columns.map((c, i) => guessWidth(c, i))
+        sort = null
+        if (scroller) scroller.scrollTop = 0
+      }
       anchor = focus = null
-      if (scroller) scroller.scrollTop = 0
     }
+  })
+
+  function saveView() {
+    if (!scroller || restoreTo) return
+    views.set(result, { columns, top: scroller.scrollTop, left: scroller.scrollLeft, widths: $state.snapshot(widths), sort: $state.snapshot(sort) })
+  }
+  $effect(() => {
+    void widths.join()
+    void sort
+    untrack(saveView)
+  })
+
+  onMount(() => {
+    if (!restoreTo) return
+    requestAnimationFrame(() => {
+      const r = restoreTo
+      restoreTo = null
+      if (!r || !scroller) return
+      scroller.scrollTop = r.top
+      scroller.scrollLeft = r.left
+      scrollTop = scroller.scrollTop
+      saveView()
+    })
   })
 
   // Display width in "monospace cells": CJK / Hangul count double.
@@ -289,7 +331,9 @@
     if (hasMore && !loadingMore && !hasAdded && scroller.scrollTop + scroller.clientHeight > rows.length * ROW_H - ROW_H * 20) {
       onloadmore()
     }
-    if (canLoadPrev && !loadingPrev && !loadingMore && scroller.scrollTop < ROW_H * 20) onloadprev?.()
+    // (the previous page is only loaded by its button: loading it while
+    // scrolling down from the top of a page was confusing)
+    saveView()
   }
 
   /** Rows were inserted (k > 0) or removed (k < 0) above the view: keep it still. */
