@@ -213,9 +213,13 @@
     }
   }
 
+  // The buttons load a fresh page in place of what is shown (scrolling is
+  // what accumulates rows). Results that can't be paged (an open cursor)
+  // only scroll / load on.
   async function goFirst() {
-    if (!current) return
-    if (start > 0 && !(await jumpTo(tab, current, 0))) return
+    const r = current
+    if (!r) return
+    if (r.paged && !(await jumpTo(tab, r, 0))) return
     flushSync()
     grid?.scrollToRow(0)
   }
@@ -230,13 +234,7 @@
         t = await countResult(tab, r)
         counting = false
       }
-      if (t === null) return
-      const from = Math.max(0, t - app.pageSize)
-      if (from > start + fetchedCount(r) || from < start) {
-        if (!(await jumpTo(tab, r, from))) return
-      } else {
-        while (r.hasMore && !tab.loadingMore) if (!(await fetchMore(tab, r)) && !r.hasMore) break
-      }
+      if (t === null || !(await jumpTo(tab, r, Math.max(0, t - app.pageSize)))) return
     } else {
       while (r.hasMore && !tab.loadingMore) await fetchMore(tab, r)
     }
@@ -244,29 +242,22 @@
     grid?.scrollToRow(fetchedCount(r) - 1)
   }
 
-  // ◀ ▶ move by one page from the first row in view, loading as needed.
+  // ◀ ▶: the page before / after the first row in view.
   async function goStep(dir: 1 | -1) {
     const r = current
     if (!r || !grid) return
     const target = Math.max(0, start + grid.topRow() + dir * app.pageSize)
-    if (dir > 0) {
-      while (target >= (r.start ?? 0) + fetchedCount(r) && r.hasMore && !tab.loadingMore) {
-        const dropped = await fetchMore(tab, r)
-        if (dropped) {
-          flushSync()
-          grid.shiftRows(-dropped)
-        }
-      }
-    } else {
-      while (target < (r.start ?? 0) && !tab.loadingPrev) {
-        const added = await fetchPrev(tab, r)
-        if (!added) break
-        flushSync()
-        grid.shiftRows(added)
-      }
+    if (r.paged) {
+      const end = r.total ?? (r.hasMore ? Infinity : start + fetchedCount(r))
+      if (dir > 0 && target >= end) return
+      if (!(await jumpTo(tab, r, target))) return
+      flushSync()
+      grid.scrollToRow(0)
+      return
     }
+    while (dir > 0 && target >= fetchedCount(r) && r.hasMore && !tab.loadingMore) await fetchMore(tab, r)
     flushSync()
-    grid.scrollToRow(Math.min(fetchedCount(r) - 1, target - (r.start ?? 0)))
+    grid.scrollToRow(Math.min(fetchedCount(r) - 1, target))
   }
 
   function toggleSizeMenu(e: MouseEvent) {
