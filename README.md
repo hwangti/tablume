@@ -82,6 +82,7 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 | `Ctrl/⌘ + Shift + Enter` | 전체 실행 |
 | `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | 새 콘솔 / 탭 닫기 |
 | `Ctrl/⌘ + 1…9` | 탭 이동 |
+| `Ctrl + Tab` / `Ctrl + Shift + Tab` | 다음 / 이전 탭 (`Ctrl + PageDown/PageUp`, macOS는 `⌘ + Shift + ]/[`도 됨) |
 | `Ctrl/⌘ + /` | 주석 토글 |
 | `Ctrl/⌘ + F` | 에디터에서 찾기/바꾸기 |
 | 그리드에서 `Enter` / `F2` / 더블클릭 | 셀 편집 (편집할 수 없으면 값 보기) |

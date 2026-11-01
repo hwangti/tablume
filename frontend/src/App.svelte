@@ -50,6 +50,23 @@
     }
   }
 
+  // Next / previous tab: Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+PageDown / PageUp,
+  // and on macOS also ⌘⇧] / ⌘⇧[. Caught before the editor or the grid
+  // (where Tab moves between cells) see the key.
+  function switchKey(e: KeyboardEvent) {
+    if (app.editing || app.prompt || app.tabs.length < 2) return
+    let dir = 0
+    if (e.ctrlKey && e.key === 'Tab') dir = e.shiftKey ? -1 : 1
+    else if (e.ctrlKey && !e.shiftKey && (e.key === 'PageDown' || e.key === 'PageUp')) dir = e.key === 'PageDown' ? 1 : -1
+    else if (e.metaKey && e.shiftKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) dir = e.code === 'BracketRight' ? 1 : -1
+    if (!dir) return
+    e.preventDefault()
+    e.stopPropagation()
+    const i = app.tabs.findIndex((t) => t.id === app.activeTab)
+    const n = app.tabs.length
+    app.activeTab = app.tabs[(i + dir + n) % n].id
+  }
+
   function submitPassword() {
     app.prompt?.resolve(password)
     password = ''
@@ -96,7 +113,7 @@
   let renaming = $state<string | null>(null)
 </script>
 
-<svelte:window onkeydown={keydown} />
+<svelte:window onkeydown={keydown} onkeydowncapture={switchKey} />
 
 <div class="layout" style:grid-template-columns="{sideW}px 1px 1fr">
   <Sidebar />
