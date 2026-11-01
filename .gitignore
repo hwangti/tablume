@@ -1,5 +1,30 @@
+# Build output
 build/bin
 frontend/node_modules
 frontend/dist/*
 !frontend/dist/.gitkeep
 frontend/package.json.md5
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs and local env
+*.log
+.env
+.env.local
