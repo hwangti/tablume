@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { EditorView } from '@codemirror/view'
+  import { flushSync } from 'svelte'
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
@@ -19,7 +20,10 @@
     toast,
     confirmBox,
     reloadTable,
-    countTable,
+    countResult,
+    fetchPrev,
+    jumpTo,
+    fetchedCount,
     PAGE_SIZES,
     openConsole,
     type Tab,
@@ -141,7 +145,7 @@
     if (ref.orderBy !== orderDraft) ref.sort = undefined
     ref.where = whereDraft
     ref.orderBy = orderDraft
-    reloadTable(tab, { reset: true })
+    reloadTable(tab)
   }
 
   function revertFilter() {
@@ -173,40 +177,112 @@
       toast(errText(e), 'error')
       return
     }
-    reloadTable(tab, { reset: true })
+    reloadTable(tab)
   }
 
-  // ---- pager (table data tabs)
-  let pageOffset = $derived(tab.tableRef?.offset ?? 0)
-  let pageLoaded = $derived(current?.rows ? current.rows.length - Object.keys(current.edit?.added ?? {}).length : 0)
-  let total = $derived(tab.tableRef?.total ?? null)
-  let hasNext = $derived(app.pageSize > 0 && (total !== null ? pageOffset + pageLoaded < total : pageLoaded >= app.pageSize))
+  // ---- pager: the loaded rows are a window [start, start + loaded) of the
+  // result; scrolling grows it, the buttons move it.
+  let start = $derived(current?.start ?? 0)
+  let loaded = $derived(current ? fetchedCount(current) : 0)
+  let total = $derived(current?.total ?? null)
   let counting = $state(false)
+  let sizeMenu = $state<{ right: number; top: number } | null>(null)
 
   async function count() {
+    if (!current?.paged) return
     counting = true
-    await countTable(tab)
+    await countResult(tab, current)
     counting = false
   }
 
-  function goPage(offset: number) {
-    reloadTable(tab, { offset })
+  async function loadMore() {
+    if (!current) return
+    const dropped = await fetchMore(tab, current)
+    if (dropped) {
+      flushSync()
+      grid?.shiftRows(-dropped)
+    }
+  }
+
+  async function loadPrev() {
+    if (!current) return
+    const added = await fetchPrev(tab, current)
+    if (added) {
+      flushSync()
+      grid?.shiftRows(added)
+    }
+  }
+
+  async function goFirst() {
+    if (!current) return
+    if (start > 0 && !(await jumpTo(tab, current, 0))) return
+    flushSync()
+    grid?.scrollToRow(0)
   }
 
   async function goLast() {
-    let t = total
-    if (t === null) {
-      await count()
-      t = tab.tableRef?.total ?? null
+    const r = current
+    if (!r) return
+    if (r.paged) {
+      let t = r.total ?? null
+      if (t === null) {
+        counting = true
+        t = await countResult(tab, r)
+        counting = false
+      }
+      if (t === null) return
+      const from = Math.max(0, t - app.pageSize)
+      if (from > start + fetchedCount(r) || from < start) {
+        if (!(await jumpTo(tab, r, from))) return
+      } else {
+        while (r.hasMore && !tab.loadingMore) if (!(await fetchMore(tab, r)) && !r.hasMore) break
+      }
+    } else {
+      while (r.hasMore && !tab.loadingMore) await fetchMore(tab, r)
     }
-    if (t === null || app.pageSize <= 0) return
-    goPage(Math.floor(Math.max(0, t - 1) / app.pageSize) * app.pageSize)
+    flushSync()
+    grid?.scrollToRow(fetchedCount(r) - 1)
   }
 
-  function setPageSize() {
+  // ◀ ▶ move by one page from the first row in view, loading as needed.
+  async function goStep(dir: 1 | -1) {
+    const r = current
+    if (!r || !grid) return
+    const target = Math.max(0, start + grid.topRow() + dir * app.pageSize)
+    if (dir > 0) {
+      while (target >= (r.start ?? 0) + fetchedCount(r) && r.hasMore && !tab.loadingMore) {
+        const dropped = await fetchMore(tab, r)
+        if (dropped) {
+          flushSync()
+          grid.shiftRows(-dropped)
+        }
+      }
+    } else {
+      while (target < (r.start ?? 0) && !tab.loadingPrev) {
+        const added = await fetchPrev(tab, r)
+        if (!added) break
+        flushSync()
+        grid.shiftRows(added)
+      }
+    }
+    flushSync()
+    grid.scrollToRow(Math.min(fetchedCount(r) - 1, target - (r.start ?? 0)))
+  }
+
+  function toggleSizeMenu(e: MouseEvent) {
+    e.stopPropagation()
+    if (sizeMenu) {
+      sizeMenu = null
+      return
+    }
+    const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    sizeMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
+  }
+
+  function setPageSize(n: number) {
+    app.pageSize = n
+    sizeMenu = null
     saveWorkspaceSoon()
-    // stay around the same rows
-    goPage(app.pageSize > 0 ? Math.floor(pageOffset / app.pageSize) * app.pageSize : 0)
   }
 
   let serverSort = $derived.by(() => {
@@ -379,7 +455,7 @@
   })
 </script>
 
-<svelte:window onclick={() => (exportMenu = null)} />
+<svelte:window onclick={() => ((exportMenu = null), (sizeMenu = null))} />
 
 {#snippet logList(hint: boolean)}
   <div class="messages">
@@ -434,12 +510,6 @@
       {#if tab.running}
         <span class="running"><span class="spin"></span> 실행 중 {elapsed}</span>
       {/if}
-      <label class="fetch" title="한 번에 가져올 행 수">
-        가져오기
-        <select bind:value={app.fetchSize} onchange={saveWorkspaceSoon}>
-          {#each [100, 500, 1000, 5000, 10000] as n (n)}<option value={n}>{n}</option>{/each}
-        </select>
-      </label>
     </div>
   {/if}
 
@@ -540,30 +610,33 @@
         {#if current && (!isTable || tableView === 'data') && app.gridZoom !== 1}
           <button class="btn mini" title="표 확대/축소 초기화 ({modKey}0) · {modKey}+휠로 조절" onclick={() => grid?.zoom(0)}>{Math.round(app.gridZoom * 100)}%</button>
         {/if}
-        {#if current && isTable && tableView === 'data'}
-          <div class="pager">
-            <button class="icon-btn sm" title="첫 페이지" disabled={busy || pageOffset === 0} onclick={() => goPage(0)}><Icon name="first" size={13} /></button>
-            <button class="icon-btn sm" title="이전 페이지" disabled={busy || pageOffset === 0} onclick={() => goPage(pageOffset - app.pageSize)}><Icon name="prev" size={13} /></button>
-            <span class="range">
-              {#if pageLoaded === 0}0행{:else}{(pageOffset + 1).toLocaleString()}–{(pageOffset + pageLoaded).toLocaleString()}{/if}
-              <span class="of">/</span>
-              {#if total !== null}
-                <button class="total" title="다시 세기 (COUNT)" onclick={count} disabled={counting}>{total.toLocaleString()}</button>
-              {:else}
-                <button class="total unknown" title="전체 행 수 세기 (COUNT)" onclick={count} disabled={counting}>{counting ? '…' : '?'}</button>
-              {/if}
-            </span>
-            <button class="icon-btn sm" title="다음 페이지" disabled={busy || !hasNext} onclick={() => goPage(pageOffset + app.pageSize)}><Icon name="next" size={13} /></button>
-            <button class="icon-btn sm" title="마지막 페이지" disabled={busy || !hasNext} onclick={goLast}><Icon name="last" size={13} /></button>
-            <select class="psize" title="페이지 크기" bind:value={app.pageSize} onchange={setPageSize} disabled={busy}>
-              {#each PAGE_SIZES as n (n)}<option value={n}>{n === 0 ? '전체' : n.toLocaleString()}</option>{/each}
-            </select>
+        {#if current && (!isTable || tableView === 'data') && current.columns?.length}
+          <div class="pager dropdown">
+            <button class="icon-btn sm" title="처음으로" disabled={busy || (start === 0 && !current.rows?.length)} onclick={goFirst}><Icon name="first" size={13} /></button>
+            <button class="icon-btn sm" title="이전 {app.pageSize.toLocaleString()}행" disabled={busy} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
+            <button class="range" class:open={!!sizeMenu} title="불러온 행 · 눌러서 페이지 크기 변경" onclick={toggleSizeMenu}>
+              {#if loaded === 0}0행{:else}{(start + 1).toLocaleString()}–{(start + loaded).toLocaleString()}{/if}
+              <Icon name="chevronDown" size={10} />
+            </button>
+            {#if total !== null}
+              <button class="total" title={current.paged ? '다시 세기 (COUNT)' : '전체 행 수'} onclick={count} disabled={counting || !current.paged}>{total.toLocaleString()}</button>
+            {:else}
+              <button class="total unknown" title={current.paged ? '전체 행 수 세기 (COUNT)' : '이 쿼리는 셀 수 없습니다'} onclick={count} disabled={counting || !current.paged}>
+                {counting ? '세는 중…' : (start + loaded + 1).toLocaleString() + '+'}
+              </button>
+            {/if}
+            <button class="icon-btn sm" title="다음 {app.pageSize.toLocaleString()}행" disabled={busy} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
+            <button class="icon-btn sm" title="마지막으로" disabled={busy || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
+            {#if sizeMenu}
+              <div class="menu size-menu" style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
+                <div class="hint">한 번에 불러올 행 수</div>
+                {#each PAGE_SIZES as n (n)}
+                  <button class:on={app.pageSize === n} onclick={() => setPageSize(n)}>{n.toLocaleString()}</button>
+                {/each}
+              </div>
+            {/if}
             <span class="meta">{current.elapsedMs}ms</span>
           </div>
-        {:else if current && !isTable}
-          <span class="meta">
-            {current.rows!.length.toLocaleString()}{current.hasMore ? '+' : ''}행 · {current.elapsedMs}ms
-          </span>
         {/if}
       </div>
       {#if isTable && tableView === 'data' && tab.tableRef}
@@ -578,7 +651,6 @@
             <FilterInput bind:value={orderDraft} columns={filterCols} keywords={ORDER_KW} onsubmit={applyFilter} onrevert={revertFilter} />
             {#if tab.tableRef.orderBy}<button class="x-btn fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
           </div>
-          <button class="btn mini" onclick={applyFilter} disabled={tab.running} title="Enter">조회</button>
         </div>
       {/if}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -612,8 +684,11 @@
             rows={current.rows!}
             hasMore={current.hasMore}
             loadingMore={tab.loadingMore}
-            onloadmore={() => fetchMore(tab, current!)}
-            rowBase={isTable ? pageOffset : 0}
+            onloadmore={loadMore}
+            canLoadPrev={!!current.paged && start > 0}
+            loadingPrev={!!tab.loadingPrev}
+            onloadprev={loadPrev}
+            rowBase={start}
           />
         {:else}
           {@render logList(!isTable)}
@@ -675,12 +750,6 @@
     align-items: center;
     gap: 6px;
     margin-right: 10px;
-    color: var(--text-dim);
-  }
-  .fetch {
-    display: flex;
-    align-items: center;
-    gap: 6px;
     color: var(--text-dim);
   }
   .body {
@@ -793,15 +862,28 @@
   .range {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
+    height: 22px;
     padding: 0 6px;
+    border: none;
+    border-radius: 4px;
+    background: none;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    cursor: pointer;
   }
-  .range .of {
-    color: var(--text-faint);
+  .range:hover,
+  .range.open {
+    background: var(--bg-hover);
+  }
+  .size-menu {
+    min-width: 150px;
+  }
+  .size-menu button.on {
+    color: var(--accent);
+    font-weight: 600;
   }
   .total {
     padding: 0 3px;
@@ -820,12 +902,7 @@
     color: var(--accent);
     font-weight: 600;
   }
-  .psize {
-    height: 22px;
-    margin-left: 4px;
-    padding: 0 4px;
-    font-size: 12px;
-  }
+
   .seg {
     display: inline-flex;
     border: 1px solid var(--border);

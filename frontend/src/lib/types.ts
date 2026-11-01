@@ -69,8 +69,13 @@ export interface StmtResult {
   error: string
   notice: string
   source: string[] | null
+  // More rows come from re-running the query one page at a time
+  // (FetchPage) instead of an open cursor.
+  paged?: boolean
   // client-side only
   edit?: EditState
+  start?: number // absolute number of the first loaded row (paged results)
+  total?: number | null // row count, once known
 }
 
 export interface EditInfo {

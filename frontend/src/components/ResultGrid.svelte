@@ -13,6 +13,9 @@
     hasMore,
     loadingMore,
     onloadmore,
+    canLoadPrev = false,
+    loadingPrev = false,
+    onloadprev,
     ensureEdit,
     serverSort = null,
     onsort,
@@ -24,6 +27,11 @@
     hasMore: boolean
     loadingMore: boolean
     onloadmore: () => void
+    // Paged results whose window doesn't start at row 1 load the previous
+    // page when scrolled to the top.
+    canLoadPrev?: boolean
+    loadingPrev?: boolean
+    onloadprev?: () => void
     // Resolves whether this result can be edited (loads it on first use).
     ensureEdit: () => Promise<EditInfo | null>
     // When onsort is given (table data tabs), header clicks sort on the
@@ -281,6 +289,29 @@
     if (hasMore && !loadingMore && !hasAdded && scroller.scrollTop + scroller.clientHeight > rows.length * ROW_H - ROW_H * 20) {
       onloadmore()
     }
+    if (canLoadPrev && !loadingPrev && !loadingMore && scroller.scrollTop < ROW_H * 20) onloadprev?.()
+  }
+
+  /** Rows were inserted (k > 0) or removed (k < 0) above the view: keep it still. */
+  export function shiftRows(k: number) {
+    if (!k) return
+    if (anchor) anchor = { r: Math.max(0, anchor.r + k), c: anchor.c }
+    if (focus) focus = { r: Math.max(0, focus.r + k), c: focus.c }
+    if (editing) editing = { ...editing, ri: editing.ri + k, vi: editing.vi + k }
+    scroller.scrollTop = Math.max(0, scroller.scrollTop + k * ROW_H)
+    scrollTop = scroller.scrollTop
+  }
+
+  /** Index of the first row in view. */
+  export function topRow(): number {
+    return Math.floor(scroller.scrollTop / ROW_H)
+  }
+
+  export function scrollToRow(vi: number) {
+    scroller.scrollTop = Math.max(0, vi * ROW_H)
+    scrollTop = scroller.scrollTop
+    const c = focus?.c ?? 0
+    if (order.length) anchor = focus = { r: Math.min(order.length - 1, Math.max(0, vi)), c }
   }
 
   let sel = $derived.by(() => {
@@ -513,6 +544,12 @@
         </div>
       {/each}
     </div>
+
+    {#if canLoadPrev || loadingPrev}
+      <div class="more top" style:top="{HEAD_H}px">
+        {#if loadingPrev}이전 행 불러오는 중…{:else}<button class="link" onclick={() => onloadprev?.()}>이전 행 불러오기</button>{/if}
+      </div>
+    {/if}
 
     {#each visible as { ri, vi } (ri)}
       <div class="tr" class:alt={vi % 2 === 1} style:top="{HEAD_H + vi * ROW_H}px" style:width="{totalW}px">
@@ -797,6 +834,11 @@
     line-height: var(--row-h);
     color: var(--text-dim);
     font-family: var(--font-ui);
+  }
+
+  .more.top {
+    z-index: 1;
+    background: var(--bg-panel);
   }
 
   .link {

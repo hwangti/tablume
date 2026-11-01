@@ -15,6 +15,7 @@ type sqlToken struct {
 	kind  byte // 'w' word, 'q' quoted identifier, 's' string literal, 'p' punctuation
 	text  string
 	depth int // parenthesis depth
+	pos   int // byte offset in the source
 }
 
 // lexSQL is a small tokenizer, good enough to find the FROM clause.
@@ -39,7 +40,7 @@ func lexSQL(s, style string) []sqlToken {
 		case c == '\'':
 			sp := splitter{text: s}
 			j := sp.skipQuoted(i+1, '\'', style == "mysql")
-			out = append(out, sqlToken{'s', s[i:j], depth})
+			out = append(out, sqlToken{'s', s[i:j], depth, i})
 			i = j
 		case c == '"' || c == '`' || (c == '[' && style == "mssql"):
 			closer := c
@@ -48,20 +49,20 @@ func lexSQL(s, style string) []sqlToken {
 			}
 			sp := splitter{text: s}
 			j := sp.skipQuoted(i+1, closer, false)
-			out = append(out, sqlToken{'q', strings.ReplaceAll(s[i+1:max(i+1, j-1)], string(closer)+string(closer), string(closer)), depth})
+			out = append(out, sqlToken{'q', strings.ReplaceAll(s[i+1:max(i+1, j-1)], string(closer)+string(closer), string(closer)), depth, i})
 			i = j
 		case isIdentStart(c):
 			j := i
 			for j < len(s) && isIdentChar(s[j]) {
 				j++
 			}
-			out = append(out, sqlToken{'w', s[i:j], depth})
+			out = append(out, sqlToken{'w', s[i:j], depth, i})
 			i = j
 		default:
 			if c == '(' {
 				depth++
 			}
-			out = append(out, sqlToken{'p', string(c), depth})
+			out = append(out, sqlToken{'p', string(c), depth, i})
 			if c == ')' {
 				depth--
 			}

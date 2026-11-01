@@ -17,6 +17,8 @@ interface Api {
   CompletionColumns(id: string, schema: string): Promise<Record<string, string[]>>
   SelectSQL(id: string, schema: string, t: Table, where: string, orderBy: string, limit: number, offset: number): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
+  FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
+  CountResult(tabId: string, connId: string, sql: string): Promise<number>
   QuoteIdent(id: string, name: string): Promise<string>
   QualifiedName(id: string, schema: string, t: Table): Promise<string>
   TableDDL(id: string, schema: string, t: Table): Promise<string>

@@ -22,6 +22,10 @@ export function Connect(arg1, arg2) {
   return window['go']['main']['App']['Connect'](arg1, arg2);
 }
 
+export function CountResult(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CountResult'](arg1, arg2, arg3);
+}
+
 export function CountRows(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['CountRows'](arg1, arg2, arg3, arg4);
 }
@@ -44,6 +48,10 @@ export function Execute(arg1) {
 
 export function FetchMore(arg1, arg2, arg3) {
   return window['go']['main']['App']['FetchMore'](arg1, arg2, arg3);
+}
+
+export function FetchPage(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['FetchPage'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function IsConnected(arg1) {

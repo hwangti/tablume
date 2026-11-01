@@ -79,7 +79,7 @@ func TestIntegration(t *testing.T) {
 			if r.Error != "" {
 				t.Fatal(r.Error)
 			}
-			if !strings.HasPrefix(r.SQL, "SELECT *") || len(r.Rows) != 2 || !r.HasMore || r.CursorID == "" {
+			if !strings.HasPrefix(r.SQL, "SELECT *") || len(r.Rows) != 2 || !r.HasMore || !r.Paged {
 				t.Fatalf("unexpected first page: %+v", r)
 			}
 			var cols []string
@@ -95,7 +95,7 @@ func TestIntegration(t *testing.T) {
 			if r.Rows[1][2] != nil {
 				t.Errorf("expected NULL, got %q", r.Rows[1][2])
 			}
-			more, err := m.FetchMore("t1", r.CursorID, 10)
+			more, err := m.FetchPage("t1", tg.cfg.ID, r.SQL, 2, 10)
 			if err != nil || len(more.Rows) != 1 || more.HasMore {
 				t.Fatalf("fetch more: %v %+v", err, more)
 			}
@@ -189,10 +189,11 @@ func TestIntegration(t *testing.T) {
 func TestCursorAndCancel(t *testing.T) {
 	all := targets(t)
 	cases := map[string][2]string{
-		"mariadb":  {"SELECT * FROM seq_1_to_50000000", "SELECT SLEEP(20)"},
-		"postgres": {"SELECT * FROM generate_series(1, 50000000)", "SELECT pg_sleep(20)"},
-		"mssql":    {"SELECT a.object_id FROM sys.all_objects a CROSS JOIN sys.all_objects b CROSS JOIN sys.all_objects c", "WAITFOR DELAY '00:00:20'"},
-		"oracle":   {"SELECT level FROM dual CONNECT BY level <= 50000000", "BEGIN DBMS_SESSION.SLEEP(20); END;"},
+		// queries that limit themselves can't be paged: they keep a cursor
+		"mariadb":  {"SELECT * FROM seq_1_to_50000000 LIMIT 50000000", "SELECT SLEEP(20)"},
+		"postgres": {"SELECT * FROM generate_series(1, 50000000) LIMIT 50000000", "SELECT pg_sleep(20)"},
+		"mssql":    {"SELECT TOP 50000000 a.object_id FROM sys.all_objects a CROSS JOIN sys.all_objects b CROSS JOIN sys.all_objects c", "WAITFOR DELAY '00:00:20'"},
+		"oracle":   {"SELECT level FROM dual CONNECT BY level <= 50000000 FETCH FIRST 50000000 ROWS ONLY", "BEGIN DBMS_SESSION.SLEEP(20); END;"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -203,7 +204,7 @@ func TestCursorAndCancel(t *testing.T) {
 			}
 			defer m.Disconnect(cfg.ID)
 			res, err := m.Execute(ExecRequest{TabID: "c", ConnID: cfg.ID, SQL: c[0], Cursor: -1, Fetch: 10})
-			if err != nil || res.Results[0].Error != "" || !res.Results[0].HasMore {
+			if err != nil || res.Results[0].Error != "" || !res.Results[0].HasMore || res.Results[0].Paged || res.Results[0].CursorID == "" {
 				t.Fatalf("%v %+v", err, res.Results)
 			}
 			start := time.Now()
@@ -494,5 +495,62 @@ func TestLongTextEditable(t *testing.T) {
 		Changes: []RowChange{{Kind: "update", Key: map[string]any{"id": "1"}, Values: map[string]any{"content": "<p>new</p>"}}}})
 	if err != nil || n != 1 {
 		t.Fatal(n, err)
+	}
+}
+
+func TestPaging(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			if res, err := m.Execute(ExecRequest{TabID: "p", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: tg.setup, Cursor: -1}); err != nil || res.Results[len(res.Results)-1].Error != "" {
+				t.Fatal(err, res.Results)
+			}
+			tbl := "items"
+			if name == "mssql" {
+				tbl = "dbo.items"
+			}
+			q := "SELECT id, name FROM " + tbl + " ORDER BY id -- trailing comment"
+			res, err := m.Execute(ExecRequest{TabID: "p", ConnID: tg.cfg.ID, SQL: q, Cursor: -1, Fetch: 2})
+			if err != nil || res.Results[0].Error != "" {
+				t.Fatal(err, res.Results)
+			}
+			r := res.Results[0]
+			if !r.Paged || len(r.Rows) != 2 || !r.HasMore || r.CursorID != "" {
+				t.Fatalf("first page: %+v", r)
+			}
+			f, err := m.FetchPage("p", tg.cfg.ID, r.SQL, 2, 2)
+			if err != nil || len(f.Rows) != 1 || f.HasMore || f.Rows[0][0] != "3" {
+				t.Fatalf("second page: %+v %v", f, err)
+			}
+			if n, err := m.CountResult("p", tg.cfg.ID, r.SQL); err != nil || n != 3 {
+				t.Fatalf("count: %d %v", n, err)
+			}
+			// exactly one page: no "more"
+			res, _ = m.Execute(ExecRequest{TabID: "p", ConnID: tg.cfg.ID, SQL: q, Cursor: -1, Fetch: 3})
+			if r := res.Results[0]; !r.Paged || len(r.Rows) != 3 || r.HasMore {
+				t.Fatalf("one page: %+v", r)
+			}
+			// a statement that already limits itself streams, and an idle
+			// cursor is closed
+			if name == "oracle" || name == "mssql" {
+				return
+			}
+			old := cursorIdle
+			cursorIdle = 300 * time.Millisecond
+			defer func() { cursorIdle = old }()
+			res, _ = m.Execute(ExecRequest{TabID: "p", ConnID: tg.cfg.ID, SQL: "SELECT id FROM items ORDER BY id LIMIT 3", Cursor: -1, Fetch: 1})
+			r = res.Results[0]
+			if r.Paged || !r.HasMore || r.CursorID == "" {
+				t.Fatalf("streaming: %+v", r)
+			}
+			time.Sleep(time.Second)
+			if _, err := m.FetchMore("p", r.CursorID, 1); err == nil || !strings.Contains(err.Error(), "닫았습니다") {
+				t.Fatalf("idle cursor should be closed: %v", err)
+			}
+		})
 	}
 }

@@ -68,17 +68,20 @@ type ResultColumn struct {
 }
 
 type StmtResult struct {
-	SQL          string         `json:"sql"`
-	From         int            `json:"from"` // UTF-16 offsets into the submitted text
-	To           int            `json:"to"`
-	Columns      []ResultColumn `json:"columns"`
-	Rows         [][]any        `json:"rows"`
-	HasMore      bool           `json:"hasMore"`
-	CursorID     string         `json:"cursorId"`
-	RowsAffected int64          `json:"rowsAffected"` // -1 when unknown
-	ElapsedMs    int64          `json:"elapsedMs"`
-	Error        string         `json:"error"`
-	Notice       string         `json:"notice"`
+	SQL      string         `json:"sql"`
+	From     int            `json:"from"` // UTF-16 offsets into the submitted text
+	To       int            `json:"to"`
+	Columns  []ResultColumn `json:"columns"`
+	Rows     [][]any        `json:"rows"`
+	HasMore  bool           `json:"hasMore"`
+	CursorID string         `json:"cursorId"`
+	// Paged: more rows come from FetchPage (the query re-run with an
+	// offset) rather than from an open cursor.
+	Paged        bool   `json:"paged"`
+	RowsAffected int64  `json:"rowsAffected"` // -1 when unknown
+	ElapsedMs    int64  `json:"elapsedMs"`
+	Error        string `json:"error"`
+	Notice       string `json:"notice"`
 	// Source is the table a plain single-table SELECT reads from, as written.
 	Source []string `json:"source"`
 }

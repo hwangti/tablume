@@ -13,6 +13,8 @@ export function CompletionColumns(arg1:string,arg2:string):Promise<Record<string
 
 export function Connect(arg1:string,arg2:string):Promise<string>;
 
+export function CountResult(arg1:string,arg2:string,arg3:string):Promise<number>;
+
 export function CountRows(arg1:string,arg2:string,arg3:dbx.Table,arg4:string):Promise<number>;
 
 export function DeleteConnection(arg1:string):Promise<void>;
@@ -24,6 +26,8 @@ export function EditInfo(arg1:string,arg2:string,arg3:Array<string>,arg4:Array<s
 export function Execute(arg1:dbx.ExecRequest):Promise<dbx.ExecResponse>;
 
 export function FetchMore(arg1:string,arg2:string,arg3:number):Promise<dbx.FetchResponse>;
+
+export function FetchPage(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number):Promise<dbx.FetchResponse>;
 
 export function IsConnected(arg1:string):Promise<boolean>;
 

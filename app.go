@@ -116,6 +116,15 @@ func (a *App) SelectSQL(id, schema string, t dbx.Table, where, orderBy string, l
 	return a.db.SelectSQL(id, schema, t, where, orderBy, limit, offset)
 }
 
+// FetchPage reads the next rows of a paged result (see StmtResult.Paged).
+func (a *App) FetchPage(tabID, connID, sql string, offset, n int) (dbx.FetchResponse, error) {
+	return a.db.FetchPage(tabID, connID, sql, offset, n)
+}
+
+func (a *App) CountResult(tabID, connID, sql string) (int64, error) {
+	return a.db.CountResult(tabID, connID, sql)
+}
+
 func (a *App) CountRows(id, schema string, t dbx.Table, where string) (int64, error) {
 	return a.db.CountRows(id, schema, t, where)
 }

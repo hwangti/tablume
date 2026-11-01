@@ -23,6 +23,8 @@ type pool struct {
 	d   Dialect
 	cfg ConnConfig
 	tun *tunnel // nil without SSH
+	// legacyOracle: before 12c, no OFFSET … FETCH, so results stream instead.
+	legacyOracle bool
 }
 
 func (p *pool) close() {
@@ -40,6 +42,8 @@ type session struct {
 	conn   *sql.Conn
 	schema string
 	cur    *cursor
+	// expired is the id of a cursor closed for being idle.
+	expired string
 
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
@@ -50,6 +54,24 @@ type cursor struct {
 	rows   *sql.Rows
 	cols   []*sql.ColumnType
 	cancel context.CancelFunc
+	idle   *time.Timer
+}
+
+// Results that can't be paged (they already have LIMIT, FOR UPDATE, …)
+// keep a streaming cursor; it is closed after this long without "load more"
+// so it doesn't hold locks while nobody looks.
+var cursorIdle = 30 * time.Second
+
+func (s *session) keepCursor(c *cursor) {
+	s.cur = c
+	c.idle = time.AfterFunc(cursorIdle, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.cur == c {
+			s.closeCursor()
+			s.expired = c.id
+		}
+	})
 }
 
 type Manager struct {
@@ -136,12 +158,14 @@ func (m *Manager) Connect(cfg ConnConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ver := p.d.Version(ctx, p.db)
+	p.legacyOracle = cfg.Driver == "oracle" && isLegacyOracle(ver)
 	m.mu.Lock()
 	m.pools[cfg.ID] = p
 	m.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return p.d.Version(ctx, p.db), nil
+	return ver, nil
 }
 
 func (m *Manager) Disconnect(id string) {
@@ -345,6 +369,9 @@ func (s *session) closeCursor() {
 		return
 	}
 	s.cur = nil
+	if c.idle != nil {
+		c.idle.Stop()
+	}
 	done := make(chan struct{})
 	go func() {
 		c.rows.Close()
@@ -487,7 +514,26 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			RowsAffected: -1,
 		}
 		start := time.Now()
-		out, abandoned := s.runStmt(ctx, st.SQL, returnsRows(st.SQL, p.d.Style()), fetch)
+		query := returnsRows(st.SQL, p.d.Style())
+		var out stmtOut
+		var abandoned bool
+		paged := false
+		if q, ok := pagedSQL(st.SQL, p.d.Style(), fetch+1, 0, p.legacyOracle); query && ok {
+			out, abandoned = s.runStmt(ctx, q, true, fetch+1)
+			paged = out.err == nil && !abandoned
+			if paged {
+				out.rows.Close()
+				out.more = len(out.data) > fetch
+				out.data = out.data[:min(len(out.data), fetch)]
+			} else if out.rows != nil {
+				out.rows.Close()
+			}
+			// If the paged form fails (a construct the clause doesn't fit),
+			// the statement runs as written below and reports its own error.
+		}
+		if !paged && !abandoned && ctx.Err() == nil {
+			out, abandoned = s.runStmt(ctx, st.SQL, query, fetch)
+		}
 		r.ElapsedMs = time.Since(start).Milliseconds()
 		if abandoned {
 			r.Error = "사용자에 의해 취소됨 (서버가 취소에 응답하지 않아 이 탭의 연결을 새로 엽니다)"
@@ -501,10 +547,13 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			r.Source = DetectSource(st.SQL, p.d.Style())
 			r.Columns = describeColumns(out.cols)
 			r.Rows, r.HasMore = out.data, out.more
-			if r.HasMore && last && out.err == nil {
+			r.Paged = paged
+			if paged {
+				// rows already closed; "load more" runs the next page
+			} else if r.HasMore && last && out.err == nil {
 				// Keep the cursor open so "load more" can continue it.
 				r.CursorID = NewID()
-				s.cur = &cursor{id: r.CursorID, rows: out.rows, cols: out.cols, cancel: cancel}
+				s.keepCursor(&cursor{id: r.CursorID, rows: out.rows, cols: out.cols, cancel: cancel})
 				keepCursor = true
 			} else {
 				s.cur = &cursor{rows: out.rows, cancel: func() {}}
@@ -609,8 +658,12 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cur == nil || s.cur.id != cursorID {
+		if s.expired == cursorID {
+			return FetchResponse{}, fmt.Errorf("%d초 동안 더 불러오지 않아 결과 커서를 닫았습니다 (테이블 잠금을 오래 잡지 않도록). 더 보려면 쿼리를 다시 실행하세요", int(cursorIdle.Seconds()))
+		}
 		return FetchResponse{}, errors.New("결과 커서가 닫혔습니다. 쿼리를 다시 실행하세요")
 	}
+	s.cur.idle.Reset(cursorIdle)
 	if n <= 0 {
 		n = 500
 	}
@@ -624,6 +677,79 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 		err = errors.New("DB 서버가 연결을 끊어 나머지 결과를 가져올 수 없습니다. 결과를 오래 읽지 않으면 서버가 연결을 끊습니다(MySQL/MariaDB의 net_write_timeout). 쿼리를 다시 실행하세요")
 	}
 	return FetchResponse{Rows: rows, HasMore: more && err == nil}, err
+}
+
+// pageRun runs one query on a tab's session (so session state such as the
+// current schema and temp tables apply) and can be cancelled with Cancel.
+func (m *Manager) pageRun(tabID, connID string, fn func(ctx context.Context, s *session, p *pool) error) error {
+	s, p, err := m.session(tabID, connID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.cancelMu.Lock()
+	s.cancel = cancel
+	s.cancelMu.Unlock()
+	defer func() {
+		s.cancelMu.Lock()
+		s.cancel = nil
+		s.cancelMu.Unlock()
+	}()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// A streaming cursor on this connection would be in the way.
+	s.closeCursor()
+	if err := s.ensureConn(ctx, p); err != nil {
+		return err
+	}
+	err = fn(ctx, s, p)
+	if err != nil && ctx.Err() != nil {
+		err = errors.New("사용자에 의해 취소됨")
+	}
+	return err
+}
+
+// FetchPage reads n rows of a paged result starting at offset.
+func (m *Manager) FetchPage(tabID, connID, stmt string, offset, n int) (FetchResponse, error) {
+	if n <= 0 {
+		n = 500
+	}
+	var resp FetchResponse
+	err := m.pageRun(tabID, connID, func(ctx context.Context, s *session, p *pool) error {
+		q, ok := pagedSQL(stmt, p.d.Style(), n+1, offset, p.legacyOracle)
+		if !ok {
+			return errors.New("이 쿼리는 페이지 단위로 읽을 수 없습니다")
+		}
+		out, abandoned := s.runStmt(ctx, q, true, n+1)
+		if abandoned {
+			return errors.New("사용자에 의해 취소됨")
+		}
+		if out.rows != nil {
+			out.rows.Close()
+		}
+		if out.err != nil {
+			return out.err
+		}
+		resp.HasMore = len(out.data) > n
+		resp.Rows = out.data[:min(len(out.data), n)]
+		return nil
+	})
+	return resp, err
+}
+
+// CountResult counts the rows a query returns.
+func (m *Manager) CountResult(tabID, connID, stmt string) (int64, error) {
+	var n int64
+	err := m.pageRun(tabID, connID, func(ctx context.Context, s *session, p *pool) error {
+		var v any
+		if err := s.conn.QueryRowContext(ctx, countSQL(stmt, p.d.Style())).Scan(&v); err != nil {
+			return err
+		}
+		n = toInt64(v)
+		return nil
+	})
+	return n, err
 }
 
 // ---------------------------------------------------------------- values

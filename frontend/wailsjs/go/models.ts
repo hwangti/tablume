@@ -242,6 +242,7 @@ export namespace dbx {
 	    rows: any[][];
 	    hasMore: boolean;
 	    cursorId: string;
+	    paged: boolean;
 	    rowsAffected: number;
 	    elapsedMs: number;
 	    error: string;
@@ -261,6 +262,7 @@ export namespace dbx {
 	        this.rows = source["rows"];
 	        this.hasMore = source["hasMore"];
 	        this.cursorId = source["cursorId"];
+	        this.paged = source["paged"];
 	        this.rowsAffected = source["rowsAffected"];
 	        this.elapsedMs = source["elapsedMs"];
 	        this.error = source["error"];

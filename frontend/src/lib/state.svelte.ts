@@ -1,7 +1,7 @@
 import { api, errText } from './api'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
-import type { Column, ConnConfig, StmtResult, Table } from './types'
+import type { Cell, Column, ConnConfig, StmtResult, Table } from './types'
 
 export interface TableNode {
   t: Table
@@ -44,6 +44,7 @@ export interface Tab {
   results: StmtResult[]
   activeResult: number // index into results, or -1 for the messages pane
   running: boolean
+  loadingPrev?: boolean
   // Table tab being prepared (building the SELECT) before it runs.
   opening?: boolean
   openSeq?: number
@@ -66,24 +67,21 @@ export interface TableRef {
   where: string
   orderBy: string
   sort?: { col: string; dir: 'ASC' | 'DESC' } // set by header clicks
-  offset?: number // first row of the shown page
-  total?: number | null // row count for the filter; null/undefined = not counted
 }
 
-// Table tabs read one page per query (LIMIT/OFFSET) and close the result
-// right away. Keeping a cursor open instead would hold the table's metadata
-// lock (blocking ALTER) and MySQL drops unread results after
-// net_write_timeout.
-export const PAGE_SIZES = [100, 500, 1000, 5000, 10000, 0] // 0 = all rows
+// Results (console and table tabs alike) load one page per query: the
+// backend adds LIMIT/OFFSET and the statement finishes, so no cursor stays
+// open holding locks. Scrolling appends the next page (or prepends the
+// previous one); the loaded rows form a window of at most WINDOW_MAX rows.
+export const PAGE_SIZES = [100, 500, 1000, 5000, 10000]
 
-/** Rows to ask Execute for: one more than the page so the cursor closes. */
-function tableFetch(): number {
-  return app.pageSize > 0 ? app.pageSize + 1 : 1 << 30
+function windowMax(): number {
+  return Math.max(10000, app.pageSize * 2)
 }
 
 function tableSelect(tab: Tab): Promise<string> {
   const ref = tab.tableRef!
-  return api.SelectSQL(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where, ref.orderBy, app.pageSize, ref.offset ?? 0)
+  return api.SelectSQL(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where, ref.orderBy, 0, 0)
 }
 
 export interface Toast {
@@ -97,8 +95,7 @@ export const app = $state({
   conn: {} as Record<string, ConnState>,
   tabs: [] as Tab[],
   activeTab: '',
-  fetchSize: 500,
-  pageSize: 500, // table data tabs
+  pageSize: 500, // rows per query, console and table tabs
   editing: null as ConnConfig | null,
   prompt: null as null | { title: string; resolve: (v: string | null) => void },
   confirm: null as null | { text: string; resolve: (v: boolean) => void },
@@ -344,7 +341,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       schema: tab.schema,
       sql,
       cursor,
-      fetch: tab.tableRef ? tableFetch() : app.fetchSize,
+      fetch: app.pageSize,
     })
     const results = (res.results ?? []).map((r) => ({
       ...r,
@@ -352,6 +349,8 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       to: r.to + offset,
       rows: r.rows ?? [],
       columns: r.columns ?? [],
+      start: 0,
+      total: r.hasMore ? null : (r.rows ?? []).length,
     }))
     if (res.currentSchema) tab.schema = res.currentSchema
     for (const r of results) {
@@ -379,19 +378,150 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   }
 }
 
-export async function fetchMore(tab: Tab, r: StmtResult) {
-  if (!r.hasMore || !r.cursorId || tab.loadingMore) return
+/** Loaded rows that came from the database (rows added in the grid excluded). */
+export function fetchedCount(r: StmtResult): number {
+  return (r.rows?.length ?? 0) - Object.keys(r.edit?.added ?? {}).length
+}
+
+/**
+ * Appends the next page. Returns how many rows were dropped from the top
+ * to keep the window small (the grid shifts its scroll by that much).
+ */
+export async function fetchMore(tab: Tab, r: StmtResult): Promise<number> {
+  if (!r.hasMore || tab.loadingMore || tab.running) return 0
+  if (!r.paged && !r.cursorId) return 0
   tab.loadingMore = true
   try {
-    const res = await api.FetchMore(tab.id, r.cursorId, app.fetchSize)
-    r.rows!.push(...(res.rows ?? []))
+    const res = r.paged
+      ? await api.FetchPage(tab.id, tab.connId, r.sql, (r.start ?? 0) + fetchedCount(r), app.pageSize)
+      : await api.FetchMore(tab.id, r.cursorId, app.pageSize)
+    const rows = res.rows ?? []
+    // new rows go before rows added in the grid (those stay at the bottom)
+    insertFetched(r, fetchedCount(r), rows)
     r.hasMore = res.hasMore
+    if (!r.hasMore) r.total = (r.start ?? 0) + fetchedCount(r)
+    return r.paged ? trimFront(r) : 0
   } catch (e) {
     r.hasMore = false
     toast(errText(e), 'error')
+    return 0
   } finally {
     tab.loadingMore = false
   }
+}
+
+/** Prepends the previous page. Returns the number of rows added on top. */
+export async function fetchPrev(tab: Tab, r: StmtResult): Promise<number> {
+  const start = r.start ?? 0
+  if (!r.paged || start <= 0 || tab.loadingMore || tab.running) return 0
+  tab.loadingPrev = true
+  try {
+    const n = Math.min(app.pageSize, start)
+    const res = await api.FetchPage(tab.id, tab.connId, r.sql, start - n, n)
+    const rows = res.rows ?? []
+    insertFetched(r, 0, rows)
+    r.start = start - rows.length
+    trimBack(r)
+    return rows.length
+  } catch (e) {
+    toast(errText(e), 'error')
+    return 0
+  } finally {
+    tab.loadingPrev = false
+  }
+}
+
+/** Replaces the loaded rows with the page at `offset` (pending edits are dropped). */
+export async function jumpTo(tab: Tab, r: StmtResult, offset: number): Promise<boolean> {
+  if (!r.paged || tab.loadingMore || tab.running) return false
+  if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 이동할까요?`))) return false
+  tab.loadingMore = true
+  try {
+    const res = await api.FetchPage(tab.id, tab.connId, r.sql, offset, app.pageSize)
+    if (r.edit) {
+      r.edit.edits = {}
+      r.edit.deleted = {}
+      r.edit.added = {}
+    }
+    r.rows = res.rows ?? []
+    r.start = offset
+    r.hasMore = res.hasMore
+    if (!r.hasMore) r.total = offset + r.rows.length
+    return true
+  } catch (e) {
+    toast(errText(e), 'error')
+    return false
+  } finally {
+    tab.loadingMore = false
+  }
+}
+
+export async function countResult(tab: Tab, r: StmtResult): Promise<number | null> {
+  try {
+    r.total = await api.CountResult(tab.id, tab.connId, r.sql)
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+  return r.total ?? null
+}
+
+// Inserts fetched rows at index `at`, moving the row-indexed edit state of
+// the rows behind them.
+function insertFetched(r: StmtResult, at: number, rows: Cell[][]) {
+  if (!rows.length) return
+  shiftEdits(r, at, rows.length)
+  r.rows!.splice(at, 0, ...rows)
+}
+
+// Moves edit state of rows >= from by k (k < 0 removes rows from-|k| … from-1).
+function shiftEdits(r: StmtResult, from: number, k: number) {
+  const st = r.edit
+  if (!st) return
+  const move = <T>(m: Record<number, T>) => {
+    const out: Record<number, T> = {}
+    for (const [key, v] of Object.entries(m)) {
+      const i = Number(key)
+      out[i >= from ? i + k : i] = v
+    }
+    return out
+  }
+  st.edits = move(st.edits)
+  st.deleted = move(st.deleted)
+  st.added = move(st.added)
+}
+
+function hasEdits(r: StmtResult, from: number, to: number): boolean {
+  const st = r.edit
+  if (!st) return false
+  for (const m of [st.edits, st.deleted, st.added])
+    for (const key of Object.keys(m)) {
+      const i = Number(key)
+      if (i >= from && i < to) return true
+    }
+  return false
+}
+
+// Keeps the window small: drops rows from the top (not ones with edits).
+function trimFront(r: StmtResult): number {
+  const extra = fetchedCount(r) - windowMax()
+  if (extra <= 0) return 0
+  const k = Math.ceil(extra / app.pageSize) * app.pageSize
+  if (hasEdits(r, 0, k)) return 0
+  r.rows!.splice(0, k)
+  shiftEdits(r, k, -k)
+  r.start = (r.start ?? 0) + k
+  return k
+}
+
+function trimBack(r: StmtResult) {
+  const n = fetchedCount(r)
+  const extra = n - windowMax()
+  if (extra <= 0) return
+  const k = Math.ceil(extra / app.pageSize) * app.pageSize
+  if (hasEdits(r, n - k, r.rows!.length)) return
+  r.rows!.splice(n - k, k)
+  shiftEdits(r, n, -k)
+  r.hasMore = true
 }
 
 export function cancel(tab: Tab) {
@@ -405,6 +535,8 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   let tab = app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
   if (tab && tab.connId === connId && tab.tableRef?.schema === schema && sameTable(tab.tableRef.table, t)) {
     app.activeTab = tab.id // same table clicked again: keep its filter
+    // (a tab restored from the last session hasn't run yet)
+    if (!tab.results.length && !tab.opening) await reloadTable(tab)
     return tab
   }
   const ref: TableRef = { schema, table: t, where: '', orderBy: '' }
@@ -444,7 +576,6 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   tab.sql = sql
   saveWorkspaceSoon()
   await runSQL(tab, sql, -1)
-  notePageEnd(tab)
   return tab
 }
 
@@ -471,19 +602,11 @@ async function applyPkDesc(connId: string, ref: TableRef) {
 }
 
 /** Re-queries a table data tab from its filter / sort. */
-/**
- * Re-runs a table tab's query. `offset` moves to another page; a changed
- * filter or sort (`reset`) goes back to the first page and forgets the count.
- */
-export async function reloadTable(tab: Tab, opts: { offset?: number; reset?: boolean } = {}) {
+/** Re-runs a table tab's query (after a filter or sort change, or refresh). */
+export async function reloadTable(tab: Tab) {
   const ref = tab.tableRef
   if (!ref) return
   if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return
-  if (opts.reset) {
-    ref.offset = 0
-    ref.total = null
-  }
-  if (opts.offset !== undefined) ref.offset = Math.max(0, opts.offset)
   try {
     tab.sql = await tableSelect(tab)
   } catch (e) {
@@ -492,27 +615,6 @@ export async function reloadTable(tab: Tab, opts: { offset?: number; reset?: boo
   }
   saveWorkspaceSoon()
   await runSQL(tab, tab.sql, -1)
-  notePageEnd(tab)
-}
-
-// A short page is the last one: that gives the total without a COUNT.
-function notePageEnd(tab: Tab) {
-  const ref = tab.tableRef
-  const r = tab.results[0]
-  if (!ref || !r?.rows || r.error || app.pageSize <= 0 && r.hasMore) return
-  if (app.pageSize <= 0 || r.rows.length < app.pageSize) ref.total = (ref.offset ?? 0) + r.rows.length
-}
-
-/** Counts the table's rows (with the current WHERE) for the pager. */
-export async function countTable(tab: Tab): Promise<number | null> {
-  const ref = tab.tableRef
-  if (!ref) return null
-  try {
-    ref.total = await api.CountRows(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where)
-  } catch (e) {
-    toast(errText(e), 'error')
-  }
-  return ref.total ?? null
 }
 
 export function pinTab(tab: Tab | undefined) {
@@ -530,7 +632,6 @@ export function saveWorkspaceSoon() {
   saveTimer = setTimeout(() => {
     const data = {
       activeTab: app.activeTab,
-      fetchSize: app.fetchSize,
       pageSize: app.pageSize,
       treeView: app.treeView,
       tableOpen: app.tableOpen,
@@ -557,8 +658,9 @@ export async function loadWorkspace() {
     const raw = await api.LoadWorkspace()
     if (!raw) return
     const data = JSON.parse(raw)
-    if (data.fetchSize) app.fetchSize = data.fetchSize
-    if (typeof data.pageSize === 'number' && PAGE_SIZES.includes(data.pageSize)) app.pageSize = data.pageSize
+    // pageSize replaced the console's fetchSize
+    const ps = data.pageSize ?? data.fetchSize
+    if (typeof ps === 'number' && PAGE_SIZES.includes(ps)) app.pageSize = ps
     if (data.treeView) app.treeView = { ...app.treeView, ...data.treeView }
     if (data.tableOpen) app.tableOpen = { ...app.tableOpen, ...data.tableOpen }
     if ((data.theme === 'auto' || data.theme === 'dark' || data.theme === 'light') && data.theme !== app.theme) {
