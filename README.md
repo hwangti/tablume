@@ -116,6 +116,7 @@ wails build
 - `wails build`: 지금 쓰는 OS용으로 빌드합니다. 결과물은 `build/bin/`에 생깁니다.
 - 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 하고, `-tags webkit2_41` 옵션을 붙여야 합니다.
 - Windows용 `.exe`는 리눅스나 macOS에서도 `wails build -platform windows/amd64`로 만들 수 있습니다.
+- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 한국어로 나옵니다. Wails가 영어로 만드는 메뉴 제목은 `menu_darwin.go`에서 바꾸고, macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
 - macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
 
 ### GitHub Actions로 배포 파일 만들기

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"path/filepath"
 	goruntime "runtime"
@@ -47,8 +48,10 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 30, G: 31, B: 34, A: 1},
 		Menu:             appMenu,
 		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		Bind:             []interface{}{app},
+		// The macOS menu is built by then; give it Korean titles.
+		OnDomReady: func(context.Context) { localizeMenu() },
+		OnShutdown: app.shutdown,
+		Bind:       []interface{}{app},
 		Mac: &mac.Options{
 			About: &mac.AboutInfo{Title: "Tablume", Message: "A lightweight database client"},
 		},
