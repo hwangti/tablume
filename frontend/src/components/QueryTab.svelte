@@ -554,64 +554,81 @@
           </button>
         {/if}
         <span class="grow"></span>
+        <!-- buttons in groups by role, separated by a line (.grp + .grp) -->
         {#if !isTable}
-          <button
-            class="icon-btn"
-            title={tab.layout === 'results' ? 'SQL 에디터 보이기' : '결과만 크게 보기'}
-            onclick={toggleLayout}
-          >
-            <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
-          </button>
+          <div class="grp">
+            <button
+              class="icon-btn"
+              title={tab.layout === 'results' ? 'SQL 에디터 보이기' : '결과만 크게 보기'}
+              onclick={toggleLayout}
+            >
+              <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
+            </button>
+          </div>
         {/if}
         {#if current && (!isTable || tableView === 'data')}
           {#if pending > 0}
-            <span class="pending">변경 {pending}건</span>
-            <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}S)"><Icon name="check" size={13} /> 적용</button>
-            <button class="btn mini" onclick={() => current && revert(current)} title="모든 변경 되돌리기"><Icon name="undo" size={13} /> 되돌리기</button>
-            <span class="sep"></span>
+            <div class="grp">
+              <span class="pending">변경 {pending}건</span>
+              <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}S)"><Icon name="check" size={13} /> 적용</button>
+              <button class="btn mini" onclick={() => current && revert(current)} title="모든 변경 되돌리기"><Icon name="undo" size={13} /> 되돌리기</button>
+            </div>
           {/if}
-          {#if editInfo && !editInfo.editable}
-            <span class="ro" title={'읽기 전용: ' + editInfo.reason}><Icon name="lock" size={13} /> 읽기 전용</span>
+          {#if editInfo}
+            <div class="grp">
+              {#if !editInfo.editable}
+                <span class="ro" title={'읽기 전용: ' + editInfo.reason}><Icon name="lock" size={13} /> 읽기 전용</span>
+              {/if}
+              {#if editInfo.editable || editInfo.insertable}
+                <button class="icon-btn" title="행 추가" onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
+                <button class="icon-btn" title={editInfo.editable ? '선택 행 삭제 (Delete)' : '추가한 행 취소 (Delete)'} onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
+              {/if}
+            </div>
           {/if}
-          {#if editInfo?.editable || editInfo?.insertable}
-            <button class="icon-btn" title="행 추가" onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
-            <button class="icon-btn" title={editInfo.editable ? '선택 행 삭제 (Delete)' : '추가한 행 취소 (Delete)'} onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
-          {/if}
-          <button class="icon-btn" title="다시 조회" onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
-            <Icon name="refresh" size={14} />
-          </button>
-          <div class="dropdown">
-            <button class="icon-btn split" class:active={!!exportMenu} onclick={toggleExport} title="결과 내보내기">
-              <Icon name="download" size={14} /><Icon name="chevronDown" size={10} />
+          <div class="grp">
+            <button class="icon-btn" title="다시 조회" onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
+              <Icon name="refresh" size={14} />
             </button>
-            {#if exportMenu}
-              <div class="menu" style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
-                <button onclick={() => exportResult('csv')}>CSV <span class="dim">.csv</span></button>
-                <button onclick={() => exportResult('tsv')}>TSV <span class="dim">.tsv</span></button>
-                <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
-                <button onclick={() => exportResult('sql')}>INSERT 문 <span class="dim">.sql</span></button>
-                <div class="hint">불러온 {current.rows!.length.toLocaleString()}행{current.hasMore ? ' (전체 아님)' : ''}</div>
-              </div>
+            <div class="dropdown">
+              <button class="icon-btn split" class:active={!!exportMenu} onclick={toggleExport} title="결과 내보내기">
+                <Icon name="download" size={14} /><Icon name="chevronDown" size={10} />
+              </button>
+              {#if exportMenu}
+                <div class="menu" style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
+                  <button onclick={() => exportResult('csv')}>CSV <span class="dim">.csv</span></button>
+                  <button onclick={() => exportResult('tsv')}>TSV <span class="dim">.tsv</span></button>
+                  <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
+                  <button onclick={() => exportResult('sql')}>INSERT 문 <span class="dim">.sql</span></button>
+                  <div class="hint">불러온 {current.rows!.length.toLocaleString()}행{current.hasMore ? ' (전체 아님)' : ''}</div>
+                </div>
+              {/if}
+            </div>
+            {#if isTable}
+              <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
             {/if}
           </div>
-        {/if}
-        {#if isTable && tableView === 'ddl'}
-          <div class="seg" role="group">
-            <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>SQL</button>
-            <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>표</button>
-          </div>
-          {#if app.ddlMode === 'sql' && ddl}
-            <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
+          {#if app.gridZoom !== 1}
+            <div class="grp">
+              <button class="btn mini" title="표 확대/축소 초기화 ({modKey}0) · {modKey}+휠로 조절" onclick={() => grid?.zoom(0)}>{Math.round(app.gridZoom * 100)}%</button>
+            </div>
           {/if}
         {/if}
-        {#if isTable}
-          <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
-        {/if}
-        {#if current && (!isTable || tableView === 'data') && app.gridZoom !== 1}
-          <button class="btn mini" title="표 확대/축소 초기화 ({modKey}0) · {modKey}+휠로 조절" onclick={() => grid?.zoom(0)}>{Math.round(app.gridZoom * 100)}%</button>
+        {#if isTable && tableView !== 'data'}
+          <div class="grp">
+            {#if tableView === 'ddl'}
+              <div class="seg" role="group">
+                <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>SQL</button>
+                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>표</button>
+              </div>
+              {#if app.ddlMode === 'sql' && ddl}
+                <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
+              {/if}
+            {/if}
+            <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
+          </div>
         {/if}
         {#if current && (!isTable || tableView === 'data') && current.columns?.length}
-          <div class="pager dropdown">
+          <div class="pager dropdown grp">
             <button class="icon-btn sm" title="처음으로" disabled={busy || (start === 0 && !current.rows?.length)} onclick={goFirst}><Icon name="first" size={13} /></button>
             <button class="icon-btn sm" title="이전 {app.pageSize.toLocaleString()}행" disabled={busy} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
             <button class="range" class:open={!!sizeMenu} title="불러온 행 · 눌러서 페이지 크기 변경" onclick={toggleSizeMenu}>
@@ -735,6 +752,16 @@
   }
   .stop {
     color: var(--danger);
+  }
+  .grp {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .grp + .grp {
+    margin-left: 6px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border);
   }
   .sep {
     width: 1px;
