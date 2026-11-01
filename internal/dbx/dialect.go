@@ -571,13 +571,18 @@ func (oracleDialect) ListTables(ctx context.Context, q Querier, schema string) (
 	// num_rows comes from optimizer statistics (NULL until gathered).
 	// Sizes come from USER_SEGMENTS, so only for the login user's own schema
 	// (DBA_SEGMENTS would need extra privileges).
+	// A materialized view also has a container table of the same name in
+	// ALL_TABLES: list it once, as the materialized view.
 	return scanTables(ctx, q, `SELECT o.name, o.kind, c.comments, o.num_rows, NVL(sg.bytes, -1) FROM (
-			SELECT table_name name, 'TABLE' kind, num_rows FROM all_tables WHERE owner = :1 AND table_name NOT LIKE 'BIN$%'
+			SELECT t.table_name name, CASE WHEN m.mview_name IS NULL THEN 'TABLE' ELSE 'MATERIALIZED VIEW' END kind, t.num_rows
+				FROM all_tables t LEFT JOIN all_mviews m ON m.owner = t.owner AND m.mview_name = t.table_name
+				WHERE t.owner = :1 AND t.table_name NOT LIKE 'BIN$%'
 			UNION ALL SELECT view_name, 'VIEW', NULL FROM all_views WHERE owner = :2
-			UNION ALL SELECT mview_name, 'MATERIALIZED VIEW', NULL FROM all_mviews WHERE owner = :3
+			UNION ALL SELECT m.mview_name, 'MATERIALIZED VIEW', NULL FROM all_mviews m WHERE m.owner = :3
+				AND NOT EXISTS (SELECT 1 FROM all_tables t WHERE t.owner = m.owner AND t.table_name = m.mview_name)
 		) o LEFT JOIN all_tab_comments c ON c.owner = :4 AND c.table_name = o.name
 		LEFT JOIN (SELECT segment_name, SUM(bytes) bytes FROM user_segments GROUP BY segment_name) sg
-			ON sg.segment_name = o.name AND o.kind = 'TABLE' AND USER = :5
+			ON sg.segment_name = o.name AND o.kind <> 'VIEW' AND USER = :5
 		ORDER BY 1`, schema, schema, schema, schema, schema)
 }
 

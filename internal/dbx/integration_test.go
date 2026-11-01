@@ -719,3 +719,39 @@ func TestAlterColumns(t *testing.T) {
 		})
 	}
 }
+
+// A materialized view has a container table of the same name: the tree
+// must list it once (duplicate keys break rendering).
+func TestOracleMviewListedOnce(t *testing.T) {
+	tg := targets(t)["oracle"]
+	m := NewManager()
+	if _, err := m.Connect(tg.cfg); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Disconnect(tg.cfg.ID)
+	res, err := m.Execute(ExecRequest{TabID: "mv", ConnID: tg.cfg.ID, SQL: "BEGIN EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW tb_mv'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE MATERIALIZED VIEW tb_mv AS SELECT 1 x FROM dual", Cursor: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range res.Results {
+		if r.Error != "" {
+			t.Fatalf("%s -> %s", r.SQL, r.Error)
+		}
+	}
+	ts, err := m.Tables(tg.cfg.ID, tg.schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, x := range ts {
+		if x.Name == "TB_MV" {
+			n++
+			if x.Type != "MATERIALIZED VIEW" {
+				t.Errorf("type %q", x.Type)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("TB_MV listed %d times", n)
+	}
+}

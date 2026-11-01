@@ -230,7 +230,23 @@ func (m *Manager) Tables(id, schema string) ([]Table, error) {
 		return nil, err
 	}
 	sortTables(tables)
-	return tables, nil
+	return dedupTables(tables), nil
+}
+
+// dedupTables drops repeated schema.name entries (the tree keys rows by
+// them, and a duplicate breaks rendering).
+func dedupTables(ts []Table) []Table {
+	seen := make(map[string]bool, len(ts))
+	out := ts[:0]
+	for _, t := range ts {
+		k := t.Schema + "\x00" + t.Name
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, t)
+	}
+	return out
 }
 
 // sortTables orders by name the way most clients do, case-insensitively by
