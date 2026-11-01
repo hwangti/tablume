@@ -186,6 +186,8 @@
   let loaded = $derived(current ? fetchedCount(current) : 0)
   let total = $derived(current?.total ?? null)
   let counting = $state(false)
+  // Everything fits in what's loaded: just the row count, no paging.
+  let whole = $derived(!!current && start === 0 && !current.hasMore)
   let sizeMenu = $state<{ right: number; top: number } | null>(null)
 
   async function count() {
@@ -626,21 +628,23 @@
         {/if}
         {#if current && (!isTable || tableView === 'data') && current.columns?.length}
           <div class="pager dropdown grp">
-            <button class="icon-btn sm" title="처음으로" disabled={busy || (start === 0 && !current.rows?.length)} onclick={goFirst}><Icon name="first" size={13} /></button>
-            <button class="icon-btn sm" title="이전 {app.pageSize.toLocaleString()}행" disabled={busy} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
+            <button class="icon-btn sm" title="처음으로" disabled={busy || whole} onclick={goFirst}><Icon name="first" size={13} /></button>
+            <button class="icon-btn sm" title="이전 {app.pageSize.toLocaleString()}행" disabled={busy || whole} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
             <button class="range" class:open={!!sizeMenu} title="불러온 행 · 눌러서 페이지 크기 변경" onclick={toggleSizeMenu}>
-              {#if loaded === 0}0행{:else}{(start + 1).toLocaleString()}–{(start + loaded).toLocaleString()}{/if}
+              {#if whole}{loaded.toLocaleString()}행{:else}{(start + 1).toLocaleString()}–{(start + loaded).toLocaleString()}{/if}
               <Icon name="chevronDown" size={10} />
             </button>
-            {#if total !== null}
+            {#if whole}
+              <!-- all rows shown: the count is the range -->
+            {:else if total !== null}
               <button class="total" title={current.paged ? '다시 세기 (COUNT)' : '전체 행 수'} onclick={count} disabled={counting || !current.paged}>{total.toLocaleString()}</button>
             {:else}
               <button class="total unknown" title={current.paged ? '전체 행 수 세기 (COUNT)' : '이 쿼리는 셀 수 없습니다'} onclick={count} disabled={counting || !current.paged}>
                 {counting ? '세는 중…' : (start + loaded + 1).toLocaleString() + '+'}
               </button>
             {/if}
-            <button class="icon-btn sm" title="다음 {app.pageSize.toLocaleString()}행" disabled={busy} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
-            <button class="icon-btn sm" title="마지막으로" disabled={busy || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
+            <button class="icon-btn sm" title="다음 {app.pageSize.toLocaleString()}행" disabled={busy || whole} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
+            <button class="icon-btn sm" title="마지막으로" disabled={busy || whole || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
             {#if sizeMenu}
               <div class="menu size-menu" style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
                 <div class="hint">한 번에 불러올 행 수</div>
