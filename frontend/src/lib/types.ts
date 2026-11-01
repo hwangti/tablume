@@ -44,6 +44,14 @@ export interface Column {
   extra?: string // auto increment / identity / generated
 }
 
+export interface Routine {
+  schema: string
+  name: string
+  type: string // PROCEDURE, FUNCTION, PACKAGE
+  args: string // PostgreSQL overload arguments
+  id: string
+}
+
 export interface SchemaList {
   schemas: string[]
   current: string

@@ -66,6 +66,10 @@ export function ListConnections() {
   return window['go']['main']['App']['ListConnections']();
 }
 
+export function ListRoutines(arg1, arg2) {
+  return window['go']['main']['App']['ListRoutines'](arg1, arg2);
+}
+
 export function ListSchemas(arg1) {
   return window['go']['main']['App']['ListSchemas'](arg1);
 }
@@ -104,6 +108,10 @@ export function QualifiedName(arg1, arg2, arg3) {
 
 export function QuoteIdent(arg1, arg2) {
   return window['go']['main']['App']['QuoteIdent'](arg1, arg2);
+}
+
+export function RoutineSource(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RoutineSource'](arg1, arg2, arg3);
 }
 
 export function SaveConnection(arg1) {

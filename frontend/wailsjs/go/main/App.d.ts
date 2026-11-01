@@ -35,6 +35,8 @@ export function ListColumns(arg1:string,arg2:string,arg3:dbx.Table):Promise<Arra
 
 export function ListConnections():Promise<Array<dbx.ConnConfig>>;
 
+export function ListRoutines(arg1:string,arg2:string):Promise<Array<dbx.Routine>>;
+
 export function ListSchemas(arg1:string):Promise<dbx.SchemaList>;
 
 export function ListTables(arg1:string,arg2:string):Promise<Array<dbx.Table>>;
@@ -54,6 +56,8 @@ export function PreviewChanges(arg1:dbx.ApplyRequest):Promise<Array<string>>;
 export function QualifiedName(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 
 export function QuoteIdent(arg1:string,arg2:string):Promise<string>;
+
+export function RoutineSource(arg1:string,arg2:string,arg3:dbx.Routine):Promise<string>;
 
 export function SaveConnection(arg1:dbx.ConnConfig):Promise<dbx.ConnConfig>;
 

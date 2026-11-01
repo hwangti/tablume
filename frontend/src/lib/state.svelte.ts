@@ -1,7 +1,7 @@
 import { api, errText } from './api'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
-import type { Cell, Column, ConnConfig, StmtResult, Table } from './types'
+import type { Cell, Column, ConnConfig, Routine, StmtResult, Table } from './types'
 
 export interface TableNode {
   t: Table
@@ -17,6 +17,10 @@ export interface SchemaNode {
   loading: boolean
   tables: TableNode[] | null
   error?: string
+  // procedures / functions, loaded when their group is opened
+  routines?: Routine[] | null
+  routinesOpen?: boolean
+  routinesLoading?: boolean
 }
 
 export interface ConnState {
@@ -578,6 +582,47 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   saveWorkspaceSoon()
   await runSQL(tab, sql, -1)
   return tab
+}
+
+export async function toggleRoutines(id: string, s: SchemaNode) {
+  s.routinesOpen = !s.routinesOpen
+  if (!s.routinesOpen || s.routines) return
+  s.routinesLoading = true
+  try {
+    s.routines = (await api.ListRoutines(id, s.name)) ?? []
+  } catch (e) {
+    s.routines = []
+    toast(errText(e), 'error')
+  } finally {
+    s.routinesLoading = false
+  }
+}
+
+/** Opens a routine's source in the preview tab (a console, so it can be edited and run). */
+export async function openRoutine(connId: string, schema: string, r: Routine) {
+  let src: string
+  try {
+    src = await api.RoutineSource(connId, schema, r)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  const title = r.name
+  let tab = app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
+  if (tab) {
+    tab.connId = connId
+    tab.schema = schema
+    tab.sql = src
+    tab.title = title
+    tab.results = []
+    tab.tableRef = undefined
+    tab.layout = 'split'
+    app.activeTab = tab.id
+    saveWorkspaceSoon()
+  } else {
+    tab = openConsole(connId, { schema, sql: src, title })
+    tab.preview = true
+  }
 }
 
 export async function openDDL(connId: string, schema: string, t: Table) {

@@ -116,6 +116,14 @@ func (a *App) SelectSQL(id, schema string, t dbx.Table, where, orderBy string, l
 	return a.db.SelectSQL(id, schema, t, where, orderBy, limit, offset)
 }
 
+func (a *App) ListRoutines(id, schema string) ([]dbx.Routine, error) {
+	return a.db.Routines(id, schema)
+}
+
+func (a *App) RoutineSource(id, schema string, r dbx.Routine) (string, error) {
+	return a.db.RoutineSource(id, schema, r)
+}
+
 // FetchPage reads the next rows of a paged result (see StmtResult.Paged).
 func (a *App) FetchPage(tabID, connID, sql string, offset, n int) (dbx.FetchResponse, error) {
 	return a.db.FetchPage(tabID, connID, sql, offset, n)

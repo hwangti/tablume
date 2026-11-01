@@ -554,3 +554,71 @@ func TestPaging(t *testing.T) {
 		})
 	}
 }
+
+func TestRoutines(t *testing.T) {
+	create := map[string][]string{
+		"mariadb": {"DROP PROCEDURE IF EXISTS tb_proc; DROP FUNCTION IF EXISTS tb_func",
+			"DELIMITER $$\nCREATE PROCEDURE tb_proc(IN n INT) BEGIN SELECT n; SELECT n + 1; END$$\nCREATE FUNCTION tb_func(x INT) RETURNS INT DETERMINISTIC BEGIN DECLARE y INT; SET y = x * 2; RETURN y; END$$\nDELIMITER ;"},
+		"postgres": {"DROP PROCEDURE IF EXISTS tb_proc(int); DROP FUNCTION IF EXISTS tb_func(int)",
+			"CREATE PROCEDURE tb_proc(n int) LANGUAGE plpgsql AS $$ BEGIN RAISE NOTICE '%', n; END $$;\nCREATE FUNCTION tb_func(x int) RETURNS int LANGUAGE sql AS $$ SELECT x * 2; $$;"},
+		"mssql": {"IF OBJECT_ID('dbo.tb_proc') IS NOT NULL DROP PROCEDURE dbo.tb_proc;\nIF OBJECT_ID('dbo.tb_func') IS NOT NULL DROP FUNCTION dbo.tb_func",
+			"CREATE PROCEDURE dbo.tb_proc @n int AS BEGIN SELECT @n; SELECT @n + 1; END\nGO\nCREATE FUNCTION dbo.tb_func(@x int) RETURNS int AS BEGIN RETURN @x * 2; END\nGO"},
+		"oracle": {"BEGIN EXECUTE IMMEDIATE 'DROP PROCEDURE tb_proc'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nBEGIN EXECUTE IMMEDIATE 'DROP FUNCTION tb_func'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/",
+			"CREATE OR REPLACE PROCEDURE tb_proc(n NUMBER) AS v NUMBER; BEGIN v := n; v := v + 1; END;\n/\nCREATE OR REPLACE FUNCTION tb_func(x NUMBER) RETURN NUMBER AS BEGIN RETURN x * 2; END;\n/"},
+	}
+	all := targets(t)
+	for name, sqls := range create {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			run := func(q string) {
+				t.Helper()
+				res, err := m.Execute(ExecRequest{TabID: "r", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, r := range res.Results {
+					if r.Error != "" {
+						t.Fatalf("%s\n-> %s", r.SQL, r.Error)
+					}
+				}
+			}
+			run(sqls[0])
+			run(sqls[1])
+			list, err := m.Routines(tg.cfg.ID, tg.schema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := map[string]Routine{}
+			for _, r := range list {
+				found[strings.ToLower(r.Name)] = r
+			}
+			p, f := found["tb_proc"], found["tb_func"]
+			if p.Type != "PROCEDURE" || f.Type != "FUNCTION" {
+				t.Fatalf("routines: %+v", list)
+			}
+			var sources []string
+			for _, r := range []Routine{p, f} {
+				src, err := m.RoutineSource(tg.cfg.ID, tg.schema, r)
+				if err != nil || !strings.Contains(strings.ToLower(src), "tb_") {
+					t.Fatalf("source %s: %v\n%s", r.Name, err, src)
+				}
+				sources = append(sources, src)
+			}
+			t.Logf("procedure source:\n%s", sources[0])
+			// the source runs again as written (drop first)
+			run(sqls[0])
+			for _, src := range sources {
+				run(src)
+			}
+			if l2, _ := m.Routines(tg.cfg.ID, tg.schema); len(l2) < 2 {
+				t.Fatalf("recreated: %+v", l2)
+			}
+			run(sqls[0])
+		})
+	}
+}

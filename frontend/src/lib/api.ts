@@ -1,5 +1,5 @@
 import * as App from '../../wailsjs/go/main/App'
-import type { Column, ConnConfig, ExecResponse, SchemaList, Table, Cell, EditInfo, RowChange } from './types'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, Table, Cell, EditInfo, RowChange } from './types'
 
 // Typed view over the generated Wails bindings (they use classes; plain
 // objects work the same at runtime).
@@ -16,6 +16,8 @@ interface Api {
   ListColumns(id: string, schema: string, t: Table): Promise<Column[]>
   CompletionColumns(id: string, schema: string): Promise<Record<string, string[]>>
   SelectSQL(id: string, schema: string, t: Table, where: string, orderBy: string, limit: number, offset: number): Promise<string>
+  ListRoutines(id: string, schema: string): Promise<Routine[]>
+  RoutineSource(id: string, schema: string, r: Routine): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
   FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
   CountResult(tabId: string, connId: string, sql: string): Promise<number>

@@ -335,6 +335,26 @@ export namespace dbx {
 	    }
 	}
 	
+	export class Routine {
+	    schema: string;
+	    name: string;
+	    type: string;
+	    args: string;
+	    id: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Routine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.args = source["args"];
+	        this.id = source["id"];
+	    }
+	}
 	
 	export class SchemaList {
 	    schemas: string[];

@@ -6,6 +6,8 @@
     disconnect,
     refreshSchemas,
     toggleSchema,
+    toggleRoutines,
+    openRoutine,
     toggleTable,
     loadTables,
     openConsole,
@@ -21,7 +23,7 @@
   import { api } from '../lib/api'
   import { setTheme, type ThemeMode } from '../lib/theme'
   import { copyText } from '../lib/clipboard'
-  import { driverLabel, type ConnConfig, type Column } from '../lib/types'
+  import { driverLabel, type ConnConfig, type Column, type Routine } from '../lib/types'
 
   let filter = $state('')
   let viewMenu = $state(false)
@@ -161,6 +163,8 @@
     | { kind: 'schema'; key: string; depth: 1; c: ConnConfig; s: SchemaNode }
     | { kind: 'table'; key: string; depth: 2; c: ConnConfig; s: SchemaNode; t: TableNode }
     | { kind: 'col'; key: string; depth: 3; c: ConnConfig; t: TableNode; col: Column }
+    | { kind: 'rgroup'; key: string; depth: 2; c: ConnConfig; s: SchemaNode }
+    | { kind: 'routine'; key: string; depth: 3; c: ConnConfig; s: SchemaNode; r: Routine }
     | { kind: 'info'; key: string; depth: number; text: string; cls: string; run?: () => void }
 
   const tableKey = (connId: string, schema: string, t: { schema: string; name: string }) =>
@@ -183,6 +187,16 @@
           if (!t.expanded) continue
           if (t.error) out.push({ kind: 'info', key: 'te|' + tk, depth: 3, text: t.error, cls: 'err-line' })
           for (const col of t.columns ?? []) out.push({ kind: 'col', key: `${tk}|${col.name}`, depth: 3, c, t, col })
+        }
+        // procedures & functions, below the tables (not while filtering)
+        if (!filtering && c.driver !== 'sqlite' && s.tables) {
+          out.push({ kind: 'rgroup', key: `rg|${c.id}|${s.name}`, depth: 2, c, s })
+          if (s.routinesOpen) {
+            for (const r of s.routines ?? [])
+              out.push({ kind: 'routine', key: `r|${c.id}|${s.name}|${r.schema}.${r.name}(${r.args})|${r.type}`, depth: 3, c, s, r })
+            if (s.routines && s.routines.length === 0)
+              out.push({ kind: 'info', key: `rn|${c.id}|${s.name}`, depth: 3, text: '프로시저·함수가 없습니다', cls: 'searching' })
+          }
         }
       }
       if (filtering && pendingSchemas(c.id) > 0)
@@ -210,6 +224,7 @@
     if (r.kind === 'conn') return app.conn[r.c.id]?.status === 'connected' && !!app.conn[r.c.id]?.expanded
     if (r.kind === 'schema') return r.s.expanded || filtering
     if (r.kind === 'table') return r.t.expanded
+    if (r.kind === 'rgroup') return !!r.s.routinesOpen
     return false
   }
 
@@ -217,13 +232,15 @@
     if (r.kind === 'conn') await toggleConn(r.c)
     else if (r.kind === 'schema') await toggleSchema(r.c.id, r.s)
     else if (r.kind === 'table') await toggleTable(r.c.id, r.s.name, r.t)
+    else if (r.kind === 'rgroup') await toggleRoutines(r.c.id, r.s)
   }
 
   function rowClick(r: Row) {
     cursor = r.key
     treeEl.focus({ preventScroll: true })
-    if (r.kind === 'conn' || r.kind === 'schema') toggle(r)
+    if (r.kind === 'conn' || r.kind === 'schema' || r.kind === 'rgroup') toggle(r)
     else if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
+    else if (r.kind === 'routine') openRoutine(r.c.id, r.s.name, r.r)
     else if (r.kind === 'info') r.run?.()
   }
 
@@ -278,13 +295,13 @@
         moveCursor(nav[nav.length - 1].key)
         break
       case 'ArrowRight':
-        if (!r || r.kind === 'col') break
+        if (!r || r.kind === 'col' || r.kind === 'routine') break
         if (!isOpen(r)) toggle(r)
         else if (nav[i + 1] && nav[i + 1].depth > r.depth) moveCursor(nav[i + 1].key)
         break
       case 'ArrowLeft':
         if (!r) break
-        if (r.kind !== 'col' && isOpen(r) && !(r.kind === 'schema' && filtering)) toggle(r)
+        if (r.kind !== 'col' && r.kind !== 'routine' && isOpen(r) && !(r.kind === 'schema' && filtering)) toggle(r)
         else {
           while (i > 0 && nav[i].depth >= r.depth) i--
           if (nav[i].depth < r.depth) moveCursor(nav[i].key)
@@ -293,6 +310,7 @@
       case 'Enter':
         if (!r) break
         if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
+        else if (r.kind === 'routine') openRoutine(r.c.id, r.s.name, r.r)
         else if (r.kind !== 'col') toggle(r)
         break
       default:
@@ -307,7 +325,15 @@
   let tip = $state<null | { top: number; left: number; title: string; lines: string[] }>(null)
   let tipTimer: ReturnType<typeof setTimeout> | undefined
 
+  const routineLabel: Record<string, string> = { PROCEDURE: '프로시저', FUNCTION: '함수', PACKAGE: '패키지' }
+
   function tipFor(r: Row): { title: string; lines: string[] } | null {
+    if (r.kind === 'routine') {
+      const lines = [routineLabel[r.r.type] ?? r.r.type]
+      if (r.r.args) lines.push(`(${r.r.args})`)
+      lines.push('클릭: 소스 열기')
+      return { title: (r.r.schema && r.c.driver === 'mssql' ? r.r.schema + '.' : '') + r.r.name, lines }
+    }
     if (r.kind === 'table') {
       const lines: string[] = []
       if (r.t.t.comment) lines.push(r.t.t.comment)
@@ -357,6 +383,18 @@
     if (r.kind === 'conn') connMenu(e, r.c)
     else if (r.kind === 'schema') schemaMenu(e, r.c, r.s)
     else if (r.kind === 'table') tableMenu(e, r.c, r.s, r.t)
+    else if (r.kind === 'routine') {
+      e.preventDefault()
+      const rt = r
+      menu = {
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          { label: '소스 열기', run: () => openRoutine(rt.c.id, rt.s.name, rt.r) },
+          { label: '이름 복사', run: () => copyText(rt.r.name) },
+        ],
+      }
+    }
   }
 
   function hiddenCount(id: string) {
@@ -518,7 +556,7 @@
           onmouseleave={rowLeave}
           title={r.kind === 'conn' ? `${driverLabel(r.c.driver)}${app.conn[r.c.id]?.version ? ' · ' + app.conn[r.c.id]?.version : ''}` : undefined}
         >
-          {#if r.kind === 'col'}
+          {#if r.kind === 'col' || r.kind === 'routine'}
             <span class="chev-slot"></span>
           {:else}
             <button
@@ -553,6 +591,17 @@
             {#if app.treeView.comment && r.t.t.comment}<span class="cmt">{r.t.t.comment}</span>{/if}
             {#if r.t.loading}<span class="spin"></span>{/if}
             {#if tableMeta(r.t)}<span class="tmeta">{tableMeta(r.t)}</span>{/if}
+          {:else if r.kind === 'rgroup'}
+            <Icon name="fn" size={15} color="var(--syn-type)" />
+            <span class="label">프로시저 · 함수</span>
+            {#if r.s.routinesLoading}<span class="spin"></span>{/if}
+            {#if r.s.routines && app.treeView.tableCount}<span class="count">{r.s.routines.length}</span>{/if}
+          {:else if r.kind === 'routine'}
+            <span class="rbadge" class:f={r.r.type === 'FUNCTION'} class:k={r.r.type === 'PACKAGE'} title={routineLabel[r.r.type] ?? r.r.type}
+              >{r.r.type === 'FUNCTION' ? 'F' : r.r.type === 'PACKAGE' ? 'K' : 'P'}</span
+            >
+            <span class="label">{r.c.driver === 'mssql' && r.r.schema !== 'dbo' ? r.r.schema + '.' : ''}{r.r.name}</span>
+            {#if r.r.args}<span class="cmt">({r.r.args})</span>{/if}
           {:else if r.kind === 'col'}
             <Icon name={keyIcon(r.col).name} size={13} color={keyIcon(r.col).color} />
             <span class="label">{r.col.name}</span>
@@ -774,6 +823,26 @@
     text-overflow: ellipsis;
     color: var(--text-faint);
     font-size: 11.5px;
+  }
+  .rbadge {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--syn-type) 18%, transparent);
+    color: var(--syn-type);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    text-align: center;
+  }
+  .rbadge.f {
+    background: color-mix(in srgb, var(--syn-fn) 18%, transparent);
+    color: var(--syn-fn);
+  }
+  .rbadge.k {
+    background: color-mix(in srgb, var(--warn) 20%, transparent);
+    color: var(--warn);
   }
   .tmeta {
     margin-left: auto;
