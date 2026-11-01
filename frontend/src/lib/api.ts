@@ -15,7 +15,8 @@ interface Api {
   ListTables(id: string, schema: string): Promise<Table[]>
   ListColumns(id: string, schema: string, t: Table): Promise<Column[]>
   CompletionColumns(id: string, schema: string): Promise<Record<string, string[]>>
-  SelectSQL(id: string, schema: string, t: Table, where: string, orderBy: string, limit: number): Promise<string>
+  SelectSQL(id: string, schema: string, t: Table, where: string, orderBy: string, limit: number, offset: number): Promise<string>
+  CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
   QuoteIdent(id: string, name: string): Promise<string>
   QualifiedName(id: string, schema: string, t: Table): Promise<string>
   TableDDL(id: string, schema: string, t: Table): Promise<string>

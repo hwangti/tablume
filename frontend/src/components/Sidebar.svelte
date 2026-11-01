@@ -405,7 +405,7 @@
         {
           label: 'SELECT 문을 콘솔에 넣기',
           run: async () => {
-            const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100)
+            const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100, 0)
             if (activeTab()?.connId === c.id) insertText(sql + ';')
             else openConsole(c.id, { schema: s.name, sql: sql + ';' })
           },

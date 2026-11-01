@@ -16,6 +16,7 @@
     ensureEdit,
     serverSort = null,
     onsort,
+    rowBase = 0,
   }: {
     result: StmtResult
     columns: ResultColumn[]
@@ -30,6 +31,7 @@
     // rows are sorted locally.
     serverSort?: { col: number; dir: 1 | -1 } | null
     onsort?: (col: number) => void
+    rowBase?: number // number of the first row (paged table data)
   } = $props()
 
   let editing = $state<{ ri: number; vi: number; c: number; value: string } | null>(null)
@@ -248,7 +250,7 @@
   let first = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN))
   let last = $derived(Math.min(order.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN))
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
-  let numW = $derived(Math.round(Math.max(44, String(rows.length).length * 8 + 20) * z))
+  let numW = $derived(Math.round(Math.max(44, String(rowBase + rows.length).length * 8 + 20) * z))
   let cw = $derived(widths.map((w) => Math.round(w * z)))
   let totalW = $derived(numW + cw.reduce((a, b) => a + b, 0))
 
@@ -522,7 +524,7 @@
           style:width="{numW}px"
           onmousedown={(e) => rowDown(e, vi)}
         >
-          {st?.added[ri] ? '+' : vi + 1}
+          {st?.added[ri] ? '+' : rowBase + vi + 1}
         </div>
         {#each columns as _, c (c)}
           {@const v = val(ri, c)}

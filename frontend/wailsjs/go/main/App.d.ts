@@ -13,6 +13,8 @@ export function CompletionColumns(arg1:string,arg2:string):Promise<Record<string
 
 export function Connect(arg1:string,arg2:string):Promise<string>;
 
+export function CountRows(arg1:string,arg2:string,arg3:dbx.Table,arg4:string):Promise<number>;
+
 export function DeleteConnection(arg1:string):Promise<void>;
 
 export function Disconnect(arg1:string):Promise<void>;
@@ -55,7 +57,7 @@ export function SaveTextFile(arg1:string,arg2:string):Promise<string>;
 
 export function SaveWorkspace(arg1:string):Promise<void>;
 
-export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:string,arg5:string,arg6:number):Promise<string>;
+export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:string,arg5:string,arg6:number,arg7:number):Promise<string>;
 
 export function TableDDL(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
 

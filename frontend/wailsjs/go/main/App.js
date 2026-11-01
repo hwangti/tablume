@@ -22,6 +22,10 @@ export function Connect(arg1, arg2) {
   return window['go']['main']['App']['Connect'](arg1, arg2);
 }
 
+export function CountRows(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['CountRows'](arg1, arg2, arg3, arg4);
+}
+
 export function DeleteConnection(arg1) {
   return window['go']['main']['App']['DeleteConnection'](arg1);
 }
@@ -106,8 +110,8 @@ export function SaveWorkspace(arg1) {
   return window['go']['main']['App']['SaveWorkspace'](arg1);
 }
 
-export function SelectSQL(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['SelectSQL'](arg1, arg2, arg3, arg4, arg5, arg6);
+export function SelectSQL(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SelectSQL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 export function TableDDL(arg1, arg2, arg3) {

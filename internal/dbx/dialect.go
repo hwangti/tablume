@@ -31,7 +31,8 @@ type Dialect interface {
 	QualifiedName(schema string, t Table) string
 	// Select builds SELECT * with an optional WHERE / ORDER BY and a row
 	// limit; n <= 0 means no limit (rows are then fetched incrementally).
-	Select(qualified, where, orderBy string, n int) string
+	// Select builds a table data query: n rows (n <= 0: all) after skipping offset.
+	Select(qualified, where, orderBy string, n, offset int) string
 	Version(ctx context.Context, q Querier) string
 	// DDL returns CREATE statements; it gets its own connection because
 	// Oracle's DBMS_METADATA options are per session.
@@ -276,8 +277,8 @@ func (mysqlDialect) UseSchema(s string) string { return "USE " + quoteWith(s, "`
 func (mysqlDialect) QualifiedName(schema string, t Table) string {
 	return quoteWith(schema, "`", "`") + "." + quoteWith(t.Name, "`", "`")
 }
-func (mysqlDialect) Select(q, where, orderBy string, n int) string {
-	return selectWithLimit(q, where, orderBy, limitClause(n))
+func (mysqlDialect) Select(q, where, orderBy string, n, offset int) string {
+	return selectWithLimit(q, where, orderBy, limitClause(n, offset))
 }
 func (mysqlDialect) Version(ctx context.Context, q Querier) string {
 	return firstString(ctx, q, "SELECT VERSION()")
@@ -370,8 +371,8 @@ func (pgDialect) UseSchema(s string) string { return "SET search_path TO " + quo
 func (pgDialect) QualifiedName(schema string, t Table) string {
 	return quoteWith(schema, `"`, `"`) + "." + quoteWith(t.Name, `"`, `"`)
 }
-func (pgDialect) Select(q, where, orderBy string, n int) string {
-	return selectWithLimit(q, where, orderBy, limitClause(n))
+func (pgDialect) Select(q, where, orderBy string, n, offset int) string {
+	return selectWithLimit(q, where, orderBy, limitClause(n, offset))
 }
 func (pgDialect) Version(ctx context.Context, q Querier) string {
 	return firstString(ctx, q, "SHOW server_version")
@@ -488,7 +489,19 @@ func (mssqlDialect) QualifiedName(db string, t Table) string {
 	}
 	return msq(db) + "." + msq(s) + "." + msq(t.Name)
 }
-func (mssqlDialect) Select(q, where, orderBy string, n int) string {
+func (mssqlDialect) Select(q, where, orderBy string, n, offset int) string {
+	if offset > 0 {
+		// OFFSET … FETCH (SQL Server 2012+) needs an ORDER BY.
+		o := strings.TrimSpace(orderBy)
+		if o == "" {
+			o = "(SELECT NULL)"
+		}
+		fetch := ""
+		if n > 0 {
+			fetch = fmt.Sprintf(" FETCH NEXT %d ROWS ONLY", n)
+		}
+		return selectWithLimit(q, where, o, fmt.Sprintf(" OFFSET %d ROWS", offset)+fetch)
+	}
 	if n <= 0 {
 		return selectWithLimit(q, where, orderBy, "")
 	}
@@ -598,9 +611,18 @@ func (oracleDialect) UseSchema(s string) string {
 func (oracleDialect) QualifiedName(schema string, t Table) string {
 	return quoteWith(schema, `"`, `"`) + "." + quoteWith(t.Name, `"`, `"`)
 }
-func (oracleDialect) Select(q, where, orderBy string, n int) string {
-	// ROWNUM works on every version, including 11g; with ORDER BY the limit
-	// has to wrap a subquery so it applies after sorting.
+func (oracleDialect) Select(q, where, orderBy string, n, offset int) string {
+	// Later pages use OFFSET … FETCH (12c+).
+	if offset > 0 {
+		fetch := ""
+		if n > 0 {
+			fetch = fmt.Sprintf(" FETCH NEXT %d ROWS ONLY", n)
+		}
+		return selectWithLimit(q, where, orderBy, fmt.Sprintf(" OFFSET %d ROWS", offset)+fetch)
+	}
+	// The first page uses ROWNUM, which works on every version including
+	// 11g; with ORDER BY the limit has to wrap a subquery so it applies
+	// after sorting.
 	if n <= 0 {
 		return selectWithLimit(q, where, orderBy, "")
 	}
@@ -664,8 +686,8 @@ func (sqliteDialect) QualifiedName(schema string, t Table) string {
 	}
 	return quoteWith(schema, `"`, `"`) + "." + quoteWith(t.Name, `"`, `"`)
 }
-func (sqliteDialect) Select(q, where, orderBy string, n int) string {
-	return selectWithLimit(q, where, orderBy, limitClause(n))
+func (sqliteDialect) Select(q, where, orderBy string, n, offset int) string {
+	return selectWithLimit(q, where, orderBy, limitClause(n, offset))
 }
 func (sqliteDialect) Version(ctx context.Context, q Querier) string {
 	return "SQLite " + firstString(ctx, q, "SELECT sqlite_version()")
@@ -736,11 +758,17 @@ func stripLeadingComments(s string) string {
 	}
 }
 
-func limitClause(n int) string {
-	if n <= 0 {
-		return ""
+func limitClause(n, offset int) string {
+	switch {
+	case n > 0 && offset > 0:
+		return fmt.Sprintf(" LIMIT %d OFFSET %d", n, offset)
+	case n > 0:
+		return fmt.Sprintf(" LIMIT %d", n)
+	case offset > 0:
+		// MySQL/SQLite have no OFFSET without LIMIT; PostgreSQL accepts this too.
+		return fmt.Sprintf(" LIMIT %d OFFSET %d", int64(1)<<62, offset)
 	}
-	return fmt.Sprintf(" LIMIT %d", n)
+	return ""
 }
 
 func selectWithLimit(q, where, orderBy, limit string) string {

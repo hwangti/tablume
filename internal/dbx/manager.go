@@ -249,12 +249,31 @@ func (m *Manager) AllColumns(id, schema string) (map[string][]string, error) {
 	return p.d.AllColumns(ctx, p.db, schema)
 }
 
-func (m *Manager) SelectSQL(id, schema string, t Table, where, orderBy string, limit int) (string, error) {
+func (m *Manager) SelectSQL(id, schema string, t Table, where, orderBy string, limit, offset int) (string, error) {
 	p, err := m.pool(id)
 	if err != nil {
 		return "", err
 	}
-	return p.d.Select(p.d.QualifiedName(schema, t), where, orderBy, limit), nil
+	return p.d.Select(p.d.QualifiedName(schema, t), where, orderBy, limit, offset), nil
+}
+
+// CountRows counts a table's rows matching where (for the pager's total).
+func (m *Manager) CountRows(id, schema string, t Table, where string) (int64, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return 0, err
+	}
+	q := "SELECT COUNT(*) FROM " + p.d.QualifiedName(schema, t)
+	if w := strings.TrimSpace(where); w != "" {
+		q += " WHERE " + w
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	var n any
+	if err := p.db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+		return 0, err
+	}
+	return toInt64(n), nil
 }
 
 // QuoteIdent quotes a column name for the connection's dialect.
@@ -598,6 +617,11 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 	rows, more, err := readRows(s.cur.rows, s.cur.cols, n)
 	if err != nil || !more {
 		s.closeCursor()
+	}
+	if err != nil && (errors.Is(err, driver.ErrBadConn) || strings.Contains(err.Error(), "invalid connection")) {
+		// MySQL/MariaDB drop a result nobody reads for net_write_timeout
+		// (60s by default). The next run opens a new connection.
+		err = errors.New("DB 서버가 연결을 끊어 나머지 결과를 가져올 수 없습니다. 결과를 오래 읽지 않으면 서버가 연결을 끊습니다(MySQL/MariaDB의 net_write_timeout). 쿼리를 다시 실행하세요")
 	}
 	return FetchResponse{Rows: rows, HasMore: more && err == nil}, err
 }

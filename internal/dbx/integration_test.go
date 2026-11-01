@@ -146,19 +146,42 @@ func TestIntegration(t *testing.T) {
 			if err != nil || len(all[tg.table]) < 5 {
 				t.Fatalf("all columns: %v %v", err, all[tg.table])
 			}
-			q, _ := m.SelectSQL(tg.cfg.ID, tg.schema, *found, "", "", 100)
+			q, _ := m.SelectSQL(tg.cfg.ID, tg.schema, *found, "", "", 100, 0)
 			res, err = m.Execute(ExecRequest{TabID: "t2", ConnID: tg.cfg.ID, SQL: q, Cursor: -1})
 			if err != nil || res.Results[0].Error != "" || len(res.Results[0].Rows) != 3 {
 				t.Fatalf("select top %q: %v %+v", q, err, res.Results)
 			}
 			// filtered + sorted + limited, as the table data filter bar builds it
 			idCol, _ := m.QuoteIdent(tg.cfg.ID, colsInfo[0].Name)
-			q, _ = m.SelectSQL(tg.cfg.ID, tg.schema, *found, idCol+" >= 2", idCol+" DESC", 1)
+			q, _ = m.SelectSQL(tg.cfg.ID, tg.schema, *found, idCol+" >= 2", idCol+" DESC", 1, 0)
 			res, err = m.Execute(ExecRequest{TabID: "t2", ConnID: tg.cfg.ID, SQL: q, Cursor: -1})
 			if err != nil || res.Results[0].Error != "" || len(res.Results[0].Rows) != 1 || res.Results[0].Rows[0][0] != "3" {
 				t.Fatalf("filtered select %q: %v %+v", q, err, res.Results)
 			}
 			t.Log("filtered:", q)
+
+			// pages: ORDER BY id LIMIT 1 OFFSET 1 -> id 2; no ORDER BY, 2 rows after 1
+			q, _ = m.SelectSQL(tg.cfg.ID, tg.schema, *found, "", idCol, 1, 1)
+			res, err = m.Execute(ExecRequest{TabID: "t2", ConnID: tg.cfg.ID, SQL: q, Cursor: -1})
+			if err != nil || res.Results[0].Error != "" || len(res.Results[0].Rows) != 1 || res.Results[0].Rows[0][0] != "2" {
+				t.Fatalf("page %q: %v %+v", q, err, res.Results)
+			}
+			q, _ = m.SelectSQL(tg.cfg.ID, tg.schema, *found, "", "", 2, 1)
+			res, err = m.Execute(ExecRequest{TabID: "t2", ConnID: tg.cfg.ID, SQL: q, Cursor: -1})
+			if err != nil || res.Results[0].Error != "" || len(res.Results[0].Rows) != 2 {
+				t.Fatalf("page without order %q: %v %+v", q, err, res.Results)
+			}
+			q, _ = m.SelectSQL(tg.cfg.ID, tg.schema, *found, "", "", 0, 2)
+			res, err = m.Execute(ExecRequest{TabID: "t2", ConnID: tg.cfg.ID, SQL: q, Cursor: -1})
+			if err != nil || res.Results[0].Error != "" || len(res.Results[0].Rows) != 1 {
+				t.Fatalf("offset only %q: %v %+v", q, err, res.Results)
+			}
+			if n, err := m.CountRows(tg.cfg.ID, tg.schema, *found, ""); err != nil || n != 3 {
+				t.Fatalf("count: %d %v", n, err)
+			}
+			if n, err := m.CountRows(tg.cfg.ID, tg.schema, *found, idCol+" >= 2"); err != nil || n != 2 {
+				t.Fatalf("count where: %d %v", n, err)
+			}
 		})
 	}
 }

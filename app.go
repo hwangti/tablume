@@ -112,8 +112,12 @@ func (a *App) CompletionColumns(id, schema string) (map[string][]string, error) 
 	return a.db.AllColumns(id, schema)
 }
 
-func (a *App) SelectSQL(id, schema string, t dbx.Table, where, orderBy string, limit int) (string, error) {
-	return a.db.SelectSQL(id, schema, t, where, orderBy, limit)
+func (a *App) SelectSQL(id, schema string, t dbx.Table, where, orderBy string, limit, offset int) (string, error) {
+	return a.db.SelectSQL(id, schema, t, where, orderBy, limit, offset)
+}
+
+func (a *App) CountRows(id, schema string, t dbx.Table, where string) (int64, error) {
+	return a.db.CountRows(id, schema, t, where)
 }
 
 func (a *App) QuoteIdent(id, name string) (string, error) { return a.db.QuoteIdent(id, name) }

@@ -66,11 +66,25 @@ export interface TableRef {
   where: string
   orderBy: string
   sort?: { col: string; dir: 'ASC' | 'DESC' } // set by header clicks
+  offset?: number // first row of the shown page
+  total?: number | null // row count for the filter; null/undefined = not counted
 }
 
-// Table tabs don't limit rows: they stream in "fetch size" pages as the grid
-// scrolls, so every row is reachable.
-export const TABLE_LIMIT = 0
+// Table tabs read one page per query (LIMIT/OFFSET) and close the result
+// right away. Keeping a cursor open instead would hold the table's metadata
+// lock (blocking ALTER) and MySQL drops unread results after
+// net_write_timeout.
+export const PAGE_SIZES = [100, 500, 1000, 5000, 10000, 0] // 0 = all rows
+
+/** Rows to ask Execute for: one more than the page so the cursor closes. */
+function tableFetch(): number {
+  return app.pageSize > 0 ? app.pageSize + 1 : 1 << 30
+}
+
+function tableSelect(tab: Tab): Promise<string> {
+  const ref = tab.tableRef!
+  return api.SelectSQL(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where, ref.orderBy, app.pageSize, ref.offset ?? 0)
+}
 
 export interface Toast {
   id: number
@@ -84,6 +98,7 @@ export const app = $state({
   tabs: [] as Tab[],
   activeTab: '',
   fetchSize: 500,
+  pageSize: 500, // table data tabs
   editing: null as ConnConfig | null,
   prompt: null as null | { title: string; resolve: (v: string | null) => void },
   confirm: null as null | { text: string; resolve: (v: boolean) => void },
@@ -329,7 +344,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       schema: tab.schema,
       sql,
       cursor,
-      fetch: app.fetchSize,
+      fetch: tab.tableRef ? tableFetch() : app.fetchSize,
     })
     const results = (res.results ?? []).map((r) => ({
       ...r,
@@ -418,7 +433,7 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   try {
     if (!(await connect(connId))) return tab
     if (app.tableOpen.pkDesc) await applyPkDesc(connId, cur)
-    sql = await api.SelectSQL(connId, schema, t, cur.where, cur.orderBy, TABLE_LIMIT)
+    sql = await tableSelect(tab)
   } catch (e) {
     toast(errText(e), 'error')
     return tab
@@ -429,6 +444,7 @@ export async function openTableData(connId: string, schema: string, t: Table): P
   tab.sql = sql
   saveWorkspaceSoon()
   await runSQL(tab, sql, -1)
+  notePageEnd(tab)
   return tab
 }
 
@@ -455,18 +471,48 @@ async function applyPkDesc(connId: string, ref: TableRef) {
 }
 
 /** Re-queries a table data tab from its filter / sort. */
-export async function reloadTable(tab: Tab) {
+/**
+ * Re-runs a table tab's query. `offset` moves to another page; a changed
+ * filter or sort (`reset`) goes back to the first page and forgets the count.
+ */
+export async function reloadTable(tab: Tab, opts: { offset?: number; reset?: boolean } = {}) {
   const ref = tab.tableRef
   if (!ref) return
   if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return
+  if (opts.reset) {
+    ref.offset = 0
+    ref.total = null
+  }
+  if (opts.offset !== undefined) ref.offset = Math.max(0, opts.offset)
   try {
-    tab.sql = await api.SelectSQL(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where, ref.orderBy, TABLE_LIMIT)
+    tab.sql = await tableSelect(tab)
   } catch (e) {
     toast(errText(e), 'error')
     return
   }
   saveWorkspaceSoon()
   await runSQL(tab, tab.sql, -1)
+  notePageEnd(tab)
+}
+
+// A short page is the last one: that gives the total without a COUNT.
+function notePageEnd(tab: Tab) {
+  const ref = tab.tableRef
+  const r = tab.results[0]
+  if (!ref || !r?.rows || r.error || app.pageSize <= 0 && r.hasMore) return
+  if (app.pageSize <= 0 || r.rows.length < app.pageSize) ref.total = (ref.offset ?? 0) + r.rows.length
+}
+
+/** Counts the table's rows (with the current WHERE) for the pager. */
+export async function countTable(tab: Tab): Promise<number | null> {
+  const ref = tab.tableRef
+  if (!ref) return null
+  try {
+    ref.total = await api.CountRows(tab.connId, ref.schema, $state.snapshot(ref.table), ref.where)
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+  return ref.total ?? null
 }
 
 export function pinTab(tab: Tab | undefined) {
@@ -485,6 +531,7 @@ export function saveWorkspaceSoon() {
     const data = {
       activeTab: app.activeTab,
       fetchSize: app.fetchSize,
+      pageSize: app.pageSize,
       treeView: app.treeView,
       tableOpen: app.tableOpen,
       gridZoom: app.gridZoom,
@@ -511,6 +558,7 @@ export async function loadWorkspace() {
     if (!raw) return
     const data = JSON.parse(raw)
     if (data.fetchSize) app.fetchSize = data.fetchSize
+    if (typeof data.pageSize === 'number' && PAGE_SIZES.includes(data.pageSize)) app.pageSize = data.pageSize
     if (data.treeView) app.treeView = { ...app.treeView, ...data.treeView }
     if (data.tableOpen) app.tableOpen = { ...app.tableOpen, ...data.tableOpen }
     if ((data.theme === 'auto' || data.theme === 'dark' || data.theme === 'light') && data.theme !== app.theme) {

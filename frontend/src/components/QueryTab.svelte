@@ -19,6 +19,8 @@
     toast,
     confirmBox,
     reloadTable,
+    countTable,
+    PAGE_SIZES,
     openConsole,
     type Tab,
   } from '../lib/state.svelte'
@@ -139,7 +141,7 @@
     if (ref.orderBy !== orderDraft) ref.sort = undefined
     ref.where = whereDraft
     ref.orderBy = orderDraft
-    reloadTable(tab)
+    reloadTable(tab, { reset: true })
   }
 
   function revertFilter() {
@@ -171,7 +173,40 @@
       toast(errText(e), 'error')
       return
     }
-    reloadTable(tab)
+    reloadTable(tab, { reset: true })
+  }
+
+  // ---- pager (table data tabs)
+  let pageOffset = $derived(tab.tableRef?.offset ?? 0)
+  let pageLoaded = $derived(current?.rows ? current.rows.length - Object.keys(current.edit?.added ?? {}).length : 0)
+  let total = $derived(tab.tableRef?.total ?? null)
+  let hasNext = $derived(app.pageSize > 0 && (total !== null ? pageOffset + pageLoaded < total : pageLoaded >= app.pageSize))
+  let counting = $state(false)
+
+  async function count() {
+    counting = true
+    await countTable(tab)
+    counting = false
+  }
+
+  function goPage(offset: number) {
+    reloadTable(tab, { offset })
+  }
+
+  async function goLast() {
+    let t = total
+    if (t === null) {
+      await count()
+      t = tab.tableRef?.total ?? null
+    }
+    if (t === null || app.pageSize <= 0) return
+    goPage(Math.floor(Math.max(0, t - 1) / app.pageSize) * app.pageSize)
+  }
+
+  function setPageSize() {
+    saveWorkspaceSoon()
+    // stay around the same rows
+    goPage(app.pageSize > 0 ? Math.floor(pageOffset / app.pageSize) * app.pageSize : 0)
   }
 
   let serverSort = $derived.by(() => {
@@ -505,7 +540,27 @@
         {#if current && (!isTable || tableView === 'data') && app.gridZoom !== 1}
           <button class="btn mini" title="표 확대/축소 초기화 ({modKey}0) · {modKey}+휠로 조절" onclick={() => grid?.zoom(0)}>{Math.round(app.gridZoom * 100)}%</button>
         {/if}
-        {#if current && (!isTable || tableView === 'data')}
+        {#if current && isTable && tableView === 'data'}
+          <div class="pager">
+            <button class="icon-btn sm" title="첫 페이지" disabled={busy || pageOffset === 0} onclick={() => goPage(0)}><Icon name="first" size={13} /></button>
+            <button class="icon-btn sm" title="이전 페이지" disabled={busy || pageOffset === 0} onclick={() => goPage(pageOffset - app.pageSize)}><Icon name="prev" size={13} /></button>
+            <span class="range">
+              {#if pageLoaded === 0}0행{:else}{(pageOffset + 1).toLocaleString()}–{(pageOffset + pageLoaded).toLocaleString()}{/if}
+              <span class="of">/</span>
+              {#if total !== null}
+                <button class="total" title="다시 세기 (COUNT)" onclick={count} disabled={counting}>{total.toLocaleString()}</button>
+              {:else}
+                <button class="total unknown" title="전체 행 수 세기 (COUNT)" onclick={count} disabled={counting}>{counting ? '…' : '?'}</button>
+              {/if}
+            </span>
+            <button class="icon-btn sm" title="다음 페이지" disabled={busy || !hasNext} onclick={() => goPage(pageOffset + app.pageSize)}><Icon name="next" size={13} /></button>
+            <button class="icon-btn sm" title="마지막 페이지" disabled={busy || !hasNext} onclick={goLast}><Icon name="last" size={13} /></button>
+            <select class="psize" title="페이지 크기" bind:value={app.pageSize} onchange={setPageSize} disabled={busy}>
+              {#each PAGE_SIZES as n (n)}<option value={n}>{n === 0 ? '전체' : n.toLocaleString()}</option>{/each}
+            </select>
+            <span class="meta">{current.elapsedMs}ms</span>
+          </div>
+        {:else if current && !isTable}
           <span class="meta">
             {current.rows!.length.toLocaleString()}{current.hasMore ? '+' : ''}행 · {current.elapsedMs}ms
           </span>
@@ -558,6 +613,7 @@
             hasMore={current.hasMore}
             loadingMore={tab.loadingMore}
             onloadmore={() => fetchMore(tab, current!)}
+            rowBase={isTable ? pageOffset : 0}
           />
         {:else}
           {@render logList(!isTable)}
@@ -724,6 +780,51 @@
   }
   .dropdown {
     position: relative;
+  }
+  .pager {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+  }
+  .icon-btn.sm {
+    width: 22px;
+    height: 22px;
+  }
+  .range {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .range .of {
+    color: var(--text-faint);
+  }
+  .total {
+    padding: 0 3px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-dim);
+    font: inherit;
+    cursor: pointer;
+  }
+  .total:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .total.unknown {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .psize {
+    height: 22px;
+    margin-left: 4px;
+    padding: 0 4px;
+    font-size: 12px;
   }
   .seg {
     display: inline-flex;
