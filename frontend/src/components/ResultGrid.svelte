@@ -579,6 +579,14 @@
     toast(`IN 목록 복사됨 (${vals.size}개 값)`)
   }
 
+  // "…" while editing inline: continue in the large editor with the draft.
+  function editInViewer() {
+    if (!editing) return
+    const { ri, c, value } = editing
+    editing = null
+    viewing = { col: columns[c].name, value, ri, c }
+  }
+
   function openViewer(vi: number, p: number) {
     const ri = order[vi]
     const c = vc[p]
@@ -770,6 +778,7 @@
             {#if editing?.ri === ri && editing?.c === c}
               <input
                 class="cell-input"
+                class:with-dots={!kind[c]}
                 bind:value={editing.value}
                 use:focusInput={editing.value.length !== 1}
                 onkeydown={editorKey}
@@ -777,18 +786,16 @@
                 onmousedown={(e) => e.stopPropagation()}
                 spellcheck="false"
               />
-            {:else}
-              {#if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
-              {#if isFocus}
-                <button
-                  class="dots"
-                  title="값 보기 / 큰 창에서 편집 (Shift+Enter)"
-                  onmousedown={(e) => e.stopPropagation()}
-                  ondblclick={(e) => e.stopPropagation()}
-                  onclick={(e) => (e.stopPropagation(), openViewer(vi, p))}>…</button
-                >
-              {/if}
-            {/if}
+              <!-- text columns only (numbers, dates, booleans are short); mousedown
+                   is prevented so the input keeps focus (no blur = no commit) -->
+              {#if !kind[c]}<button
+                class="dots"
+                title="큰 창에서 편집"
+                onmousedown={(e) => (e.preventDefault(), e.stopPropagation())}
+                ondblclick={(e) => e.stopPropagation()}
+                onclick={(e) => (e.stopPropagation(), editInViewer())}>…</button
+              >{/if}
+            {:else if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
           </div>
         {/each}
       </div>
@@ -1024,6 +1031,9 @@
   }
   .td {
     position: relative;
+  }
+  .cell-input.with-dots {
+    padding-right: 26px; /* room for the "…" button */
   }
   .td.same {
     background: var(--cell-same);
