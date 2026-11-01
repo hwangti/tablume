@@ -471,6 +471,8 @@
           <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
           <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 테이블 행 수 (통계 기준 추정)</label>
           <label><input type="checkbox" bind:checked={app.treeView.size} onchange={saveWorkspaceSoon} /> 테이블 크기</label>
+          <div class="vm-title sep">결과 표</div>
+          <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> 컬럼 번호 표시</label>
           <div class="vm-title sep">테이블 열 때</div>
           <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> 기본 정렬: PK 내림차순</label>
         </div>

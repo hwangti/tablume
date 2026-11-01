@@ -631,7 +631,7 @@
             <button class="icon-btn sm" title="처음으로" disabled={busy || whole} onclick={goFirst}><Icon name="first" size={13} /></button>
             <button class="icon-btn sm" title="이전 {app.pageSize.toLocaleString()}행" disabled={busy || whole} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
             <button class="range" class:open={!!sizeMenu} title="불러온 행 · 눌러서 페이지 크기 변경" onclick={toggleSizeMenu}>
-              {#if whole}{loaded.toLocaleString()}행{:else}{(start + 1).toLocaleString()}–{(start + loaded).toLocaleString()}{/if}
+              {#if whole}{loaded.toLocaleString()}{:else}{(start + 1).toLocaleString()}–{(start + loaded).toLocaleString()}{/if}
               <Icon name="chevronDown" size={10} />
             </button>
             {#if whole}
@@ -707,6 +707,7 @@
             loadingPrev={!!tab.loadingPrev}
             onloadprev={loadPrev}
             rowBase={start}
+            layoutKey={tab.tableRef ? `${tab.connId}|${tab.tableRef.schema}|${tab.tableRef.table.schema}.${tab.tableRef.table.name}` : ''}
           />
         {:else}
           {@render logList(!isTable)}

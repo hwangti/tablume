@@ -105,6 +105,7 @@ export const app = $state({
   treeView: { comment: true, tableCount: true, rows: false, size: false },
   tableOpen: { pkDesc: false },
   gridZoom: 1,
+  gridColNumbers: false, // column numbers in result headers
   ddlMode: 'sql' as 'sql' | 'table',
   theme: getTheme(),
 })
@@ -636,6 +637,7 @@ export function saveWorkspaceSoon() {
       treeView: app.treeView,
       tableOpen: app.tableOpen,
       gridZoom: app.gridZoom,
+      gridColNumbers: app.gridColNumbers,
       ddlMode: app.ddlMode,
       theme: app.theme,
       tabs: app.tabs.map((t) => ({
@@ -668,6 +670,7 @@ export async function loadWorkspace() {
       setTheme(data.theme)
     }
     if (data.ddlMode === 'table' || data.ddlMode === 'sql') app.ddlMode = data.ddlMode
+    if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
     if (typeof data.gridZoom === 'number' && data.gridZoom >= 0.5 && data.gridZoom <= 3) app.gridZoom = data.gridZoom
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue

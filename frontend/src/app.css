@@ -19,6 +19,7 @@
   --grid-line: #2f3135;
   --grid-alt: #232427;
   --grid-cur-row: rgba(53, 116, 240, 0.13);
+  --cell-same: rgba(224, 168, 75, 0.22);
 
   --syn-keyword: #cf8e6d;
   --syn-string: #6aab73;
@@ -64,6 +65,7 @@
   --grid-line: #ebecf0;
   --grid-alt: #fafafb;
   --grid-cur-row: rgba(53, 116, 240, 0.08);
+  --cell-same: #fff1c2;
 
   --syn-keyword: #0033b3;
   --syn-string: #067d17;

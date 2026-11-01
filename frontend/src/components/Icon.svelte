@@ -42,6 +42,7 @@
     prev: 'M10 4l-4 4 4 4',
     next: 'M6 4l4 4-4 4',
     last: 'M11.5 4v8M4.5 4l4 4-4 4',
+    columns: 'M2.5 3.5h11v9h-11zM6.2 3.5v9M9.8 3.5v9',
     ddl: 'M4 1.5h5l3 3v10H4zM6 8h4M6 10.5h4M6 5.5h1.5',
   }
 </script>

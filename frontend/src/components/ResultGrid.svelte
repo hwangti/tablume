@@ -4,6 +4,11 @@
   type Pos = { r: number; c: number } | null
   type View = { columns: unknown; top: number; left: number; widths: number[]; sort: { col: number; dir: 1 | -1 } | null; anchor: Pos; focus: Pos }
   const views = new WeakMap<object, View>()
+  // Column order and hidden columns, by column name: per table for table
+  // tabs (survives reloads), per result otherwise.
+  type Layout = { order: string[]; hidden: string[] }
+  const layouts = new Map<string, Layout>()
+  const resultLayouts = new WeakMap<object, Layout>()
 </script>
 
 <script lang="ts">
@@ -29,6 +34,7 @@
     serverSort = null,
     onsort,
     rowBase = 0,
+    layoutKey = '',
   }: {
     result: StmtResult
     columns: ResultColumn[]
@@ -49,6 +55,7 @@
     serverSort?: { col: number; dir: 1 | -1 } | null
     onsort?: (col: number) => void
     rowBase?: number // number of the first row (paged table data)
+    layoutKey?: string // keeps column order / hidden columns across reloads (table tabs)
   } = $props()
 
   let editing = $state<{ ri: number; vi: number; c: number; value: string } | null>(null)
@@ -67,23 +74,24 @@
 
   // Starts editing a cell; falls back to the read-only viewer when the
   // result or column can't be edited.
-  async function startEdit(vi: number, c: number, initial?: string) {
+  async function startEdit(vi: number, p: number, initial?: string) {
     const ri = order[vi]
+    const c = vc[p]
     const inf = await ensureEdit()
     if (!inf || !rowEditable(inf, ri)) {
-      if (initial === undefined) openViewer(vi, c)
+      if (initial === undefined) openViewer(vi, p)
       else if (inf) toast('읽기 전용: ' + inf.reason)
       return
     }
     if (!inf.columns[c]) {
-      if (initial === undefined) openViewer(vi, c)
+      if (initial === undefined) openViewer(vi, p)
       else toast('이 컬럼은 편집할 수 없습니다 (바이너리 또는 계산 컬럼)')
       return
     }
     if (st?.deleted[ri]) return
     const v = val(ri, c)
     if (initial === undefined && v !== null && (v.includes('\n') || v.length > 200)) {
-      openViewer(vi, c) // long text: edit in the larger editor
+      openViewer(vi, p) // long text: edit in the larger editor
       return
     }
     editing = { ri, vi, c, value: initial ?? v ?? '' }
@@ -97,7 +105,7 @@
     scroller.focus({ preventScroll: true })
     if (move) {
       const r = Math.max(0, Math.min(order.length - 1, vi + move[0]))
-      const cc = Math.max(0, Math.min(columns.length - 1, c + move[1]))
+      const cc = Math.max(0, Math.min(vc.length - 1, vc.indexOf(c) + move[1]))
       anchor = focus = { r, c: cc }
       scrollIntoView(r, cc)
     }
@@ -139,7 +147,7 @@
     const inf = await ensureEdit()
     if (!inf || !sel) return
     for (let v = sel.r1; v <= sel.r2; v++)
-      for (let c = sel.c1; c <= sel.c2; c++)
+      for (const c of vc.slice(sel.c1, sel.c2 + 1))
         if (inf.columns[c] && rowEditable(inf, order[v]) && !st?.deleted[order[v]]) setCell(result, order[v], c, null)
   }
 
@@ -151,7 +159,7 @@
     }
     const ri = addRow(result)
     const vi = order.indexOf(ri)
-    const c = Math.max(0, inf.columns.findIndex((x) => x))
+    const c = Math.max(0, vc.findIndex((i) => inf.columns[i]))
     anchor = focus = { r: vi, c }
     scrollIntoView(vi, c)
     startEdit(vi, c)
@@ -198,6 +206,50 @@
     columns.map((c, i) => (numeric[i] ? 'num' : dateRe.test(c.type) ? 'date' : boolRe.test(c.type) ? 'bool' : '')),
   )
 
+  // ---- column layout: vc[p] is the result column shown at position p
+  let orderNames = $state<string[]>([])
+  let hiddenNames = $state<string[]>([])
+  let vc = $derived.by(() => {
+    const idx = new Map(orderNames.map((n, i) => [n, i]))
+    const all = columns.map((_, i) => i)
+    all.sort((a, b) => (idx.get(columns[a].name) ?? 1e6 + a) - (idx.get(columns[b].name) ?? 1e6 + b))
+    const hide = new Set(hiddenNames)
+    const shown = all.filter((i) => !hide.has(columns[i].name))
+    return shown.length ? shown : all.slice(0, 1)
+  })
+  let hiddenCount = $derived(columns.length - vc.length)
+
+  function loadLayout() {
+    const l = layoutKey ? layouts.get(layoutKey) : resultLayouts.get(result)
+    orderNames = l?.order ?? []
+    hiddenNames = l?.hidden ?? []
+  }
+  function storeLayout() {
+    const l = { order: $state.snapshot(orderNames), hidden: $state.snapshot(hiddenNames) }
+    if (layoutKey) layouts.set(layoutKey, l)
+    else resultLayouts.set(result, l)
+  }
+
+  export function setHidden(names: string[]) {
+    hiddenNames = names
+    anchor = focus = null
+    storeLayout()
+  }
+  export function columnList() {
+    return columns.map((c, i) => ({ i, name: c.name, type: c.type, hidden: hiddenNames.includes(c.name) }))
+  }
+
+  function moveColumn(from: number, to: number) {
+    const names = vc.map((i) => columns[i].name)
+    const [m] = names.splice(from, 1)
+    names.splice(to > from ? to - 1 : to, 0, m)
+    // hidden columns keep their place in the full order
+    const full = (orderNames.length ? orderNames : columns.map((c) => c.name)).filter((n) => !names.includes(n))
+    orderNames = [...names, ...full]
+    anchor = focus = null
+    storeLayout()
+  }
+
   function keyIcons(c: number): { icon: string; color: string; label: string }[] {
     const k = info?.keys?.[c]
     if (!k) return []
@@ -217,6 +269,7 @@
   $effect.pre(() => {
     if (columns !== lastColumns) {
       lastColumns = columns
+      loadLayout()
       const v = views.get(result)
       if (v && v.columns === columns && v.widths.length === columns.length) {
         widths = v.widths
@@ -269,7 +322,8 @@
   }
 
   function guessWidth(c: ResultColumn, i: number): number {
-    const head = c.name.length * 7.6 + c.type.length * 6.2 + 34
+    // name + type + padding, plus room for a key icon and the column number
+    const head = c.name.length * 7.6 + c.type.length * 6.2 + 34 + 18 + (app.gridColNumbers ? 14 : 0)
     let len = 4
     for (let r = 0; r < Math.min(rows.length, 200); r++) {
       const v = rows[r][i]
@@ -310,7 +364,7 @@
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
   let numW = $derived(Math.round(Math.max(44, String(rowBase + rows.length).length * 8 + 20) * z))
   let cw = $derived(widths.map((w) => Math.round(w * z)))
-  let totalW = $derived(numW + cw.reduce((a, b) => a + b, 0))
+  let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
 
   export function zoom(step: number) {
     const steps = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
@@ -377,6 +431,15 @@
     }
   })
 
+  // One cell selected: other cells of that column with the same value are
+  // highlighted (as in HeidiSQL).
+  let same = $derived.by(() => {
+    if (!sel || sel.r1 !== sel.r2 || sel.c1 !== sel.c2 || sel.r1 >= order.length) return null
+    const c = vc[sel.c1]
+    const v = val(order[sel.r1], c)
+    return v === null || v === '' ? null : { c, v }
+  })
+
   function isSel(vi: number, c: number) {
     return !!sel && vi >= sel.r1 && vi <= sel.r2 && c >= sel.c1 && c <= sel.c2
   }
@@ -393,10 +456,10 @@
   }
 
   function rowDown(e: MouseEvent, vi: number) {
-    if (e.shiftKey && anchor) focus = { r: vi, c: columns.length - 1 }
+    if (e.shiftKey && anchor) focus = { r: vi, c: vc.length - 1 }
     else {
       anchor = { r: vi, c: 0 }
-      focus = { r: vi, c: columns.length - 1 }
+      focus = { r: vi, c: vc.length - 1 }
     }
     scroller.focus({ preventScroll: true })
   }
@@ -404,7 +467,7 @@
   function selectAll() {
     if (!rows.length) return
     anchor = { r: 0, c: 0 }
-    focus = { r: order.length - 1, c: columns.length - 1 }
+    focus = { r: order.length - 1, c: vc.length - 1 }
   }
 
   function scrollIntoView(vi: number, c: number) {
@@ -412,8 +475,8 @@
     if (top < scroller.scrollTop) scroller.scrollTop = top
     else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight - HEAD_H) scroller.scrollTop = top + ROW_H - scroller.clientHeight + HEAD_H + 12
     let left = numW
-    for (let i = 0; i < c; i++) left += cw[i]
-    const right = left + cw[c]
+    for (let i = 0; i < c; i++) left += cw[vc[i]]
+    const right = left + cw[vc[c]]
     if (left - numW < scroller.scrollLeft) scroller.scrollLeft = left - numW
     else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth + 12
   }
@@ -467,12 +530,12 @@
       return
     }
     let mv = moves[e.key]
-    if (e.key === 'Home') mv = mod ? [-order.length, 0] : [0, -columns.length]
-    if (e.key === 'End') mv = mod ? [order.length, 0] : [0, columns.length]
+    if (e.key === 'Home') mv = mod ? [-order.length, 0] : [0, -vc.length]
+    if (e.key === 'End') mv = mod ? [order.length, 0] : [0, vc.length]
     if (!mv) return
     e.preventDefault()
     const r = Math.max(0, Math.min(order.length - 1, focus.r + mv[0]))
-    const c = Math.max(0, Math.min(columns.length - 1, focus.c + mv[1]))
+    const c = Math.max(0, Math.min(vc.length - 1, focus.c + mv[1]))
     focus = { r, c }
     if (!e.shiftKey || e.key === 'Tab') anchor = { r, c }
     scrollIntoView(r, c)
@@ -481,7 +544,7 @@
   function selectedMatrix(): { cols: number[]; data: Cell[][] } | null {
     if (!sel) return null
     const cols: number[] = []
-    for (let c = sel.c1; c <= sel.c2; c++) cols.push(c)
+    for (let c = sel.c1; c <= sel.c2; c++) cols.push(vc[c])
     const data: Cell[][] = []
     for (let v = sel.r1; v <= sel.r2; v++) data.push(cols.map((c) => val(order[v], c)))
     return { cols, data }
@@ -516,13 +579,18 @@
     toast(`IN 목록 복사됨 (${vals.size}개 값)`)
   }
 
-  function openViewer(vi: number, c: number) {
+  function openViewer(vi: number, p: number) {
     const ri = order[vi]
+    const c = vc[p]
     const canEdit = rowEditable(info, ri) && !!info?.columns[c] && !st?.deleted[ri]
     viewing = { col: columns[c].name, value: val(ri, c), ri, c: canEdit ? c : -1 }
   }
 
   function headerClick(c: number) {
+    if (dragged) {
+      dragged = false // the click that ends a drag doesn't sort
+      return
+    }
     if (onsort) {
       onsort(c)
       return
@@ -532,6 +600,48 @@
     else sort = null
     anchor = focus = null
   }
+
+  // ---- header drag to reorder columns
+  let headEl: HTMLDivElement
+  let drag = $state<{ from: number; to: number } | null>(null)
+  let dragged = false
+
+  function edgeX(p: number): number {
+    let x = numW
+    for (let i = 0; i < p; i++) x += cw[vc[i]]
+    return x
+  }
+
+  function headDown(e: MouseEvent, p: number) {
+    if (e.button !== 0) return
+    const x0 = e.clientX
+    dragged = false
+    const move = (ev: MouseEvent) => {
+      if (!dragged && Math.abs(ev.clientX - x0) < 6) return
+      dragged = true
+      const x = ev.clientX - headEl.getBoundingClientRect().left
+      let to = vc.length
+      for (let i = 0; i < vc.length; i++) {
+        if (x < edgeX(i) + cw[vc[i]] / 2) {
+          to = i
+          break
+        }
+      }
+      drag = { from: p, to }
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      if (drag && drag.to !== drag.from && drag.to !== drag.from + 1) moveColumn(drag.from, drag.to)
+      drag = null
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  // ---- header menu (right click)
+  let headMenu = $state<{ x: number; y: number; c: number } | null>(null)
+  let colMenu = $state<{ x: number; y: number } | null>(null)
 
   function startResize(e: MouseEvent, c: number) {
     e.preventDefault()
@@ -559,7 +669,7 @@
   }
 </script>
 
-<svelte:window onclick={() => (menu = null)} />
+<svelte:window onclick={() => ((menu = null), (headMenu = null), (colMenu = null))} />
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
@@ -577,15 +687,30 @@
   role="grid"
 >
   <div class="inner" style:height="{BODY_T + order.length * ROW_H + (hasMore ? ROW_H : 0)}px" style:width="{totalW}px">
-    <div class="head" style:height="{HEAD_H}px" style:width="{totalW}px">
-      <div class="num corner" style:width="{numW}px"></div>
-      {#each columns as col, c (c)}
+    <div class="head" bind:this={headEl} style:height="{HEAD_H}px" style:width="{totalW}px">
+      <!-- corner: column chooser -->
+      <button
+        class="num corner"
+        class:has-hidden={hiddenCount > 0}
+        style:width="{numW}px"
+        title={hiddenCount > 0 ? `컬럼 ${hiddenCount}개 숨김 · 눌러서 보이기/숨기기` : '컬럼 보이기/숨기기'}
+        onclick={(e) => (e.stopPropagation(), (colMenu = colMenu ? null : { x: e.clientX, y: e.clientY }))}
+      >
+        <Icon name="columns" size={13} />{#if hiddenCount > 0}<span class="hc">{hiddenCount}</span>{/if}
+      </button>
+      {#each vc as c, p (c)}
+        {@const col = columns[c]}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
           class="th"
+          class:dragging={drag?.from === p}
           style:width="{cw[c]}px"
-          title={`${col.name} ${col.type}\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'}`}
-          onclick={() => headerClick(c)} role="columnheader" tabindex="-1">
+          title={`${col.name} ${col.type}\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'} · 드래그: 순서 변경`}
+          onmousedown={(e) => headDown(e, p)}
+          onclick={() => headerClick(c)}
+          oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation(), (headMenu = { x: e.clientX, y: e.clientY, c }))}
+          role="columnheader" tabindex="-1">
+          {#if app.gridColNumbers}<span class="cno">{c + 1}</span>{/if}
           {#each keyIcons(c) as k (k.icon)}
             <span class="kicon" title={k.label}><Icon name={k.icon} size={12} color={k.color} /></span>
           {/each}
@@ -597,6 +722,9 @@
         </div>
       {/each}
     </div>
+    {#if drag && drag.to !== drag.from && drag.to !== drag.from + 1}
+      <div class="drop-line" style:left="{edgeX(drag.to) - 1}px"></div>
+    {/if}
 
     {#if canLoadPrev || loadingPrev}
       <div class="more top" style:top="{HEAD_H}px">
@@ -616,13 +744,15 @@
         >
           {st?.added[ri] ? '+' : rowBase + vi + 1}
         </div>
-        {#each columns as _, c (c)}
+        {#each vc as c, p (c)}
           {@const v = val(ri, c)}
+          {@const isFocus = focus?.r === vi && focus?.c === p}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="td"
-            class:sel={isSel(vi, c)}
-            class:focus={focus?.r === vi && focus?.c === c}
+            class:sel={isSel(vi, p)}
+            class:focus={isFocus}
+            class:same={!!same && same.c === c && v === same.v && !isFocus}
             class:right={numeric[c]}
             class:v-num={kind[c] === 'num'}
             class:v-date={kind[c] === 'date'}
@@ -632,9 +762,9 @@
             class:deleted={st?.deleted[ri]}
             class:editing={editing?.ri === ri && editing?.c === c}
             style:width="{cw[c]}px"
-            onmousedown={(e) => cellDown(e, vi, c)}
-            onmouseover={(e) => cellOver(e, vi, c)}
-            ondblclick={() => startEdit(vi, c)}
+            onmousedown={(e) => cellDown(e, vi, p)}
+            onmouseover={(e) => cellOver(e, vi, p)}
+            ondblclick={() => startEdit(vi, p)}
             onfocus={() => {}}
           >
             {#if editing?.ri === ri && editing?.c === c}
@@ -647,7 +777,18 @@
                 onmousedown={(e) => e.stopPropagation()}
                 spellcheck="false"
               />
-            {:else if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
+            {:else}
+              {#if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
+              {#if isFocus}
+                <button
+                  class="dots"
+                  title="값 보기 / 큰 창에서 편집 (Shift+Enter)"
+                  onmousedown={(e) => e.stopPropagation()}
+                  ondblclick={(e) => e.stopPropagation()}
+                  onclick={(e) => (e.stopPropagation(), openViewer(vi, p))}>…</button
+                >
+              {/if}
+            {/if}
           </div>
         {/each}
       </div>
@@ -680,6 +821,44 @@
       <button onclick={deleteRows}>행 삭제 / 복원 <kbd>Delete</kbd></button>
       <button onclick={() => revert(result, selectedRows())}>선택 행 변경 되돌리기</button>
     {/if}
+  </div>
+{/if}
+
+{#if colMenu}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="menu colmenu" style:left="{colMenu.x}px" style:top="{colMenu.y}px" onclick={(e) => e.stopPropagation()}>
+    <div class="cm-head">
+      <span>컬럼 {vc.length}/{columns.length}</span>
+      <button class="link" onclick={() => setHidden([])}>모두 보이기</button>
+    </div>
+    <div class="cm-list">
+      {#each columns as col, i (i)}
+        <label>
+          <input
+            type="checkbox"
+            checked={!hiddenNames.includes(col.name)}
+            onchange={(e) =>
+              setHidden((e.currentTarget as HTMLInputElement).checked ? hiddenNames.filter((n) => n !== col.name) : [...hiddenNames, col.name])}
+          />
+          {#if app.gridColNumbers}<span class="cno">{i + 1}</span>{/if}
+          <span class="cm-name">{col.name}</span>
+          <span class="cm-type">{col.type.toLowerCase()}</span>
+        </label>
+      {/each}
+    </div>
+    {#if orderNames.length}
+      <button class="link cm-reset" onclick={() => ((orderNames = []), storeLayout())}>컬럼 순서 원래대로</button>
+    {/if}
+  </div>
+{/if}
+
+{#if headMenu}
+  {@const hc = headMenu.c}
+  <div class="menu" style:left="{headMenu.x}px" style:top="{headMenu.y}px">
+    <button onclick={() => setHidden([...hiddenNames, columns[hc].name])} disabled={vc.length <= 1}>이 컬럼 숨기기</button>
+    {#if hiddenCount > 0}<button onclick={() => setHidden([])}>숨긴 컬럼 모두 보이기 ({hiddenCount})</button>{/if}
+    {#if orderNames.length}<button onclick={() => ((orderNames = []), storeLayout())}>컬럼 순서 원래대로</button>{/if}
+    <button onclick={() => copyText(columns[hc].name)}>컬럼 이름 복사</button>
   </div>
 {/if}
 
@@ -804,6 +983,112 @@
   .corner {
     z-index: 3;
     line-height: var(--head-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    height: 100%;
+    border: none;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .corner:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+  .corner.has-hidden {
+    color: var(--accent);
+  }
+  .hc {
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .cno {
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-size: calc(10.5px * var(--gz, 1));
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  .th.dragging {
+    opacity: 0.5;
+  }
+  .drop-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 4;
+    width: 2px;
+    background: var(--accent);
+    pointer-events: none;
+  }
+  .td {
+    position: relative;
+  }
+  .td.same {
+    background: var(--cell-same);
+  }
+  .dots {
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    transform: translateY(-50%);
+    height: calc(var(--row-h) - 6px);
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .dots:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .colmenu {
+    min-width: 260px;
+    max-width: 360px;
+    padding: 6px;
+  }
+  .cm-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 6px 6px;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .cm-list {
+    max-height: 340px;
+    overflow: auto;
+  }
+  .cm-list label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .cm-list label:hover {
+    background: var(--bg-hover);
+  }
+  .cm-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cm-type {
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+  .cm-reset {
+    margin: 6px 6px 2px;
+    align-self: flex-start;
   }
 
   .td {
