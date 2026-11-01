@@ -12,7 +12,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            platform: darwin/universal
+            platform: darwin/arm64 # Apple Silicon only (universal would also add Intel)
             artifact: Tablume-macos
           - os: windows-latest
             platform: windows/amd64

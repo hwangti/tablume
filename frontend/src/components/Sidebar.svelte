@@ -726,6 +726,10 @@
     padding: 0 8px 0 6px;
     white-space: nowrap;
     cursor: default;
+    /* rows never get wider than the tree: text shrinks instead, so the
+       row count / size stay lined up at the right edge */
+    min-width: 0;
+    overflow: hidden;
   }
   .node:hover {
     background: var(--bg-hover);
@@ -753,8 +757,13 @@
   .label {
     overflow: hidden;
     text-overflow: ellipsis;
-    flex: 0 0 auto;
-    max-width: 70%; /* the comment gives way first */
+    /* shrinks only after the comment (flex-shrink 1000) is gone */
+    flex: 0 1 auto;
+    min-width: 3em;
+  }
+  /* with a comment, keep a little of it visible */
+  .label:has(+ .cmt) {
+    max-width: 70%;
   }
   .cmt {
     flex: 0 1000 auto;

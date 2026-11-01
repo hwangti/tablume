@@ -19,6 +19,11 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Shown in the macOS "Tablume에 관하여" panel (Wails' default otherwise).
+//
+//go:embed build/appicon.png
+var appIcon []byte
+
 func main() {
 	app := NewApp()
 
@@ -53,7 +58,7 @@ func main() {
 		OnShutdown: app.shutdown,
 		Bind:       []interface{}{app},
 		Mac: &mac.Options{
-			About: &mac.AboutInfo{Title: "Tablume", Message: "A lightweight database client"},
+			About: &mac.AboutInfo{Title: "Tablume", Message: "가벼운 데이터베이스 클라이언트", Icon: appIcon},
 		},
 		Windows: &windows.Options{
 			Theme:               windows.SystemDefault,
