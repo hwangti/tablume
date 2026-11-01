@@ -1,7 +1,8 @@
 <script module lang="ts">
   // View state per result (scroll, column widths, sort), so switching to
   // another result tab or the log and back keeps it.
-  type View = { columns: unknown; top: number; left: number; widths: number[]; sort: { col: number; dir: 1 | -1 } | null }
+  type Pos = { r: number; c: number } | null
+  type View = { columns: unknown; top: number; left: number; widths: number[]; sort: { col: number; dir: 1 | -1 } | null; anchor: Pos; focus: Pos }
   const views = new WeakMap<object, View>()
 </script>
 
@@ -172,6 +173,9 @@
   let z = $derived(app.gridZoom)
   let ROW_H = $derived(Math.round(24 * z))
   let HEAD_H = $derived(Math.round(28 * z))
+  // The "load previous rows" bar takes a row of its own above the data.
+  let TOP_PAD = $derived(canLoadPrev || loadingPrev ? ROW_H : 0)
+  let BODY_T = $derived(HEAD_H + TOP_PAD)
   const OVERSCAN = 10
 
   let scroller: HTMLDivElement
@@ -217,23 +221,27 @@
       if (v && v.columns === columns && v.widths.length === columns.length) {
         widths = v.widths
         sort = v.sort
+        anchor = v.anchor
+        focus = v.focus
         restoreTo = { top: v.top, left: v.left }
       } else {
         widths = columns.map((c, i) => guessWidth(c, i))
         sort = null
+        anchor = focus = null
         if (scroller) scroller.scrollTop = 0
       }
-      anchor = focus = null
     }
   })
 
   function saveView() {
     if (!scroller || restoreTo) return
-    views.set(result, { columns, top: scroller.scrollTop, left: scroller.scrollLeft, widths: $state.snapshot(widths), sort: $state.snapshot(sort) })
+    views.set(result, { columns, top: scroller.scrollTop, left: scroller.scrollLeft, widths: $state.snapshot(widths), sort: $state.snapshot(sort), anchor: $state.snapshot(anchor), focus: $state.snapshot(focus) })
   }
   $effect(() => {
     void widths.join()
     void sort
+    void anchor
+    void focus
     untrack(saveView)
   })
 
@@ -297,8 +305,8 @@
 
   let shownSort = $derived(onsort ? (serverSort ?? null) : sort)
 
-  let first = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN))
-  let last = $derived(Math.min(order.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN))
+  let first = $derived(Math.max(0, Math.floor((scrollTop - TOP_PAD) / ROW_H) - OVERSCAN))
+  let last = $derived(Math.min(order.length, Math.ceil((scrollTop - TOP_PAD + viewH) / ROW_H) + OVERSCAN))
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
   let numW = $derived(Math.round(Math.max(44, String(rowBase + rows.length).length * 8 + 20) * z))
   let cw = $derived(widths.map((w) => Math.round(w * z)))
@@ -328,7 +336,7 @@
     // While new rows are pending at the bottom, don't auto-load more rows
     // above them (they would jump away); the explicit button still works.
     const hasAdded = !!st && Object.keys(st.added).length > 0
-    if (hasMore && !loadingMore && !hasAdded && scroller.scrollTop + scroller.clientHeight > rows.length * ROW_H - ROW_H * 20) {
+    if (hasMore && !loadingMore && !hasAdded && scroller.scrollTop + scroller.clientHeight > TOP_PAD + rows.length * ROW_H - ROW_H * 20) {
       onloadmore()
     }
     // (the previous page is only loaded by its button: loading it while
@@ -337,22 +345,23 @@
   }
 
   /** Rows were inserted (k > 0) or removed (k < 0) above the view: keep it still. */
-  export function shiftRows(k: number) {
-    if (!k) return
+  // `extra` moves only the scroll (e.g. -1 when the top bar went away).
+  export function shiftRows(k: number, extra = 0) {
+    if (!k && !extra) return
     if (anchor) anchor = { r: Math.max(0, anchor.r + k), c: anchor.c }
     if (focus) focus = { r: Math.max(0, focus.r + k), c: focus.c }
     if (editing) editing = { ...editing, ri: editing.ri + k, vi: editing.vi + k }
-    scroller.scrollTop = Math.max(0, scroller.scrollTop + k * ROW_H)
+    scroller.scrollTop = Math.max(0, scroller.scrollTop + (k + extra) * ROW_H)
     scrollTop = scroller.scrollTop
   }
 
   /** Index of the first row in view. */
   export function topRow(): number {
-    return Math.floor(scroller.scrollTop / ROW_H)
+    return Math.max(0, Math.floor((scroller.scrollTop - TOP_PAD) / ROW_H))
   }
 
   export function scrollToRow(vi: number) {
-    scroller.scrollTop = Math.max(0, vi * ROW_H)
+    scroller.scrollTop = vi <= 0 ? 0 : TOP_PAD + vi * ROW_H
     scrollTop = scroller.scrollTop
     const c = focus?.c ?? 0
     if (order.length) anchor = focus = { r: Math.min(order.length - 1, Math.max(0, vi)), c }
@@ -399,7 +408,7 @@
   }
 
   function scrollIntoView(vi: number, c: number) {
-    const top = vi * ROW_H
+    const top = TOP_PAD + vi * ROW_H
     if (top < scroller.scrollTop) scroller.scrollTop = top
     else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight - HEAD_H) scroller.scrollTop = top + ROW_H - scroller.clientHeight + HEAD_H + 12
     let left = numW
@@ -567,7 +576,7 @@
   tabindex="0"
   role="grid"
 >
-  <div class="inner" style:height="{HEAD_H + order.length * ROW_H + (hasMore ? ROW_H : 0)}px" style:width="{totalW}px">
+  <div class="inner" style:height="{BODY_T + order.length * ROW_H + (hasMore ? ROW_H : 0)}px" style:width="{totalW}px">
     <div class="head" style:height="{HEAD_H}px" style:width="{totalW}px">
       <div class="num corner" style:width="{numW}px"></div>
       {#each columns as col, c (c)}
@@ -596,7 +605,7 @@
     {/if}
 
     {#each visible as { ri, vi } (ri)}
-      <div class="tr" class:alt={vi % 2 === 1} style:top="{HEAD_H + vi * ROW_H}px" style:width="{totalW}px">
+      <div class="tr" class:alt={vi % 2 === 1} style:top="{BODY_T + vi * ROW_H}px" style:width="{totalW}px">
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="num"
@@ -645,7 +654,7 @@
     {/each}
 
     {#if hasMore}
-      <div class="more" style:top="{HEAD_H + order.length * ROW_H}px">
+      <div class="more" style:top="{BODY_T + order.length * ROW_H}px">
         {#if loadingMore}더 불러오는 중…{:else}<button class="link" onclick={onloadmore}>더 불러오기</button>{/if}
       </div>
     {/if}

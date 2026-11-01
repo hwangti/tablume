@@ -209,7 +209,8 @@
     const added = await fetchPrev(tab, current)
     if (added) {
       flushSync()
-      grid?.shiftRows(added)
+      // at the first row the "load previous" bar above the rows goes away
+      grid?.shiftRows(added, (current.start ?? 0) === 0 ? -1 : 0)
     }
   }
 
