@@ -1,6 +1,13 @@
 import * as App from '../../wailsjs/go/main/App'
 import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, Table, Cell, EditInfo, RowChange } from './types'
 
+export interface AlterRequest {
+  connId: string
+  schema: string
+  table: Table
+  changes: { old: Column; new: Column }[]
+}
+
 // Typed view over the generated Wails bindings (they use classes; plain
 // objects work the same at runtime).
 interface Api {
@@ -18,6 +25,8 @@ interface Api {
   SelectSQL(id: string, schema: string, t: Table, where: string, orderBy: string, limit: number, offset: number): Promise<string>
   ListRoutines(id: string, schema: string): Promise<Routine[]>
   RoutineSource(id: string, schema: string, r: Routine): Promise<string>
+  PreviewAlter(req: AlterRequest): Promise<string[]>
+  ApplyAlter(req: AlterRequest): Promise<{ applied: number; total: number; error: string; rolledBack: boolean }>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
   FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
   CountResult(tabId: string, connId: string, sql: string): Promise<number>

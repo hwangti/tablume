@@ -264,7 +264,12 @@ func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t
 		(SELECT CONCAT(k.REFERENCED_TABLE_NAME, '.', k.REFERENCED_COLUMN_NAME) FROM information_schema.KEY_COLUMN_USAGE k
 			WHERE k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME AND k.COLUMN_NAME = c.COLUMN_NAME
 			AND k.REFERENCED_TABLE_NAME IS NOT NULL LIMIT 1),
-		c.COLUMN_DEFAULT, c.EXTRA
+		-- defaults as SQL expressions: MariaDB already reports them that way;
+		-- MySQL 8 gives literals bare (DEFAULT_GENERATED marks expressions)
+		CASE WHEN c.COLUMN_DEFAULT IS NULL THEN NULL
+			WHEN @@version LIKE '%MariaDB%' OR c.EXTRA LIKE '%DEFAULT_GENERATED%' THEN c.COLUMN_DEFAULT
+			ELSE QUOTE(c.COLUMN_DEFAULT) END,
+		TRIM(REPLACE(c.EXTRA, 'DEFAULT_GENERATED', ''))
 		FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION`, schema, t.Name)
 }
 

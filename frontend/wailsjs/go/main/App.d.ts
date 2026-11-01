@@ -3,6 +3,8 @@
 import {dbx} from '../models';
 import {main} from '../models';
 
+export function ApplyAlter(arg1:dbx.AlterRequest):Promise<dbx.AlterResult>;
+
 export function ApplyChanges(arg1:dbx.ApplyRequest):Promise<number>;
 
 export function Cancel(arg1:string):Promise<void>;
@@ -50,6 +52,8 @@ export function OpenSQLFile():Promise<main.OpenedFile>;
 export function PickKeyFile():Promise<string>;
 
 export function PickSQLiteFile():Promise<string>;
+
+export function PreviewAlter(arg1:dbx.AlterRequest):Promise<Array<string>>;
 
 export function PreviewChanges(arg1:dbx.ApplyRequest):Promise<Array<string>>;
 

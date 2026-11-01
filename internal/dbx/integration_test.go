@@ -622,3 +622,100 @@ func TestRoutines(t *testing.T) {
 		})
 	}
 }
+
+func TestAlterColumns(t *testing.T) {
+	setup := map[string]string{
+		"mariadb":  "DROP TABLE IF EXISTS alt_t; CREATE TABLE alt_t (id INT AUTO_INCREMENT PRIMARY KEY, a VARCHAR(20) NULL DEFAULT 'x' COMMENT 'c1', b INT NOT NULL); INSERT INTO alt_t (a, b) VALUES ('v', 1)",
+		"postgres": "DROP TABLE IF EXISTS alt_t; CREATE TABLE alt_t (id int PRIMARY KEY, a varchar(20) DEFAULT 'x', b int NOT NULL); COMMENT ON COLUMN alt_t.a IS 'c1'; INSERT INTO alt_t VALUES (1, 'v', 1)",
+		"mssql":    "IF OBJECT_ID('dbo.alt_t') IS NOT NULL DROP TABLE dbo.alt_t;\nCREATE TABLE dbo.alt_t (id int PRIMARY KEY, a varchar(20) NULL DEFAULT 'x', b int NOT NULL);\nEXEC sp_addextendedproperty 'MS_Description', 'c1', 'SCHEMA', 'dbo', 'TABLE', 'alt_t', 'COLUMN', 'a';\nINSERT INTO dbo.alt_t VALUES (1, 'v', 1)",
+		"oracle":   "BEGIN EXECUTE IMMEDIATE 'DROP TABLE alt_t'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE TABLE alt_t (id NUMBER PRIMARY KEY, a VARCHAR2(20) DEFAULT 'x', b NUMBER NOT NULL);\nCOMMENT ON COLUMN alt_t.a IS 'c1';\nINSERT INTO alt_t VALUES (1, 'v', 1);\nCOMMIT",
+	}
+	newType := map[string][2]string{ // a, b
+		"mariadb": {"varchar(40)", "bigint(20)"}, "postgres": {"varchar(40)", "bigint"},
+		"mssql": {"varchar(40)", "bigint"}, "oracle": {"VARCHAR2(40)", "NUMBER"},
+	}
+	all := targets(t)
+	for name, q := range setup {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			res, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+			if err != nil || res.Results[len(res.Results)-1].Error != "" {
+				t.Fatal(err, res.Results)
+			}
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE alt_t", Cursor: -1})
+			tbl := Table{Name: "alt_t", Type: "TABLE"}
+			if name == "oracle" {
+				tbl.Name = "ALT_T"
+			}
+			if name == "mssql" {
+				tbl.Schema = "dbo"
+			}
+			cols := func() map[string]Column {
+				cs, err := m.Columns(tg.cfg.ID, tg.schema, tbl)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out := map[string]Column{}
+				for _, c := range cs {
+					out[strings.ToLower(c.Name)] = c
+				}
+				return out
+			}
+			apply := func(changes []ColumnAlter) {
+				t.Helper()
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: changes}
+				prev, err := m.PreviewAlter(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				r, err := m.ApplyAlter(req)
+				if err != nil || r.Error != "" || r.Applied != len(prev) {
+					t.Fatalf("apply: %+v %v", r, err)
+				}
+			}
+			c := cols()
+			a, b := c["a"], c["b"]
+			if !strings.Contains(a.Default, "x") || a.Comment != "c1" {
+				t.Fatalf("setup: %+v", a)
+			}
+			na, nb := a, b
+			na.Type, na.Nullable, na.Default, na.Comment = newType[name][0], false, "'y'", "c2"
+			nb.Type, nb.Nullable, nb.Default, nb.Comment = newType[name][1], true, "5", "cb"
+			apply([]ColumnAlter{{Old: a, New: na}, {Old: b, New: nb}})
+			c = cols()
+			a2, b2 := c["a"], c["b"]
+			if !strings.Contains(a2.Type, "40") || a2.Nullable || !strings.Contains(a2.Default, "y") || a2.Comment != "c2" {
+				t.Errorf("a after: %+v", a2)
+			}
+			if !b2.Nullable || !strings.Contains(b2.Default, "5") || b2.Comment != "cb" {
+				t.Errorf("b after: %+v", b2)
+			}
+			if name == "mariadb" && !strings.Contains(strings.ToLower(c["id"].Extra), "auto_increment") {
+				t.Errorf("auto_increment lost: %+v", c["id"])
+			}
+			// remove default and comment
+			na2, nb2 := a2, b2
+			na2.Default, na2.Comment = "", ""
+			nb2.Default, nb2.Comment = "", ""
+			apply([]ColumnAlter{{Old: a2, New: na2}, {Old: b2, New: nb2}})
+			c = cols()
+			if defaultOf(c["a"].Default) != "" || c["a"].Comment != "" || defaultOf(c["b"].Default) != "" || c["b"].Comment != "" {
+				t.Errorf("after removal: a=%+v b=%+v", c["a"], c["b"])
+			}
+			// a failing change reports its error
+			bad := c["a"]
+			nbad := bad
+			nbad.Type = "no_such_type_xyz"
+			r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: bad, New: nbad}}})
+			if err != nil || r.Error == "" || r.Applied != 0 {
+				t.Errorf("bad type: %+v %v", r, err)
+			}
+		})
+	}
+}

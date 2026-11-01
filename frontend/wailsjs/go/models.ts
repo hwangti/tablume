@@ -1,20 +1,64 @@
 export namespace dbx {
 	
-	export class RowChange {
-	    kind: string;
-	    key: Record<string, any>;
-	    values: Record<string, any>;
+	export class Column {
+	    name: string;
+	    type: string;
+	    nullable: boolean;
+	    pk: boolean;
+	    comment: string;
+	    unique: boolean;
+	    fk: string;
+	    default: string;
+	    extra: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new RowChange(source);
+	        return new Column(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.kind = source["kind"];
-	        this.key = source["key"];
-	        this.values = source["values"];
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.nullable = source["nullable"];
+	        this.pk = source["pk"];
+	        this.comment = source["comment"];
+	        this.unique = source["unique"];
+	        this.fk = source["fk"];
+	        this.default = source["default"];
+	        this.extra = source["extra"];
 	    }
+	}
+	export class ColumnAlter {
+	    old: Column;
+	    new: Column;
+	
+	    static createFrom(source: any = {}) {
+	        return new ColumnAlter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.old = this.convertValues(source["old"], Column);
+	        this.new = this.convertValues(source["new"], Column);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class Table {
 	    schema: string;
@@ -36,6 +80,76 @@ export namespace dbx {
 	        this.comment = source["comment"];
 	        this.rows = source["rows"];
 	        this.size = source["size"];
+	    }
+	}
+	export class AlterRequest {
+	    connId: string;
+	    schema: string;
+	    table: Table;
+	    changes: ColumnAlter[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AlterRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connId = source["connId"];
+	        this.schema = source["schema"];
+	        this.table = this.convertValues(source["table"], Table);
+	        this.changes = this.convertValues(source["changes"], ColumnAlter);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AlterResult {
+	    applied: number;
+	    total: number;
+	    error: string;
+	    rolledBack: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlterResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.applied = source["applied"];
+	        this.total = source["total"];
+	        this.error = source["error"];
+	        this.rolledBack = source["rolledBack"];
+	    }
+	}
+	export class RowChange {
+	    kind: string;
+	    key: Record<string, any>;
+	    values: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new RowChange(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.key = source["key"];
+	        this.values = source["values"];
 	    }
 	}
 	export class ApplyRequest {
@@ -74,34 +188,8 @@ export namespace dbx {
 		    return a;
 		}
 	}
-	export class Column {
-	    name: string;
-	    type: string;
-	    nullable: boolean;
-	    pk: boolean;
-	    comment: string;
-	    unique: boolean;
-	    fk: string;
-	    default: string;
-	    extra: string;
 	
-	    static createFrom(source: any = {}) {
-	        return new Column(source);
-	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.type = source["type"];
-	        this.nullable = source["nullable"];
-	        this.pk = source["pk"];
-	        this.comment = source["comment"];
-	        this.unique = source["unique"];
-	        this.fk = source["fk"];
-	        this.default = source["default"];
-	        this.extra = source["extra"];
-	    }
-	}
 	export class ConnConfig {
 	    id: string;
 	    name: string;

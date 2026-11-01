@@ -44,6 +44,7 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
   - 셀 수정, NULL로 설정, 행 추가, 행 삭제를 화면에 모아 두었다가 "적용"을 누르면 실행될 SQL을 미리 보여주고, 한 트랜잭션으로 실행합니다.
   - 변경이 예상한 행 수(1행)와 다르게 적용되면 전체를 롤백합니다.
 - DDL 보기: 테이블을 우클릭하고 "DDL 보기"를 누르면 새 탭에 CREATE 문이 열립니다. `표 | SQL` 전환이 있고, 기본은 컬럼 구조(키, 타입, NULL, 기본값, FK, 코멘트)를 보여주는 표입니다.
+  - 표에서 타입·기본값·코멘트를 더블클릭하거나 NULL 체크박스를 눌러 바꾸고 "적용"을 누르면, 실행할 `ALTER` 문을 먼저 보여준 뒤 실행합니다. PostgreSQL과 SQL Server는 한 트랜잭션으로 실행해 실패하면 모두 취소되고, MySQL/MariaDB와 Oracle은 DDL을 되돌릴 수 없어 실패한 문장 앞까지는 적용된 채로 남습니다(미리보기에 안내). MySQL은 `MODIFY`로 컬럼 정의 전체를 다시 쓰면서 문자셋·콜레이션·AUTO_INCREMENT·ON UPDATE를 유지합니다. SQLite와 뷰는 편집할 수 없습니다.
   - MySQL: `SHOW CREATE TABLE`
   - Oracle: `DBMS_METADATA`
   - PostgreSQL, SQL Server: 시스템 카탈로그로 조립합니다(제약조건, 인덱스 포함).

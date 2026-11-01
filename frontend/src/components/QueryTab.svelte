@@ -70,10 +70,11 @@
   let ddl = $state<string | null>(null)
   let ddlError = $state('')
   let ddlFor = ''
+  let ddlVersion = $state(0) // bumped when the columns were altered
   $effect(() => {
     const ref = tab.tableRef
     if (!ref || tableView !== 'ddl') return
-    const key = `${tab.connId}|${ref.schema}|${ref.table.schema}.${ref.table.name}`
+    const key = `${tab.connId}|${ref.schema}|${ref.table.schema}.${ref.table.name}|${ddlVersion}`
     if (key === ddlFor) return
     ddlFor = key
     ddl = null
@@ -680,7 +681,13 @@
           </div>
         {/if}
         {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
-          <StructureView connId={tab.connId} schema={tab.tableRef.schema} table={tab.tableRef.table} />
+          <StructureView
+            connId={tab.connId}
+            schema={tab.tableRef.schema}
+            table={tab.tableRef.table}
+            driver={conn?.driver}
+            onchanged={() => ddlVersion++}
+          />
         {:else if isTable && tableView === 'ddl'}
           {#if ddlError}
             <div class="msg error"><pre>{ddlError}</pre></div>

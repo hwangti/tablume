@@ -124,6 +124,10 @@ func (a *App) RoutineSource(id, schema string, r dbx.Routine) (string, error) {
 	return a.db.RoutineSource(id, schema, r)
 }
 
+func (a *App) PreviewAlter(req dbx.AlterRequest) ([]string, error) { return a.db.PreviewAlter(req) }
+
+func (a *App) ApplyAlter(req dbx.AlterRequest) (dbx.AlterResult, error) { return a.db.ApplyAlter(req) }
+
 // FetchPage reads the next rows of a paged result (see StmtResult.Paged).
 func (a *App) FetchPage(tabID, connID, sql string, offset, n int) (dbx.FetchResponse, error) {
 	return a.db.FetchPage(tabID, connID, sql, offset, n)
