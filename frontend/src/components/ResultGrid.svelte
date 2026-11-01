@@ -127,6 +127,9 @@
     } else if (e.key === 'Escape') {
       e.preventDefault()
       cancelEdit()
+    } else if (e.key === 'F2') {
+      e.preventDefault()
+      editInViewer() // F2 again: continue in the large editor
     }
   }
 
@@ -790,7 +793,7 @@
                    is prevented so the input keeps focus (no blur = no commit) -->
               {#if !kind[c]}<button
                 class="dots"
-                title="큰 창에서 편집"
+                title="큰 창에서 편집 (F2)"
                 onmousedown={(e) => (e.preventDefault(), e.stopPropagation())}
                 ondblclick={(e) => e.stopPropagation()}
                 onclick={(e) => (e.stopPropagation(), editInViewer())}>…</button
