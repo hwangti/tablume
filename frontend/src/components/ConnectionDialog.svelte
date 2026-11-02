@@ -24,6 +24,10 @@
   let result = $state<{ ok: boolean; text: string } | null>(null)
   let showAdvanced = $state(!!start.params)
 
+  // Databases in this build, plus the connection's own when editing one
+  // whose support was left out (so its settings still show).
+  const drivers = DRIVERS.filter((d) => app.drivers.includes(d.id) || d.id === start.driver)
+
   const colors = ['', '#e5534b', '#e0a84b', '#57ab5a', '#3574f0', '#986ee2', '#6c707e']
 
   function setDriver(d: Driver) {
@@ -117,7 +121,7 @@
 
 <Modal title={isNew ? '새 연결' : '연결 편집'} onclose={close} width={560} dismissible={false}>
   <div class="drivers">
-    {#each DRIVERS as d (d.id)}
+    {#each drivers as d (d.id)}
       <button class="drv" class:on={c.driver === d.id} onclick={() => setDriver(d.id)}>{d.label}</button>
     {/each}
   </div>

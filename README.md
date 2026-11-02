@@ -139,6 +139,12 @@ wails3 package
 - 프런트엔드가 부르는 Go 함수(`frontend/bindings/`)는 빌드할 때 `app.go`에서 다시 만들어집니다. 직접 만들려면 `wails3 task bindings`를 실행합니다.
 - 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 합니다. Wails v3의 기본값은 GTK4라서 Taskfile이 `gtk3` 태그를 붙입니다.
 - Windows용 `.exe`는 리눅스나 macOS에서도 `wails3 build GOOS=windows`로 만들 수 있습니다.
+- 필요한 DB만 넣어 가볍게 빌드할 수 있습니다. 뺄 DB를 `EXTRA_TAGS`에 적습니다(`no_mysql`, `no_postgres`, `no_mssql`, `no_oracle`, `no_sqlite`). 예를 들어 MySQL/MariaDB만 넣으면 Windows `.exe`가 약 38MB에서 약 14MB로 줄어듭니다. 빠진 DB는 연결 만들기 화면에 나오지 않고, 이미 저장된 그 DB 연결은 접속할 때 안내가 뜹니다. GitHub Actions는 항상 전체 빌드만 만듭니다.
+
+```bash
+wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
+```
+
 - `wails3 task build:server`는 창 없이 HTTP 서버로만 뜨는 빌드를 만듭니다. 브라우저로 http://localhost:8080 을 열어 화면을 확인할 수 있습니다(창 배율 같은 네이티브 기능은 빠집니다).
 - macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 한국어로 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
 - macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
@@ -190,7 +196,8 @@ main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 AP
 menu.go                    macOS 메뉴 막대
 Taskfile.yml               빌드 단계 (wails3 build / package / dev)
 internal/dbx/              DB 계층
-  dialect.go               DB별 접속 문자열과 메타데이터 쿼리
+  dialect.go               DB 공통 인터페이스와 등록
+  dialect_<db>.go          DB별 접속 문자열, 메타데이터, DDL, 컬럼 변경 (빌드 태그 no_<db>로 뺄 수 있음)
   manager.go               연결 풀, 탭별 세션, 실행/취소/커서
   split.go                 SQL 스크립트를 문장 단위로 나누기 (DB별 규칙)
 internal/store/            연결 목록(JSON)과 키체인 연동

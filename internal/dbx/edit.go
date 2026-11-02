@@ -530,35 +530,3 @@ func replaceParam(q, ph, val string) string {
 		q = q[end:]
 	}
 }
-
-// ---------------------------------------------------------------- parameters
-// Values arrive as the text the grid shows; each dialect converts it.
-
-func (mysqlDialect) Param(int, string) string  { return "?" }
-func (sqliteDialect) Param(int, string) string { return "?" }
-func (mssqlDialect) Param(n int, _ string) string {
-	return fmt.Sprintf("@p%d", n)
-}
-
-// PostgreSQL: bind as text and cast, so "123" works for an integer column.
-func (pgDialect) Param(n int, typ string) string {
-	if typ == "" {
-		return fmt.Sprintf("$%d", n)
-	}
-	return fmt.Sprintf("CAST($%d::text AS %s)", n, typ)
-}
-
-// Oracle: dates are shown as "YYYY-MM-DD HH24:MI:SS[.FF]"; parse them back
-// explicitly instead of relying on the session's NLS settings.
-func (oracleDialect) Param(n int, typ string) string {
-	u := strings.ToUpper(typ)
-	switch {
-	case u == "DATE":
-		return fmt.Sprintf("TO_DATE(:%d, 'YYYY-MM-DD HH24:MI:SS')", n)
-	case strings.HasPrefix(u, "TIMESTAMP") && strings.Contains(u, "TIME ZONE"):
-		return fmt.Sprintf("TO_TIMESTAMP_TZ(:%d, 'YYYY-MM-DD HH24:MI:SS.FF TZH:TZM')", n)
-	case strings.HasPrefix(u, "TIMESTAMP"):
-		return fmt.Sprintf("TO_TIMESTAMP(:%d, 'YYYY-MM-DD HH24:MI:SS.FF')", n)
-	}
-	return fmt.Sprintf(":%d", n)
-}

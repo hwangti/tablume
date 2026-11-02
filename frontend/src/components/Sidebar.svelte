@@ -31,7 +31,7 @@
   import { api } from '../lib/api'
   import { setTheme, type ThemeMode } from '../lib/theme'
   import { copyText, isMac } from '../lib/clipboard'
-  import { driverLabel, type ConnConfig, type Column, type Routine } from '../lib/types'
+  import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine } from '../lib/types'
   import SchemaPicker from './SchemaPicker.svelte'
 
   let filter = $state('')
@@ -96,9 +96,9 @@
   const blank = (): ConnConfig => ({
     id: '',
     name: '',
-    driver: 'mysql',
+    driver: app.drivers[0] ?? 'mysql',
     host: 'localhost',
-    port: 3306,
+    port: DRIVERS.find((d) => d.id === (app.drivers[0] ?? 'mysql'))?.port ?? 3306,
     user: '',
     password: '',
     savePassword: true,

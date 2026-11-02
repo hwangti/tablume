@@ -212,6 +212,14 @@ export function SetSchemaFilter(id: string, f: dbx$0.SchemaFilter | null): $Canc
 }
 
 /**
+ * SupportedDrivers lists the databases this build includes (see the no_*
+ * build tags in internal/dbx).
+ */
+export function SupportedDrivers(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(4082064496);
+}
+
+/**
  * TabWindowState is the tab a tab window shows (JSON, "" if unknown).
  */
 export function TabWindowState(tabID: string): $CancellablePromise<string> {

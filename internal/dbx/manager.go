@@ -90,6 +90,17 @@ func NewID() string {
 	return hex.EncodeToString(b)
 }
 
+// paramsDialect rewrites the connection options before the DSN is built
+// (MySQL: TLS settings).
+type paramsDialect interface {
+	prepareParams(c ConnConfig, viaTunnel bool) (string, error)
+}
+
+// openErrorDialect adds advice to a failed first connection.
+type openErrorDialect interface {
+	explainOpenError(err error) error
+}
+
 func open(cfg ConnConfig) (*pool, error) {
 	d, err := DialectFor(cfg.Driver)
 	if err != nil {
@@ -104,9 +115,8 @@ func open(cfg ConnConfig) (*pool, error) {
 		dsnCfg.Host = "127.0.0.1"
 		dsnCfg.Port = tun.localPort()
 	}
-	mysqlLike := cfg.Driver == "mysql" || cfg.Driver == "mariadb"
-	if mysqlLike {
-		if dsnCfg.Params, err = mysqlTLS(cfg, tun != nil); err != nil {
+	if pd, ok := d.(paramsDialect); ok {
+		if dsnCfg.Params, err = pd.prepareParams(cfg, tun != nil); err != nil {
 			if tun != nil {
 				tun.Close()
 			}
@@ -130,8 +140,8 @@ func open(cfg ConnConfig) (*pool, error) {
 	p := &pool{db: db, d: d, cfg: cfg, tun: tun}
 	if err := db.PingContext(ctx); err != nil {
 		p.close()
-		if mysqlLike {
-			err = certHint(err)
+		if ed, ok := d.(openErrorDialect); ok {
+			err = ed.explainOpenError(err)
 		}
 		return nil, err
 	}

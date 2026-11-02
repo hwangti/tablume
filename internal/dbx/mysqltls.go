@@ -1,3 +1,5 @@
+//go:build !no_mysql
+
 package dbx
 
 import (
@@ -13,7 +15,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-// mysqlTLS turns the TLS options of a MySQL/MariaDB connection into a
+// prepareParams turns the TLS options of a MySQL/MariaDB connection into a
 // registered TLS config when the driver's own handling falls short:
 //
 //   - tls-ca=<file>: trust this CA (PEM). Go then verifies the chain itself
@@ -23,7 +25,7 @@ import (
 //     database host, not the local end of the tunnel.
 //
 // Returns the params to use in the DSN.
-func mysqlTLS(c ConnConfig, viaTunnel bool) (string, error) {
+func (mysqlDialect) prepareParams(c ConnConfig, viaTunnel bool) (string, error) {
 	p := parseParams(c.Params)
 	caFile := strings.TrimSpace(p.Get("tls-ca"))
 	mode := strings.ToLower(p.Get("tls"))
@@ -52,9 +54,9 @@ func mysqlTLS(c ConnConfig, viaTunnel bool) (string, error) {
 	return p.Encode(), nil
 }
 
-// certHint explains what to do when a MySQL/MariaDB server certificate
+// explainOpenError explains what to do when a MySQL/MariaDB server certificate
 // isn't trusted.
-func certHint(err error) error {
+func (mysqlDialect) explainOpenError(err error) error {
 	if err == nil || !strings.Contains(err.Error(), "x509:") {
 		return err
 	}

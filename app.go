@@ -117,6 +117,10 @@ func (a *App) Connect(id, password string) (string, error) {
 	return v, err
 }
 
+// SupportedDrivers lists the databases this build includes (see the no_*
+// build tags in internal/dbx).
+func (a *App) SupportedDrivers() []string { return dbx.SupportedDrivers() }
+
 func (a *App) Disconnect(id string)       { a.db.Disconnect(id) }
 func (a *App) IsConnected(id string) bool { return a.db.Connected(id) }
 

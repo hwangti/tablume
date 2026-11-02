@@ -54,7 +54,7 @@ tasks:
     cmds:
       - wails3 tool prepare-macos-output --dir "{{.BIN_DIR}}"
       - task: go:build
-        vars: {GOOS: darwin, DEV: '{{.DEV}}'}
+        vars: {GOOS: darwin, DEV: '{{.DEV}}', EXTRA_TAGS: '{{.EXTRA_TAGS}}'}
 
   build:windows:
     deps: [frontend]
@@ -63,13 +63,13 @@ tasks:
       - wails3 generate syso -arch {{.GOARCH}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_{{.GOARCH}}.syso
       - defer: '{{if eq OS "windows"}}powershell Remove-Item wails_windows_*.syso{{else}}rm -f wails_windows_*.syso{{end}}'
       - task: go:build
-        vars: {GOOS: windows, DEV: '{{.DEV}}'}
+        vars: {GOOS: windows, DEV: '{{.DEV}}', EXTRA_TAGS: '{{.EXTRA_TAGS}}'}
 
   build:linux:
     deps: [frontend]
     cmds:
       - task: go:build
-        vars: {GOOS: linux, DEV: '{{.DEV}}'}
+        vars: {GOOS: linux, DEV: '{{.DEV}}', EXTRA_TAGS: '{{.EXTRA_TAGS}}'}
 
   go:build:
     internal: true

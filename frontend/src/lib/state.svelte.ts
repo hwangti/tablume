@@ -2,7 +2,8 @@ import { api, errText } from './api'
 import { Events, Window } from '@wailsio/runtime'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
-import type { Cell, Column, ConnConfig, Routine, SchemaFilter, StmtResult, Table } from './types'
+import { DRIVERS } from './types'
+import type { Cell, Column, ConnConfig, Driver, Routine, SchemaFilter, StmtResult, Table } from './types'
 
 export interface TableNode {
   t: Table
@@ -119,6 +120,8 @@ export const app = $state({
   gridColNumbers: false, // column numbers in result headers
   ddlMode: 'table' as 'sql' | 'table', // DDL tab: columns table first
   theme: getTheme(),
+  // Databases this build includes (a build can leave some out).
+  drivers: DRIVERS.map((d) => d.id) as Driver[],
 })
 
 let toastSeq = 0
@@ -153,6 +156,8 @@ function connState(id: string): ConnState {
 // ---------------------------------------------------------------- connections
 
 export async function loadConnections() {
+  const drivers = await api.SupportedDrivers().catch(() => null)
+  if (drivers?.length) app.drivers = DRIVERS.filter((d) => drivers.includes(d.id)).map((d) => d.id)
   app.connections = (await api.ListConnections()) ?? []
   for (const c of app.connections) connState(c.id)
 }

@@ -58,6 +58,7 @@ interface Api {
   SaveWorkspace(data: string): Promise<void>
   SetDarkTitleBar(dark: boolean): Promise<void>
   IsConnected(id: string): Promise<boolean>
+  SupportedDrivers(): Promise<string[]>
   OpenTabWindow(tabId: string, title: string, state: string): Promise<void>
   TabWindowState(tabId: string): Promise<string>
   CloseTabWindow(tabId: string): Promise<void>
