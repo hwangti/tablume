@@ -57,6 +57,11 @@ interface Api {
   LoadWorkspace(): Promise<string>
   SaveWorkspace(data: string): Promise<void>
   SetDarkTitleBar(dark: boolean): Promise<void>
+  IsConnected(id: string): Promise<boolean>
+  OpenTabWindow(tabId: string, title: string, state: string): Promise<void>
+  TabWindowState(tabId: string): Promise<string>
+  CloseTabWindow(tabId: string): Promise<void>
+  FocusTabWindow(tabId: string): Promise<boolean>
 }
 
 export interface ApplyRequest {

@@ -7,7 +7,29 @@
   import Modal from './components/Modal.svelte'
   import Icon from './components/Icon.svelte'
   import logo from './assets/logo.svg'
-  import { app, loadConnections, loadWorkspace, openConsole, closeTab, closeTabs, duplicateTab, connById, activeTab, saveWorkspaceSoon, pinTab, zoomBy } from './lib/state.svelte'
+  import {
+    app,
+    loadConnections,
+    loadWorkspace,
+    openConsole,
+    closeTab,
+    closeTabs,
+    duplicateTab,
+    connById,
+    activeTab,
+    saveWorkspaceSoon,
+    pinTab,
+    zoomBy,
+    tabWindowId,
+    initTabWindow,
+    initMainWindowEvents,
+    detachTab,
+    requestAttach,
+    backToMain,
+    closeTabWindow,
+  } from './lib/state.svelte'
+  import { api } from './lib/api'
+  import { Window } from '@wailsio/runtime'
   import { driverLabel } from './lib/types'
 
   let sideW = $state(270)
@@ -18,8 +40,13 @@
     installTooltips()
     // passive: false so the page itself doesn't scroll while zooming
     window.addEventListener('wheel', zoomWheel, { passive: false, capture: true })
-    await loadConnections()
-    await loadWorkspace()
+    if (tabWindowId) {
+      await initTabWindow()
+    } else {
+      await loadConnections()
+      await loadWorkspace()
+      initMainWindowEvents()
+    }
     ready = true
   })
 
@@ -36,7 +63,7 @@
 
   function keydown(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey
-    if (!mod || app.editing || app.prompt) return
+    if (!mod || app.editing || app.prompt || tabWindowId) return
     const k = e.key.toLowerCase()
     if (k === 't') {
       e.preventDefault()
@@ -46,7 +73,7 @@
       e.preventDefault()
       closeTab(app.activeTab)
     } else if (/^[1-9]$/.test(k) && !e.shiftKey) {
-      const t = app.tabs[Number(k) - 1]
+      const t = app.tabs.filter((x) => !x.detached)[Number(k) - 1]
       if (t) {
         e.preventDefault()
         app.activeTab = t.id
@@ -87,7 +114,8 @@
   // and on macOS also ⌘⇧] / ⌘⇧[. Caught before the editor or the grid
   // (where Tab moves between cells) see the key.
   function switchKey(e: KeyboardEvent) {
-    if (app.editing || app.prompt || app.tabs.length < 2) return
+    const tabs = app.tabs.filter((t) => !t.detached)
+    if (app.editing || app.prompt || tabs.length < 2) return
     let dir = 0
     if (e.ctrlKey && e.key === 'Tab') dir = e.shiftKey ? -1 : 1
     else if (e.ctrlKey && !e.shiftKey && (e.key === 'PageDown' || e.key === 'PageUp')) dir = e.key === 'PageDown' ? 1 : -1
@@ -95,9 +123,9 @@
     if (!dir) return
     e.preventDefault()
     e.stopPropagation()
-    const i = app.tabs.findIndex((t) => t.id === app.activeTab)
-    const n = app.tabs.length
-    app.activeTab = app.tabs[(i + dir + n) % n].id
+    const i = tabs.findIndex((t) => t.id === app.activeTab)
+    const n = tabs.length
+    app.activeTab = tabs[(i + dir + n) % n].id
   }
 
   function submitPassword() {
@@ -107,7 +135,7 @@
 
   // Tabs reorder by dragging; the array is reordered live while moving.
   let dragging = $state<string | null>(null)
-  let tabsEl: HTMLDivElement
+  let tabsEl = $state<HTMLDivElement>() as HTMLDivElement
 
   // The active tab is always scrolled into view (a new tab opens at the end).
   $effect(() => {
@@ -160,11 +188,25 @@
     const i = app.tabs.findIndex((t) => t.id === id)
     const t = app.tabs[i]
     if (!t) return
+    if (t.detached) {
+      tabMenu = {
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          { label: '창으로 이동', icon: 'detach', run: () => api.FocusTabWindow(id) },
+          { label: '메인 창으로 되돌리기', icon: 'attach', run: () => requestAttach(id) },
+          { label: '닫기', icon: 'close', run: () => closeTab(id), sep: true },
+        ],
+      }
+      return
+    }
+    // Bulk closes leave tabs in their own windows alone.
     const ids = app.tabs.map((x) => x.id)
-    const left = ids.slice(0, i)
-    const right = ids.slice(i + 1)
-    const others = ids.filter((x) => x !== id)
-    const sameConn = app.tabs.filter((x) => x.connId === t.connId).map((x) => x.id)
+    const here = (x: string) => !app.tabs.find((y) => y.id === x)?.detached
+    const left = ids.slice(0, i).filter(here)
+    const right = ids.slice(i + 1).filter(here)
+    const others = ids.filter((x) => x !== id && here(x))
+    const sameConn = app.tabs.filter((x) => x.connId === t.connId && !x.detached).map((x) => x.id)
     const c = connById(t.connId)
     tabMenu = {
       x: e.clientX,
@@ -175,8 +217,9 @@
         { label: '왼쪽 탭 닫기', run: () => closeTabs(left), disabled: !left.length },
         { label: '오른쪽 탭 닫기', run: () => closeTabs(right), disabled: !right.length },
         { label: `같은 연결 탭 닫기${c ? ` (${c.name})` : ''}`, icon: 'db', run: () => closeTabs(sameConn) },
-        { label: '모든 탭 닫기', run: () => closeTabs(ids), danger: true },
-        { label: '탭 복제', icon: 'copy', run: () => duplicateTab(id), sep: true },
+        { label: '모든 탭 닫기', run: () => closeTabs(ids.filter(here)), danger: true },
+        { label: '새 창으로 열기', icon: 'detach', run: () => detachTab(id), sep: true },
+        { label: '탭 복제', icon: 'copy', run: () => duplicateTab(id) },
         ...(t.preview ? [{ label: '탭 고정', icon: 'lock', run: () => pinTab(t) }] : []),
         { label: '이름 바꾸기', icon: 'edit', run: () => (renaming = id) },
       ],
@@ -218,10 +261,44 @@
   }
 
   let renaming = $state<string | null>(null)
+
+  // A tab window is titled after its tab.
+  $effect(() => {
+    if (!tabWindowId) return
+    const t = app.tabs[0]
+    if (!t) return
+    const c = connById(t.connId)
+    Window.SetTitle(c ? `${t.title} — ${c.name}` : t.title).catch(() => {})
+  })
 </script>
 
 <svelte:window onkeydown={keydown} onkeydowncapture={(e) => (zoomKey(e), switchKey(e))} onclick={() => (tabMenu = null)} onblur={() => (tabMenu = null)} />
 
+{#if tabWindowId}
+  {@const t = app.tabs[0]}
+  {@const c = t ? connById(t.connId) : undefined}
+  <div class="tw">
+    <div class="tw-bar" style:--conn-color={c?.color || 'transparent'}>
+      {#if t}
+        <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
+        <span class="tw-title">{t.title}</span>
+        {#if c}<span class="tw-conn">{c.name}</span>{/if}
+      {/if}
+      <span class="tw-fill"></span>
+      <button class="btn mini" title="이 탭을 메인 창의 탭으로 되돌립니다 (창 닫기 버튼과 같음)" onclick={backToMain} disabled={!t}>
+        <Icon name="attach" size={14} /> 메인 창으로
+      </button>
+      <button class="btn mini" title="탭을 닫습니다" onclick={closeTabWindow} disabled={!t}><Icon name="close" size={14} /> 닫기</button>
+    </div>
+    <div class="content">
+      {#if t}
+        <div class="pane"><QueryTab tab={t} /></div>
+      {:else if ready}
+        <div class="welcome"><p>이 탭은 더 이상 없습니다.</p></div>
+      {/if}
+    </div>
+  </div>
+{:else}
 <div class="layout" style:grid-template-columns="{sideW}px 1px 1fr">
   <Sidebar />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -238,14 +315,15 @@
           data-id={t.id}
           class:on={t.id === app.activeTab}
           class:dragging={dragging === t.id}
+          class:detached={t.detached}
           style:--conn-color={c?.color || 'transparent'}
-          onclick={() => (app.activeTab = t.id)}
+          onclick={() => (t.detached ? api.FocusTabWindow(t.id) : (app.activeTab = t.id))}
           onmousedown={(e) => tabMouseDown(e, t.id)}
-          ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
+          ondblclick={() => !t.detached && (t.preview ? pinTab(t) : (renaming = t.id))}
           oncontextmenu={(e) => openTabMenu(e, t.id)}
-          title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
+          title={t.detached ? '새 창에서 열려 있습니다 — 클릭하면 그 창으로 이동합니다' : `${c?.name ?? ''} · ${c ? driverLabel(c.driver) : ''}`}
         >
-          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
+          {#if t.detached}<Icon name="detach" size={13} />{:else if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
           {#if renaming === t.id}
             <!-- svelte-ignore a11y_autofocus -->
             <input
@@ -275,11 +353,13 @@
 
     <div class="content">
       {#each app.tabs as t (t.id)}
-        <div class="pane" class:hidden={t.id !== app.activeTab}>
-          <QueryTab tab={t} />
-        </div>
+        {#if !t.detached}
+          <div class="pane" class:hidden={t.id !== app.activeTab}>
+            <QueryTab tab={t} />
+          </div>
+        {/if}
       {/each}
-      {#if ready && app.tabs.length === 0}
+      {#if ready && !app.tabs.some((t) => !t.detached)}
         <div class="welcome">
           <img src={logo} width="64" height="64" alt="" />
           <h2>Tablume</h2>
@@ -304,6 +384,7 @@
     </div>
   {/if}
 </div>
+{/if}
 
 {#if app.editing}
   <ConnectionDialog initial={app.editing} />
@@ -346,6 +427,43 @@
     grid-template-rows: minmax(0, 1fr);
     height: 100%;
     overflow: hidden;
+  }
+  /* a tab in its own window: one bar, then the tab */
+  .tw {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+  .tw-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    flex-shrink: 0;
+    padding: 0 8px 0 12px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    box-shadow: inset 0 3px 0 var(--conn-color);
+  }
+  .tw-title {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tw-conn {
+    color: var(--text-dim);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .tw-fill {
+    flex: 1;
+  }
+  .tw-bar .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
   .vdivider {
     background: var(--border);
@@ -468,6 +586,11 @@
     color: var(--text);
     font-weight: 500;
     box-shadow: inset 0 -2px 0 var(--accent), inset 0 3px 0 var(--conn-color);
+  }
+  .tab.detached {
+    color: var(--text-dim);
+    font-style: italic;
+    background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--border) 45%, transparent) 6px 7px);
   }
   .tab.dragging {
     opacity: 0.6;

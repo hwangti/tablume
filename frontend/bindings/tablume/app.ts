@@ -35,6 +35,13 @@ export function CloseSession(tabID: string): $CancellablePromise<void> {
     return $Call.ByID(1620748453, tabID);
 }
 
+/**
+ * CloseTabWindow closes the tab's window without asking it to put the tab back.
+ */
+export function CloseTabWindow(tabID: string): $CancellablePromise<void> {
+    return $Call.ByID(941203086, tabID);
+}
+
 export function CompletionColumns(id: string, schema: string): $CancellablePromise<{ [_ in string]?: string[] | null } | null> {
     return $Call.ByID(3929217770, id, schema);
 }
@@ -78,6 +85,13 @@ export function FetchPage(tabID: string, connID: string, sql: string, offset: nu
     return $Call.ByID(3504235488, tabID, connID, sql, offset, n);
 }
 
+/**
+ * FocusTabWindow brings the tab's window to the front; false if it has none.
+ */
+export function FocusTabWindow(tabID: string): $CancellablePromise<boolean> {
+    return $Call.ByID(1274109006, tabID);
+}
+
 export function IsConnected(id: string): $CancellablePromise<boolean> {
     return $Call.ByID(236330520, id);
 }
@@ -115,6 +129,14 @@ export function NeedsPassword(id: string): $CancellablePromise<boolean> {
 
 export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {
     return $Call.ByID(1825067061);
+}
+
+/**
+ * OpenTabWindow shows the tab in a window of its own; state is the tab's
+ * saved form (JSON), read back by the window with TabWindowState.
+ */
+export function OpenTabWindow(tabID: string, title: string, state: string): $CancellablePromise<void> {
+    return $Call.ByID(4108511252, tabID, title, state);
 }
 
 /**
@@ -175,7 +197,8 @@ export function SelectSQL(id: string, schema: string, t: dbx$0.Table, where: str
 }
 
 /**
- * SetDarkTitleBar matches the native title bar (Windows) to the app theme.
+ * SetDarkTitleBar matches the calling window's native title bar (Windows)
+ * to the app theme.
  */
 export function SetDarkTitleBar(dark: boolean): $CancellablePromise<void> {
     return $Call.ByID(2559726692, dark);
@@ -186,6 +209,13 @@ export function SetDarkTitleBar(dark: boolean): $CancellablePromise<void> {
  */
 export function SetSchemaFilter(id: string, f: dbx$0.SchemaFilter | null): $CancellablePromise<void> {
     return $Call.ByID(3143414702, id, f);
+}
+
+/**
+ * TabWindowState is the tab a tab window shows (JSON, "" if unknown).
+ */
+export function TabWindowState(tabID: string): $CancellablePromise<string> {
+    return $Call.ByID(758588733, tabID);
 }
 
 export function TableDDL(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {

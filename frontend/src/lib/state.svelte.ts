@@ -1,5 +1,5 @@
 import { api, errText } from './api'
-import { Window } from '@wailsio/runtime'
+import { Events, Window } from '@wailsio/runtime'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import type { Cell, Column, ConnConfig, Routine, SchemaFilter, StmtResult, Table } from './types'
@@ -66,6 +66,9 @@ export interface Tab {
   // Set for table data tabs: the SELECT is rebuilt from these when the
   // filter bar or a column header changes. Dropped if the SQL is edited.
   tableRef?: TableRef
+  // Shown in a window of its own (main window only; not saved, so after a
+  // restart the tab is back in the main window).
+  detached?: boolean
 }
 
 export interface TableRef {
@@ -185,6 +188,14 @@ export async function connect(id: string): Promise<boolean> {
   if (st.status === 'connecting') return false
   const c = connById(id)
   if (!c) return false
+  // Another window may have connected already; reconnecting would drop
+  // its sessions.
+  if (await api.IsConnected(id).catch(() => false)) {
+    st.status = 'connected'
+    st.expanded = true
+    await refreshSchemas(id)
+    return true
+  }
   let pw = ''
   if (await api.NeedsPassword(id)) {
     const v = await askPassword(`${c.name} 비밀번호`)
@@ -197,6 +208,7 @@ export async function connect(id: string): Promise<boolean> {
     st.version = await api.Connect(id, pw)
     st.status = 'connected'
     st.expanded = true
+    Events.Emit('conn:changed', { id, connected: true }).catch(() => {})
     await refreshSchemas(id)
     return true
   } catch (e) {
@@ -209,6 +221,11 @@ export async function connect(id: string): Promise<boolean> {
 
 export async function disconnect(id: string) {
   await api.Disconnect(id)
+  Events.Emit('conn:changed', { id, connected: false }).catch(() => {})
+  markDisconnected(id)
+}
+
+function markDisconnected(id: string) {
   const st = connState(id)
   st.status = 'idle'
   st.schemas = []
@@ -461,6 +478,7 @@ export async function closeTab(id: string) {
   if (i < 0) return
   const n = tabPending(app.tabs[i])
   if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 탭을 닫을까요?`))) return
+  if (app.tabs[i].detached) api.CloseTabWindow(id)
   api.CloseSession(id)
   app.tabs.splice(i, 1)
   if (app.activeTab === id) app.activeTab = app.tabs[Math.min(i, app.tabs.length - 1)]?.id ?? ''
@@ -731,8 +749,12 @@ const sameTable = (a: Table, b: Table) => a.schema === b.schema && a.name === b.
 export async function openTableData(connId: string, schema: string, t: Table): Promise<Tab> {
   // The table is already open in a tab (pinned or preview): go there.
   const open = app.tabs.find((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))
+  if (open?.detached) {
+    api.FocusTabWindow(open.id)
+    return open
+  }
   // A preview tab with unsaved edits is never replaced.
-  let tab = open ?? app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
+  let tab = open ?? app.tabs.find((x) => x.preview && !x.detached && !x.running && tabPending(x) === 0)
   if (tab && tab.connId === connId && tab.tableRef?.schema === schema && sameTable(tab.tableRef.table, t)) {
     app.activeTab = tab.id // same table clicked again: keep its filter
     // (a tab restored from the last session hasn't run yet)
@@ -869,9 +891,35 @@ export function pinTab(tab: Tab | undefined) {
 
 // ---------------------------------------------------------------- workspace
 
+// The saved form of a tab (workspace file, and what a tab window gets).
+export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'preview' | 'layout' | 'tableRef'>
+
+function savedTab(t: Tab): SavedTab {
+  return $state.snapshot({
+    id: t.id,
+    title: t.title,
+    connId: t.connId,
+    schema: t.schema,
+    sql: t.sql,
+    preview: t.preview,
+    layout: t.layout,
+    tableRef: t.tableRef,
+  })
+}
+
+function tabFromSaved(t: SavedTab): Tab {
+  return { ...t, results: [], activeResult: 0, running: false, loadingMore: false, messages: [], startedAt: 0 }
+}
+
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 export function saveWorkspaceSoon() {
   clearTimeout(saveTimer)
+  // A tab window doesn't own the workspace: it reports its tab to the main
+  // window, which saves it.
+  if (tabWindowId) {
+    saveTimer = setTimeout(syncTabWindow, 400)
+    return
+  }
   saveTimer = setTimeout(() => {
     const data = {
       activeTab: app.activeTab,
@@ -882,22 +930,14 @@ export function saveWorkspaceSoon() {
       gridColNumbers: app.gridColNumbers,
       ddlView: app.ddlMode,
       theme: app.theme,
-      tabs: app.tabs.map((t) => ({
-        id: t.id,
-        title: t.title,
-        connId: t.connId,
-        schema: t.schema,
-        sql: t.sql,
-        preview: t.preview,
-        layout: t.layout,
-        tableRef: t.tableRef,
-      })),
+      tabs: app.tabs.map(savedTab),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
   }, 600)
 }
 
-export async function loadWorkspace() {
+// tabs: false in a tab window, which only takes the settings.
+export async function loadWorkspace(tabs = true) {
   try {
     const raw = await api.LoadWorkspace()
     if (!raw) return
@@ -919,20 +959,155 @@ export async function loadWorkspace() {
       app.zoom = data.zoom
       applyZoom()
     }
+    if (!tabs) return
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
-      app.tabs.push({
-        ...t,
-        results: [],
-        activeResult: 0,
-        running: false,
-        loadingMore: false,
-        messages: [],
-        startedAt: 0,
-      })
+      app.tabs.push(tabFromSaved(t))
     }
     app.activeTab = app.tabs.find((t) => t.id === data.activeTab)?.id ?? app.tabs[0]?.id ?? ''
   } catch {
     /* ignore a broken workspace file */
   }
+}
+
+// ---------------------------------------------------------------- tab windows
+// A tab can move into a window of its own. The main window keeps the tab
+// (marked detached, without its pane) and saves it; the tab window reports
+// changes back. Results aren't carried over: table tabs reload, consoles
+// start empty.
+
+// Set when this page is a tab window (index.html?tab=<id>).
+export const tabWindowId = new URLSearchParams(location.search).get('tab') ?? ''
+
+type TabEvent = { id: string; tab?: SavedTab }
+
+function onEvent<T>(name: string, fn: (data: T, sender: string) => void) {
+  try {
+    Events.On(name, (ev) => fn(ev.data as T, ev.sender ?? ''))
+  } catch {
+    /* no runtime (plain browser) */
+  }
+}
+
+function applySaved(t: Tab, s: SavedTab) {
+  t.title = s.title
+  t.connId = s.connId
+  t.schema = s.schema
+  t.sql = s.sql
+  t.preview = s.preview
+  t.layout = s.layout
+  t.tableRef = s.tableRef
+}
+
+// Main window: move a tab into its own window.
+export async function detachTab(id: string) {
+  const i = app.tabs.findIndex((t) => t.id === id)
+  const t = app.tabs[i]
+  if (!t || t.detached) return
+  const n = tabPending(t)
+  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 새 창으로 열까요?`))) return
+  if (app.activeTab === id) {
+    const rest = app.tabs.filter((x) => !x.detached && x.id !== id)
+    const right = app.tabs.slice(i + 1).find((x) => !x.detached)
+    app.activeTab = (right ?? rest[rest.length - 1])?.id ?? ''
+  }
+  t.detached = true
+  t.preview = false // never reused for another table while it's away
+  await api.OpenTabWindow(id, t.title, JSON.stringify(savedTab(t)))
+  saveWorkspaceSoon()
+}
+
+// Main window: ask a tab window to put its tab back (it sends its state).
+export function requestAttach(id: string) {
+  Events.Emit('tab-window:close', id).catch(() => {})
+}
+
+function attach(id: string, s?: SavedTab) {
+  const t = app.tabs.find((x) => x.id === id)
+  if (!t) return
+  if (s) applySaved(t, s)
+  t.detached = false
+  t.results = []
+  t.activeResult = 0
+  app.activeTab = id
+  saveWorkspaceSoon()
+  if (t.tableRef && app.conn[t.connId]?.status === 'connected') reloadTable(t)
+}
+
+export function initMainWindowEvents() {
+  onEvent<TabEvent>('tab:sync', ({ id, tab }) => {
+    const t = app.tabs.find((x) => x.id === id)
+    if (t && tab) {
+      applySaved(t, tab)
+      saveWorkspaceSoon()
+    }
+  })
+  onEvent<TabEvent>('tab:restore', ({ id, tab }) => attach(id, tab))
+  onEvent<TabEvent>('tab:close', ({ id }) => {
+    const i = app.tabs.findIndex((x) => x.id === id)
+    if (i < 0) return
+    app.tabs.splice(i, 1)
+    saveWorkspaceSoon()
+  })
+  initConnEvents()
+}
+
+// Keep each window's idea of what is connected in step.
+function initConnEvents() {
+  onEvent<{ id: string; connected: boolean }>('conn:changed', async ({ id, connected }) => {
+    const st = connState(id)
+    if (connected && st.status !== 'connected') {
+      st.status = 'connected'
+      await refreshSchemas(id)
+    } else if (!connected && st.status === 'connected') {
+      markDisconnected(id)
+    }
+  })
+}
+
+// ---- in the tab window
+
+function syncTabWindow() {
+  const t = app.tabs[0]
+  if (t) Events.Emit('tab:sync', { id: t.id, tab: savedTab(t) }).catch(() => {})
+}
+
+export async function initTabWindow() {
+  await loadConnections()
+  await loadWorkspace(false)
+  const raw = await api.TabWindowState(tabWindowId)
+  if (!raw) return
+  const t = tabFromSaved(JSON.parse(raw) as SavedTab)
+  app.tabs = [t]
+  app.activeTab = t.id
+  initConnEvents()
+  onEvent<string>('tab-window:close', (id) => id === tabWindowId && backToMain())
+  const tab = app.tabs[0]
+  if (await api.IsConnected(tab.connId).catch(() => false)) {
+    await connect(tab.connId)
+    if (tab.tableRef) reloadTable(tab)
+  }
+}
+
+// Puts the tab back into the main window and closes this one.
+export async function backToMain() {
+  const t = app.tabs[0]
+  if (!t) return
+  const n = tabPending(t)
+  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 메인 창으로 옮길까요?`))) return
+  clearTimeout(saveTimer)
+  await Events.Emit('tab:restore', { id: t.id, tab: savedTab(t) }).catch(() => {})
+  api.CloseTabWindow(t.id)
+}
+
+// Closes the tab (and this window).
+export async function closeTabWindow() {
+  const t = app.tabs[0]
+  if (!t) return
+  const n = tabPending(t)
+  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 탭을 닫을까요?`))) return
+  clearTimeout(saveTimer)
+  api.CloseSession(t.id)
+  await Events.Emit('tab:close', { id: t.id }).catch(() => {})
+  api.CloseTabWindow(t.id)
 }

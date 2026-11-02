@@ -57,6 +57,9 @@
     rowAdd: 'M2.5 3.5h11v5h-11zM11.5 10.5v4M9.5 12.5h4',
     sortLines: 'M2.5 4h11M2.5 8h7.5M2.5 12h4',
     schemas: 'M2.5 3.5h4l1.5 1.5h5.5v7.5h-11zM5 8.5l2 2 3.5-3.5',
+    // tab into its own window / back into the main one
+    detach: 'M9 2.5h4.5V7 M13.5 2.5L8 8 M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3',
+    attach: 'M13.5 2.5L8 8 M8 4.5V8h3.5 M6.5 2.5h-3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3',
   }
 </script>
 

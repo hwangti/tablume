@@ -15,13 +15,22 @@ import (
 // App is the service bound to the frontend; every exported method becomes a
 // JS function in frontend/bindings.
 type App struct {
-	window *application.WebviewWindow
-	store  *store.Store
-	db     *dbx.Manager
+	window  *application.WebviewWindow // the main window
+	store   *store.Store
+	db      *dbx.Manager
+	tabWins tabWindows
 }
 
 func NewApp() *App {
-	return &App{db: dbx.NewManager(), store: &store.Store{}}
+	return &App{
+		db:    dbx.NewManager(),
+		store: &store.Store{},
+		tabWins: tabWindows{
+			wins:    map[string]*application.WebviewWindow{},
+			state:   map[string]string{},
+			closing: map[string]bool{},
+		},
+	}
 }
 
 func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -35,6 +44,9 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 }
 
 func (a *App) ServiceShutdown() error {
+	a.tabWins.mu.Lock()
+	a.tabWins.quitting = true
+	a.tabWins.mu.Unlock()
 	for _, c := range a.store.List() {
 		a.db.Disconnect(c.ID)
 	}
@@ -185,14 +197,14 @@ func (a *App) CloseSession(tabID string) { a.db.CloseSession(tabID) }
 
 // ---------------------------------------------------------------- files
 
-func (a *App) openFile(o application.OpenFileDialogOptions) (string, error) {
+func (a *App) openFile(ctx context.Context, o application.OpenFileDialogOptions) (string, error) {
 	o.CanChooseFiles = true
-	o.Window = a.window
+	o.Window = a.windowOf(ctx)
 	return application.Get().Dialog.OpenFileWithOptions(&o).PromptForSingleSelection()
 }
 
-func (a *App) PickSQLiteFile() (string, error) {
-	return a.openFile(application.OpenFileDialogOptions{
+func (a *App) PickSQLiteFile(ctx context.Context) (string, error) {
+	return a.openFile(ctx, application.OpenFileDialogOptions{
 		Title: "SQLite 데이터베이스 파일",
 		Filters: []application.FileFilter{
 			{DisplayName: "SQLite (*.db;*.sqlite;*.sqlite3;*.db3)", Pattern: "*.db;*.sqlite;*.sqlite3;*.db3"},
@@ -202,7 +214,7 @@ func (a *App) PickSQLiteFile() (string, error) {
 }
 
 // PickKeyFile picks an SSH private key, starting in ~/.ssh.
-func (a *App) PickKeyFile() (string, error) {
+func (a *App) PickKeyFile(ctx context.Context) (string, error) {
 	dir := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		if st, err := os.Stat(filepath.Join(home, ".ssh")); err == nil && st.IsDir() {
@@ -210,15 +222,15 @@ func (a *App) PickKeyFile() (string, error) {
 		}
 	}
 	// Key files are often hidden-ish (no extension, in a dot directory).
-	return a.openFile(application.OpenFileDialogOptions{Title: "SSH 개인 키 파일", Directory: dir, ShowHiddenFiles: true})
+	return a.openFile(ctx, application.OpenFileDialogOptions{Title: "SSH 개인 키 파일", Directory: dir, ShowHiddenFiles: true})
 }
 
 // SaveTextFile asks for a path and writes content. Returns "" if cancelled.
-func (a *App) SaveTextFile(defaultName, content string) (string, error) {
+func (a *App) SaveTextFile(ctx context.Context, defaultName, content string) (string, error) {
 	path, err := application.Get().Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
 		Filename:             defaultName,
 		CanCreateDirectories: true,
-		Window:               a.window,
+		Window:               a.windowOf(ctx),
 	}).PromptForSingleSelection()
 	if err != nil || path == "" {
 		return "", err
@@ -231,8 +243,8 @@ type OpenedFile struct {
 	Content string `json:"content"`
 }
 
-func (a *App) OpenSQLFile() (*OpenedFile, error) {
-	path, err := a.openFile(application.OpenFileDialogOptions{
+func (a *App) OpenSQLFile(ctx context.Context) (*OpenedFile, error) {
+	path, err := a.openFile(ctx, application.OpenFileDialogOptions{
 		Filters: []application.FileFilter{{DisplayName: "SQL (*.sql)", Pattern: "*.sql"}, {DisplayName: "모든 파일", Pattern: "*"}},
 	})
 	if err != nil || path == "" {
@@ -261,9 +273,10 @@ func (a *App) SaveWorkspace(data string) error {
 	return os.WriteFile(workspacePath(), []byte(data), 0o600)
 }
 
-// SetDarkTitleBar matches the native title bar (Windows) to the app theme.
-func (a *App) SetDarkTitleBar(dark bool) {
-	if a.window != nil {
-		setDarkTitleBar(a.window, dark)
+// SetDarkTitleBar matches the calling window's native title bar (Windows)
+// to the app theme.
+func (a *App) SetDarkTitleBar(ctx context.Context, dark bool) {
+	if w := a.windowOf(ctx); w != nil {
+		setDarkTitleBar(w, dark)
 	}
 }

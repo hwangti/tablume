@@ -55,6 +55,7 @@ func main() {
 		BackgroundColour: application.NewRGB(30, 31, 34),
 		URL:              "/",
 	})
+	svc.quitWithMain(svc.window)
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
