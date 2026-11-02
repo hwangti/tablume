@@ -155,6 +155,13 @@ export interface EditInfo {
      * Comments holds each result column's comment (header tooltip).
      */
     "comments": string[] | null;
+
+    /**
+     * Fills tells what the database puts in a column a new row leaves
+     * out: "generated" (auto increment, identity, computed), "default"
+     * (a DEFAULT value) or "" (NULL).
+     */
+    "fills": string[] | null;
 }
 
 export interface ExecRequest {

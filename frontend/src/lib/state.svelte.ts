@@ -533,6 +533,57 @@ function log(tab: Tab, kind: Message['kind'], text: string) {
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)
 }
 
+/** Adds statements run outside the editor (grid edits, structure changes) to the tab's log. */
+export function logStatements(tab: Tab, sql: string[], outcome: string, error = '') {
+  const text = sql.map((x) => x.trim().replace(/;$/, '') + ';').join('\n')
+  log(tab, error ? 'error' : 'info', `${text}\n${error || outcome}`)
+}
+
+// ---- keeping the tree in step with DDL
+
+const DDL_RE = /^(?:create|alter|drop|rename|truncate|comment\s+on)\b/i
+const SCHEMA_DDL_RE = /^(?:create|drop|alter)\s+(?:database|schema|user)\b/i
+
+function stripLeadingComments(sql: string): string {
+  return sql.replace(/^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*/, '')
+}
+
+/**
+ * After DDL ran: reloads the table lists of the schemas it touched (the
+ * given ones, and any whose name appears in the SQL) and the columns of
+ * loaded tables named in it. In a tab window the main window does it.
+ */
+export async function treeChanged(connId: string, schemas: string[], sql: string, schemaList = false) {
+  if (tabWindowId) {
+    Events.Emit('tree:changed', { connId, schemas, sql, schemaList }).catch(() => {})
+    return
+  }
+  const st = app.conn[connId]
+  if (!st || st.status !== 'connected') return
+  if (schemaList) await refreshSchemas(connId)
+  const words = new Set((sql.toLowerCase().match(/[\p{L}\p{N}_$#]+/gu) ?? []) as string[])
+  const named = new Set(schemas.filter(Boolean).map((x) => x.toLowerCase()))
+  for (const s of st.schemas) {
+    if (s.tables === null) continue
+    const key = s.name.toLowerCase()
+    if (!named.has(key) && !words.has(key)) continue
+    delete app.completion[connId + '|' + s.name]
+    await loadTables(connId, s)
+    for (const t of s.tables ?? []) {
+      if (t.columns === null || !words.has(t.t.name.toLowerCase())) continue
+      if (!t.expanded) {
+        t.columns = null // loaded again when opened
+        continue
+      }
+      try {
+        t.columns = (await api.ListColumns(connId, s.name, t.t)) ?? []
+      } catch {
+        t.columns = null
+      }
+    }
+  }
+}
+
 function short(sql: string): string {
   const one = sql.replace(/\s+/g, ' ').trim()
   return one.length > 120 ? one.slice(0, 120) + '…' : one
@@ -566,7 +617,10 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       start: 0,
       total: r.hasMore ? null : (r.rows ?? []).length,
     }))
+    const schemaBefore = tab.schema
     if (res.currentSchema) tab.schema = res.currentSchema
+    const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
+    if (ddl.length) treeChanged(tab.connId, [schemaBefore, tab.schema], ddl.join('\n'), ddl.some((x) => SCHEMA_DDL_RE.test(x)))
     for (const r of results) {
       if (r.error) log(tab, 'error', `${short(r.sql)}\n${r.error}`)
       else if (r.columns && r.columns.length)
@@ -1103,6 +1157,9 @@ export function initMainWindowEvents() {
     }
   })
   onEvent<TabEvent>('tab:restore', ({ id, tab }) => attach(id, tab))
+  onEvent<{ connId: string; schemas: string[]; sql: string; schemaList: boolean }>('tree:changed', (d) =>
+    treeChanged(d.connId, d.schemas, d.sql, d.schemaList),
+  )
   onEvent<TabEvent>('tab:close', ({ id }) => {
     const i = app.tabs.findIndex((x) => x.id === id)
     if (i < 0) return

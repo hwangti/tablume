@@ -4,6 +4,7 @@
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
+  import SqlPreview from './SqlPreview.svelte'
   import Modal from './Modal.svelte'
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
@@ -30,8 +31,10 @@
     openConsole,
     type Tab,
     followForeignKey,
+    logStatements,
+    treeChanged,
   } from '../lib/state.svelte'
-  import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
+  import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges, buildChanges } from '../lib/editing.svelte'
   import type { Cell, StmtResult } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
@@ -122,12 +125,38 @@
     return n === 0 || confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 실행할까요?`)
   }
 
+  // New rows only: nothing existing changes, so they go in without the
+  // preview. Updates and deletes are shown first.
   async function openApply() {
     if (!current || !pending) return
+    let sql: string[]
     try {
-      applyView = { sql: await previewChanges(tab, current), busy: false, error: '' }
+      sql = (await previewChanges(tab, current)) ?? []
     } catch (e) {
       toast(errText(e), 'error')
+      return
+    }
+    if (buildChanges(current).every((c) => c.kind === 'insert')) {
+      try {
+        await applyEdits(sql)
+      } catch (e) {
+        toast(errText(e), 'error')
+      }
+      return
+    }
+    applyView = { sql, busy: false, error: '' }
+  }
+
+  async function applyEdits(sql: string[]) {
+    if (!current) return
+    try {
+      const { count, inserted } = await applyChanges(tab, current)
+      logStatements(tab, sql, `${count}건 적용`)
+      toast(`${count}건 적용됨`)
+      if (inserted) await rerun() // show generated values (auto ids, defaults)
+    } catch (e) {
+      logStatements(tab, sql, '', errText(e) + '\n(모두 취소됨)')
+      throw e
     }
   }
 
@@ -136,14 +165,19 @@
     if (!current || !view) return
     view.busy = true
     try {
-      const { count, inserted } = await applyChanges(tab, current)
+      await applyEdits(view.sql)
       applyView = null
-      toast(`${count}건 적용됨`)
-      if (inserted) await rerun() // show generated values (auto ids, defaults)
     } catch (e) {
       view.busy = false
       view.error = errText(e)
     }
+  }
+
+  // structure tab: columns / indexes were changed
+  function structureChanged() {
+    ddlVersion++
+    const ref = tab.tableRef
+    if (ref) treeChanged(tab.connId, [ref.schema], ref.table.name)
   }
 
   // ---- table data filter bar (WHERE / ORDER BY run on the database)
@@ -751,14 +785,16 @@
               table={tab.tableRef.table}
               driver={conn?.driver}
               version={ddlVersion}
-              onchanged={() => ddlVersion++}
+              onchanged={structureChanged}
+              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
             />
             <IndexView
               connId={tab.connId}
               schema={tab.tableRef.schema}
               table={tab.tableRef.table}
               driver={conn?.driver}
-              onchanged={() => ddlVersion++}
+              onchanged={structureChanged}
+              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
             />
           </div>
         {:else if isTable && tableView === 'ddl'}
@@ -809,7 +845,7 @@
 {#if applyView}
   <Modal title="변경 적용 — {applyView.sql.length}건" onclose={() => (applyView = null)} width={760} dismissible={false}>
     <p class="dim" style="margin:0 0 8px">아래 SQL을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.</p>
-    <pre class="apply-list mono">{applyView.sql.join(';\n') + ';'}</pre>
+    <SqlPreview sql={applyView.sql} driver={conn?.driver} />
     {#if applyView.error}<div class="apply-error">{applyView.error}</div>{/if}
     {#snippet footer()}
       <span style="flex:1"></span>
@@ -1151,21 +1187,6 @@
     margin-right: 4px;
     white-space: nowrap;
     cursor: help;
-  }
-  .apply-list {
-    max-height: 360px;
-    overflow: auto;
-    margin: 0;
-    padding: 8px 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 12px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-word;
-    user-select: text;
-    -webkit-user-select: text;
   }
   .apply-error {
     margin-top: 10px;

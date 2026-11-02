@@ -7,6 +7,7 @@
   import { toast, openConsole } from '../lib/state.svelte'
   import type { Column, Index, NewIndex, Table } from '../lib/types'
   import Icon from './Icon.svelte'
+  import SqlPreview from './SqlPreview.svelte'
   import Modal from './Modal.svelte'
 
   let {
@@ -15,7 +16,8 @@
     table,
     driver = '',
     onchanged,
-  }: { connId: string; schema: string; table: Table; driver?: string; onchanged?: () => void } = $props()
+    onlog,
+  }: { connId: string; schema: string; table: Table; driver?: string; onchanged?: () => void; onlog?: (sql: string[], outcome: string, error?: string) => void } = $props()
 
   let indexes = $state<Index[] | null>(null)
   let cols = $state<Column[]>([])
@@ -182,6 +184,7 @@
       return
     }
     if (r.error) {
+      onlog?.(a.sql.slice(0, r.rolledBack ? a.sql.length : r.applied + 1), '', r.error + (r.rolledBack ? '\n(모두 취소됨)' : `\n(${r.applied}/${r.total}개 적용됨)`))
       a.busy = false
       a.error = r.error
       a.note = r.rolledBack
@@ -194,6 +197,7 @@
       return
     }
     apply = null
+    onlog?.(a.sql, `인덱스 변경 ${r.applied}건 적용`)
     toast(`인덱스 변경 ${r.applied}건 적용됨`)
     load()
     onchanged?.()
@@ -379,7 +383,7 @@
       {/if}
       큰 테이블은 인덱스를 만드는 동안 시간이 걸리고 쓰기가 막힐 수 있습니다.
     </p>
-    <pre class="sql mono">{apply.sql.join(';\n') + ';'}</pre>
+    <SqlPreview sql={apply.sql} driver={driver} />
     {#if apply.error}
       <div class="err">{apply.error}{#if apply.note}<div class="err-note">{apply.note}</div>{/if}</div>
     {/if}
@@ -448,6 +452,9 @@
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     border-right: 1px solid var(--grid-line);
+    /* top line as a shadow: a collapsed border wouldn't stay with the
+       sticky header */
+    box-shadow: inset 0 1px 0 var(--border);
   }
   td {
     padding: 0 10px;
@@ -628,18 +635,6 @@
   .note {
     margin: 0 0 8px;
     color: var(--text-dim);
-  }
-  .sql {
-    max-height: 340px;
-    overflow: auto;
-    margin: 0;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg);
-    white-space: pre-wrap;
-    user-select: text;
-    -webkit-user-select: text;
   }
   .err {
     margin-top: 10px;

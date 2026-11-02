@@ -3,6 +3,18 @@
 import { HighlightStyle } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
+import { MySQL, MariaSQL, PostgreSQL, MSSQL, PLSQL, SQLite, StandardSQL, type SQLDialect } from '@codemirror/lang-sql'
+
+const dialects: Record<string, SQLDialect> = {
+  mysql: MySQL,
+  mariadb: MariaSQL,
+  postgres: PostgreSQL,
+  mssql: MSSQL,
+  oracle: PLSQL,
+  sqlite: SQLite,
+}
+
+export const sqlDialect = (driver: string | undefined): SQLDialect => (driver && dialects[driver]) || StandardSQL
 
 export const highlight = HighlightStyle.define([
   { tag: [t.keyword, t.operatorKeyword, t.modifier, t.bool, t.null], color: 'var(--syn-keyword)' },

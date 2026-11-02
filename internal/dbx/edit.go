@@ -173,6 +173,27 @@ type EditInfo struct {
 	Refs []string `json:"refs"`
 	// Comments holds each result column's comment (header tooltip).
 	Comments []string `json:"comments"`
+	// Fills tells what the database puts in a column a new row leaves
+	// out: "generated" (auto increment, identity, computed), "default"
+	// (a DEFAULT value) or "" (NULL).
+	Fills []string `json:"fills"`
+}
+
+// fillOf: what a column gets when an INSERT leaves it out.
+func fillOf(c Column, driver string, onlyPK bool) string {
+	ex := strings.ToLower(c.Extra)
+	def := strings.ToLower(strings.TrimSpace(c.Default))
+	switch {
+	case strings.Contains(ex, "auto_increment") || strings.Contains(ex, "identity") ||
+		strings.Contains(ex, "generated") || strings.Contains(ex, "computed") ||
+		strings.Contains(def, "nextval") || strings.Contains(def, "next value for"):
+		return "generated"
+	case driver == "sqlite" && c.PK && onlyPK && strings.EqualFold(strings.TrimSpace(c.Type), "INTEGER"):
+		return "generated" // INTEGER PRIMARY KEY is the rowid
+	case def != "" && def != "null":
+		return "default"
+	}
+	return ""
 }
 
 func (m *Manager) resolveSource(p *pool, current string, parts []string) (string, Table) {
@@ -227,7 +248,7 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 	}
 	info := EditInfo{Schema: schema, Table: t, Columns: make([]string, len(resultCols)),
 		Keys: make([]string, len(resultCols)), Refs: make([]string, len(resultCols)),
-		Comments: make([]string, len(resultCols))}
+		Comments: make([]string, len(resultCols)), Fills: make([]string, len(resultCols))}
 	byName := map[string]Column{}
 	for _, c := range cols {
 		byName[strings.ToUpper(c.Name)] = c
@@ -253,6 +274,7 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 			}
 			info.Keys[i] = strings.Join(kinds, ",")
 			info.Comments[i] = c.Comment
+			info.Fills[i] = fillOf(c, p.cfg.Driver, len(info.Key) == 1)
 			if editableType(c.Type) {
 				info.Columns[i] = c.Name
 			}

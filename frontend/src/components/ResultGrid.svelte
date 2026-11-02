@@ -62,7 +62,9 @@
     onfollow?: (col: number, value: string, numeric: boolean) => void
   } = $props()
 
-  let editing = $state<{ ri: number; vi: number; c: number; value: string } | null>(null)
+  // orig: the text the editor started with; leaving it unchanged keeps the
+  // cell as it was (NULL stays NULL, a new row's column stays unset)
+  let editing = $state<{ ri: number; vi: number; c: number; value: string; orig: string } | null>(null)
   let info = $derived(result.edit?.info ?? null)
   let st = $derived(result.edit)
 
@@ -78,40 +80,65 @@
 
   // Starts editing a cell; falls back to the read-only viewer when the
   // result or column can't be edited.
-  async function startEdit(vi: number, p: number, initial?: string) {
+  // quiet (Tab from a cell being edited): cells that can't be edited
+  // inline are skipped silently instead of opening the viewer.
+  async function startEdit(vi: number, p: number, initial?: string, quiet = false): Promise<boolean> {
     const ri = order[vi]
     const c = vc[p]
     const inf = await ensureEdit()
     if (!inf || !rowEditable(inf, ri)) {
+      if (quiet) return false
       if (initial === undefined) openViewer(vi, p)
       else if (inf) toast('읽기 전용: ' + inf.reason)
-      return
+      return false
     }
     if (!inf.columns[c]) {
+      if (quiet) return false
       if (initial === undefined) openViewer(vi, p)
       else toast('이 컬럼은 편집할 수 없습니다 (바이너리 또는 계산 컬럼)')
-      return
+      return false
     }
-    if (st?.deleted[ri]) return
+    if (st?.deleted[ri]) return false
     const v = val(ri, c)
     if (initial === undefined && v !== null && (v.includes('\n') || v.length > 200)) {
-      openViewer(vi, p) // long text: edit in the larger editor
-      return
+      if (!quiet) openViewer(vi, p) // long text: edit in the larger editor
+      return false
     }
-    editing = { ri, vi, c, value: initial ?? v ?? '' }
+    editing = { ri, vi, c, value: initial ?? v ?? '', orig: v ?? '' }
+    return true
   }
 
-  function commitEdit(move?: [number, number]) {
+  function commitEdit(move?: [number, number], keepEditing = false) {
     if (!editing) return
-    const { ri, vi, c, value } = editing
+    const { ri, vi, c, value, orig } = editing
     editing = null
-    setCell(result, ri, c, value)
+    if (value !== orig) setCell(result, ri, c, value)
     scroller.focus({ preventScroll: true })
-    if (move) {
-      const r = Math.max(0, Math.min(order.length - 1, vi + move[0]))
-      const cc = Math.max(0, Math.min(vc.length - 1, vc.indexOf(c) + move[1]))
-      anchor = focus = { r, c: cc }
-      scrollIntoView(r, cc)
+    if (!move) return
+    let r = Math.max(0, Math.min(order.length - 1, vi + move[0]))
+    let cc = vc.indexOf(c) + move[1]
+    if (move[1] !== 0 && (cc < 0 || cc >= vc.length)) {
+      // Tab past the last column: first column of the next row (and back)
+      const nr = vi + (cc < 0 ? -1 : 1)
+      if (nr >= 0 && nr < order.length) {
+        r = nr
+        cc = cc < 0 ? vc.length - 1 : 0
+      }
+    }
+    cc = Math.max(0, Math.min(vc.length - 1, cc))
+    anchor = focus = { r, c: cc }
+    scrollIntoView(r, cc)
+    if (keepEditing) chainEdit(r, cc, move[1] < 0 ? -1 : 1)
+  }
+
+  // Tab while editing: the next editable cell in that row opens for editing too.
+  async function chainEdit(r: number, p: number, dir: 1 | -1) {
+    for (let q = p; q >= 0 && q < vc.length; q += dir) {
+      if (await startEdit(r, q, undefined, true)) {
+        anchor = focus = { r, c: q }
+        scrollIntoView(r, q)
+        return
+      }
     }
   }
 
@@ -127,7 +154,7 @@
       commitEdit([1, 0])
     } else if (e.key === 'Tab') {
       e.preventDefault()
-      commitEdit([0, e.shiftKey ? -1 : 1])
+      commitEdit([0, e.shiftKey ? -1 : 1], true)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       cancelEdit()
@@ -587,9 +614,10 @@
   // "…" while editing inline: continue in the large editor with the draft.
   function editInViewer() {
     if (!editing) return
-    const { ri, c, value } = editing
+    const { ri, c, value, orig } = editing
     editing = null
-    viewing = { col: columns[c].name, value, ri, c }
+    // untouched NULL stays NULL in the large editor too
+    viewing = { col: columns[c].name, value: value === orig ? val(ri, c) : value, ri, c }
   }
 
   function openViewer(vi: number, p: number) {
@@ -806,7 +834,10 @@
                 ondblclick={(e) => e.stopPropagation()}
                 onclick={(e) => (e.stopPropagation(), editInViewer())}>…</button
               >{/if}
-            {:else if v === null}<span class="null">&lt;null&gt;</span>{:else}{display(v)}{/if}
+            {:else if v === null}
+              {@const fill = st?.added[ri] && !isEdited(result, ri, c) ? info?.fills?.[c] : ''}
+              <span class="null">{fill ? `<${fill}>` : '<null>'}</span>
+            {:else}{display(v)}{/if}
           </div>
         {/each}
       </div>
@@ -898,7 +929,7 @@
     column={viewing.col}
     value={viewing.value}
     editable={viewing.c >= 0}
-    onsave={(v) => viewing && setCell(result, viewing.ri, viewing.c, v)}
+    onsave={(v) => viewing && v !== val(viewing.ri, viewing.c) && setCell(result, viewing.ri, viewing.c, v)}
     onclose={() => (viewing = null)}
   />
 {/if}
@@ -1204,9 +1235,13 @@
   .td.editing {
     padding: 0;
     overflow: visible;
+    line-height: normal;
   }
 
+  /* block: an inline input sits on the text baseline, which can push its
+     top border up under the sticky header on the first row */
   .cell-input {
+    display: block;
     width: 100%;
     height: 100%;
     padding: 0 7px;

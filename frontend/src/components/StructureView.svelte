@@ -7,6 +7,7 @@
   import { toast, openConsole } from '../lib/state.svelte'
   import type { Column, Table } from '../lib/types'
   import Icon from './Icon.svelte'
+  import SqlPreview from './SqlPreview.svelte'
   import Modal from './Modal.svelte'
 
   let {
@@ -16,7 +17,8 @@
     driver = '',
     version = 0,
     onchanged,
-  }: { connId: string; schema: string; table: Table; driver?: string; version?: number; onchanged?: () => void } = $props()
+    onlog,
+  }: { connId: string; schema: string; table: Table; driver?: string; version?: number; onchanged?: () => void; onlog?: (sql: string[], outcome: string, error?: string) => void } = $props()
 
   let cols = $state<Column[] | null>(null)
   let error = $state('')
@@ -145,6 +147,7 @@
     try {
       const r = await api.ApplyAlter({ connId, schema, table: $state.snapshot(table), changes: changes() })
       if (r.error) {
+        onlog?.(a.sql.slice(0, r.rolledBack ? a.sql.length : r.applied + 1), '', r.error + (r.rolledBack ? '\n(모두 취소됨)' : `\n(${r.applied}/${r.total}개 적용됨)`))
         a.busy = false
         a.error = r.error
         a.note = r.rolledBack
@@ -157,6 +160,7 @@
         return
       }
       apply = null
+      onlog?.(a.sql, `컬럼 변경 ${r.applied}건 적용`)
       toast(`컬럼 변경 ${r.applied}건 적용됨`)
       draft = {}
       onchanged ? onchanged() : load()
@@ -256,7 +260,7 @@
         아래 문장을 차례로 실행합니다. 이 DB는 DDL을 되돌릴 수 없어서, 중간에 실패하면 그 앞까지는 적용된 채로 남습니다.
       {/if}
     </p>
-    <pre class="sql mono">{apply.sql.join(';\n') + ';'}</pre>
+    <SqlPreview sql={apply.sql} driver={driver} />
     {#if apply.error}
       <div class="err">{apply.error}{#if apply.note}<div class="err-note">{apply.note}</div>{/if}</div>
     {/if}
@@ -327,6 +331,9 @@
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     border-right: 1px solid var(--grid-line);
+    /* top line as a shadow: a collapsed border wouldn't stay with the
+       sticky header */
+    box-shadow: inset 0 1px 0 var(--border);
   }
   td {
     padding: 0 10px;
@@ -418,18 +425,6 @@
   .note {
     margin: 0 0 8px;
     color: var(--text-dim);
-  }
-  .sql {
-    max-height: 340px;
-    overflow: auto;
-    margin: 0;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg);
-    white-space: pre-wrap;
-    user-select: text;
-    -webkit-user-select: text;
   }
   .err {
     margin-top: 10px;

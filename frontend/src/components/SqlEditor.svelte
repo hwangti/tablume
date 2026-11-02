@@ -27,11 +27,11 @@
   import { EditorState, Compartment, Prec } from '@codemirror/state'
   import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, rectangularSelection, crosshairCursor, dropCursor } from '@codemirror/view'
   import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from '@codemirror/commands'
-  import { sql, MySQL, MariaSQL, PostgreSQL, MSSQL, PLSQL, SQLite, StandardSQL, type SQLDialect } from '@codemirror/lang-sql'
+  import { sql } from '@codemirror/lang-sql'
   import { syntaxHighlighting, bracketMatching, indentOnInput } from '@codemirror/language'
   import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, acceptCompletion } from '@codemirror/autocomplete'
   import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-  import { highlight, theme } from '../lib/cm'
+  import { highlight, theme, sqlDialect } from '../lib/cm'
   import type { Driver } from '../lib/types'
   import { formatEditor } from '../lib/format'
   import { toast, app } from '../lib/state.svelte'
@@ -60,18 +60,9 @@
   let host: HTMLDivElement
   const lang = new Compartment()
 
-  const dialects: Record<string, SQLDialect> = {
-    mysql: MySQL,
-    mariadb: MariaSQL,
-    postgres: PostgreSQL,
-    mssql: MSSQL,
-    oracle: PLSQL,
-    sqlite: SQLite,
-  }
-
   function langExt() {
     return sql({
-      dialect: (driver && dialects[driver]) || StandardSQL,
+      dialect: sqlDialect(driver),
       schema,
       upperCaseKeywords: false,
     })

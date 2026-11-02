@@ -123,6 +123,7 @@ export interface EditInfo {
   keys?: string[] // per result column: "PK", "UK", "FK" (comma separated)
   refs?: string[] // per result column: FK target "table.column"
   comments?: string[] // per result column
+  fills?: string[] // per result column: what a new row gets when left out: 'generated' | 'default' | ''
 }
 
 export interface EditState {
