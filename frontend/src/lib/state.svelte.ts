@@ -292,8 +292,6 @@ export async function ensureStats() {
 export const ZOOM_MIN = 1
 export const ZOOM_MAX = 2
 const ZOOM_STEPS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2]
-// The choices in the view options.
-export const ZOOM_PRESETS = [1, 1.1, 1.25, 1.5, 1.75, 2]
 
 function applyZoom() {
   const z = app.zoom

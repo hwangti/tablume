@@ -21,7 +21,6 @@
     moveConnection,
     toast,
     setZoomLevel,
-    ZOOM_PRESETS,
     ZOOM_MIN,
     ZOOM_MAX,
     type SchemaNode,
@@ -587,8 +586,8 @@
               >
             {/each}
           </div>
-          <!-- Preset buttons, not a slider: the whole window (the slider too)
-               rescales on every change, so dragging can't be followed. -->
+          <!-- Typed value and ±5%, not a slider: the whole window (the slider
+               too) rescales on every change, so a drag can't be followed. -->
           <div class="vm-title sep zoom-head">
             화면 배율
             <button class="icon-btn sm" title="5% 축소" disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
@@ -599,7 +598,7 @@
               max={ZOOM_MAX * 100}
               step="5"
               value={Math.round(app.zoom * 100)}
-              title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, Enter로 적용"
+              title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, Enter로 적용 · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}"
               onchange={zoomInput}
               onkeydown={(e) => {
                 if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
@@ -610,11 +609,6 @@
               }}
             /><span>%</span>
             <button class="icon-btn sm" title="5% 확대" disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
-          </div>
-          <div class="theme-seg zoom-seg" role="group" title={isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}>
-            {#each ZOOM_PRESETS as z (z)}
-              <button class:on={Math.abs(app.zoom - z) < 0.001} onclick={() => setZoomLevel(z)}>{Math.round(z * 100)}</button>
-            {/each}
           </div>
           <div class="vm-title sep">트리에 표시</div>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
@@ -879,9 +873,6 @@
   .zoom-in::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
-  }
-  .zoom-seg button {
-    font-variant-numeric: tabular-nums;
   }
   .theme-seg {
     display: flex;
