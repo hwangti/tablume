@@ -433,6 +433,43 @@ export async function closeTab(id: string) {
   saveWorkspaceSoon()
 }
 
+// Closes several tabs, asking once about unsaved edits in any of them.
+export async function closeTabs(ids: string[]) {
+  const set = new Set(ids)
+  const closing = app.tabs.filter((t) => set.has(t.id))
+  if (!closing.length) return
+  const n = closing.reduce((a, t) => a + tabPending(t), 0)
+  if (n && !(await confirmBox(`닫을 탭에 적용하지 않은 변경 ${n}건이 있습니다. 버리고 닫을까요?`))) return
+  const activeIdx = app.tabs.findIndex((t) => t.id === app.activeTab)
+  for (const t of closing) api.CloseSession(t.id)
+  const remaining = app.tabs.filter((t) => !set.has(t.id))
+  if (set.has(app.activeTab)) {
+    // the nearest surviving tab to the right, else to the left
+    const right = app.tabs.slice(activeIdx).find((t) => !set.has(t.id))
+    const left = [...app.tabs.slice(0, activeIdx)].reverse().find((t) => !set.has(t.id))
+    app.activeTab = (right ?? left)?.id ?? ''
+  }
+  app.tabs = remaining
+  saveWorkspaceSoon()
+}
+
+// Opens a copy of the tab next to it: same SQL (or table, filter and
+// sort), its own session and results.
+export async function duplicateTab(id: string) {
+  const src = app.tabs.find((t) => t.id === id)
+  if (!src) return
+  const tab = openConsole(src.connId, { schema: src.schema, sql: src.sql, title: src.title + ' 복사본' })
+  tab.layout = src.layout
+  if (src.tableRef) tab.tableRef = $state.snapshot(src.tableRef)
+  // place it right after the original
+  const from = app.tabs.findIndex((t) => t.id === tab.id)
+  const [moved] = app.tabs.splice(from, 1)
+  app.tabs.splice(app.tabs.findIndex((t) => t.id === id) + 1, 0, moved)
+  saveWorkspaceSoon()
+  const copy = app.tabs.find((t) => t.id === tab.id)!
+  if (copy.tableRef) await reloadTable(copy)
+}
+
 function log(tab: Tab, kind: Message['kind'], text: string) {
   tab.messages.push({ time: now(), kind, text })
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)

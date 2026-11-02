@@ -7,7 +7,7 @@
   import Modal from './components/Modal.svelte'
   import Icon from './components/Icon.svelte'
   import logo from './assets/logo.svg'
-  import { app, loadConnections, loadWorkspace, openConsole, closeTab, connById, activeTab, saveWorkspaceSoon, pinTab } from './lib/state.svelte'
+  import { app, loadConnections, loadWorkspace, openConsole, closeTab, closeTabs, duplicateTab, connById, activeTab, saveWorkspaceSoon, pinTab } from './lib/state.svelte'
   import { driverLabel } from './lib/types'
 
   let sideW = $state(270)
@@ -112,6 +112,46 @@
     return () => ro.disconnect()
   })
 
+  // ---------------------------------------------------------------- tab menu
+  type TabMenuItem = { label: string; icon?: string; run: () => void; disabled?: boolean; sep?: boolean; danger?: boolean }
+  let tabMenu = $state<{ x: number; y: number; items: TabMenuItem[] } | null>(null)
+  let tabMenuEl = $state<HTMLDivElement>()
+  // keep the menu inside the window
+  $effect(() => {
+    if (!tabMenu || !tabMenuEl) return
+    const r = tabMenuEl.getBoundingClientRect()
+    if (r.right > innerWidth - 4) tabMenuEl.style.left = Math.max(4, innerWidth - r.width - 4) + 'px'
+    if (r.bottom > innerHeight - 4) tabMenuEl.style.top = Math.max(4, innerHeight - r.height - 4) + 'px'
+  })
+
+  function openTabMenu(e: MouseEvent, id: string) {
+    e.preventDefault()
+    const i = app.tabs.findIndex((t) => t.id === id)
+    const t = app.tabs[i]
+    if (!t) return
+    const ids = app.tabs.map((x) => x.id)
+    const left = ids.slice(0, i)
+    const right = ids.slice(i + 1)
+    const others = ids.filter((x) => x !== id)
+    const sameConn = app.tabs.filter((x) => x.connId === t.connId).map((x) => x.id)
+    const c = connById(t.connId)
+    tabMenu = {
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: '닫기', icon: 'close', run: () => closeTab(id) },
+        { label: '다른 탭 닫기', run: () => closeTabs(others), disabled: !others.length },
+        { label: '왼쪽 탭 닫기', run: () => closeTabs(left), disabled: !left.length },
+        { label: '오른쪽 탭 닫기', run: () => closeTabs(right), disabled: !right.length },
+        { label: `같은 연결 탭 닫기${c ? ` (${c.name})` : ''}`, icon: 'db', run: () => closeTabs(sameConn) },
+        { label: '모든 탭 닫기', run: () => closeTabs(ids), danger: true },
+        { label: '탭 복제', icon: 'copy', run: () => duplicateTab(id), sep: true },
+        ...(t.preview ? [{ label: '탭 고정', icon: 'lock', run: () => pinTab(t) }] : []),
+        { label: '이름 바꾸기', icon: 'edit', run: () => (renaming = id) },
+      ],
+    }
+  }
+
   function tabMouseDown(e: MouseEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault()
@@ -149,7 +189,7 @@
   let renaming = $state<string | null>(null)
 </script>
 
-<svelte:window onkeydown={keydown} onkeydowncapture={switchKey} />
+<svelte:window onkeydown={keydown} onkeydowncapture={switchKey} onclick={() => (tabMenu = null)} onblur={() => (tabMenu = null)} />
 
 <div class="layout" style:grid-template-columns="{sideW}px 1px 1fr">
   <Sidebar />
@@ -171,6 +211,7 @@
           onclick={() => (app.activeTab = t.id)}
           onmousedown={(e) => tabMouseDown(e, t.id)}
           ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
+          oncontextmenu={(e) => openTabMenu(e, t.id)}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
         >
           {#if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
@@ -221,6 +262,16 @@
       {/if}
     </div>
   </main>
+  {#if tabMenu}
+    <div class="tab-menu" bind:this={tabMenuEl} style:left="{tabMenu.x}px" style:top="{tabMenu.y}px">
+      {#each tabMenu.items as it (it.label)}
+        {#if it.sep}<hr />{/if}
+        <button class:danger={it.danger} disabled={it.disabled} onclick={it.run}>
+          <span class="mi">{#if it.icon}<Icon name={it.icon} size={14} />{/if}</span>{it.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 {#if app.editing}
@@ -281,6 +332,51 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  .tab-menu {
+    position: fixed;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    min-width: 210px;
+    padding: 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .tab-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 8px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .tab-menu button:hover:not(:disabled) {
+    background: var(--bg-select);
+  }
+  .tab-menu button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .tab-menu button.danger {
+    color: var(--danger);
+  }
+  .tab-menu hr {
+    margin: 4px 2px;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+  .mi {
+    display: inline-flex;
+    width: 14px;
+    flex-shrink: 0;
+    color: var(--text-dim);
   }
   .tabs-wrap {
     position: relative;

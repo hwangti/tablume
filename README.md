@@ -91,7 +91,7 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 | `Ctrl/⌘ + Enter` | 현재 문장(또는 선택 영역) 실행 |
 | `Ctrl/⌘ + Shift + Enter` | 전체 실행 |
 | `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | 새 콘솔 / 탭 닫기 |
-| `Ctrl/⌘ + 1…9` | 탭 이동 |
+| `Ctrl/⌘ + 1…9` | 탭 이동 (탭 우클릭: 닫기 · 다른/왼쪽/오른쪽/같은 연결/모든 탭 닫기 · 복제 · 이름 바꾸기) |
 | `Ctrl + Tab` / `Ctrl + Shift + Tab` | 다음 / 이전 탭 (`Ctrl + PageDown/PageUp`, macOS는 `⌘ + Shift + ]/[`도 됨) |
 | `Ctrl/⌘ + /` | 주석 토글 |
 | `Ctrl + Alt + L` / `⌘ + ⌥ + L` | SQL 정렬 (선택 영역 또는 전체, 한 줄 SQL을 여러 줄로) |
