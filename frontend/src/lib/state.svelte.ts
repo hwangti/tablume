@@ -115,6 +115,7 @@ export const app = $state({
   treeView: { comment: true, tableCount: true, rows: false, size: false },
   tableOpen: { pkDesc: false },
   zoom: 1, // whole window
+  orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
   ddlMode: 'table' as 'sql' | 'table', // DDL tab: columns table first
   theme: getTheme(),
@@ -927,6 +928,7 @@ export function saveWorkspaceSoon() {
       treeView: app.treeView,
       tableOpen: app.tableOpen,
       zoom: app.zoom,
+      orderShare: app.orderShare,
       gridColNumbers: app.gridColNumbers,
       ddlView: app.ddlMode,
       theme: app.theme,
@@ -954,6 +956,7 @@ export async function loadWorkspace(tabs = true) {
     // (saved as ddlView since the table became the default; the old ddlMode key is ignored)
     if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
+    if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
     // (the old per-tab gridZoom is ignored)
     if (typeof data.zoom === 'number' && data.zoom > ZOOM_MIN && data.zoom <= ZOOM_MAX) {
       app.zoom = data.zoom

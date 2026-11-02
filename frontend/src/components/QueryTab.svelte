@@ -299,6 +299,30 @@
     sizeMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
   }
 
+  // WHERE | ORDER BY split, shared by all table tabs (app.orderShare)
+  let filterBar = $state<HTMLDivElement>()
+  let splitting = $state(false)
+  function startSplit(e: MouseEvent) {
+    if (e.button !== 0 || !filterBar) return
+    e.preventDefault()
+    const r = filterBar.getBoundingClientRect()
+    splitting = true
+    const move = (ev: MouseEvent) => {
+      const share = (r.right - ev.clientX) / r.width
+      app.orderShare = Math.round(Math.max(0.12, Math.min(0.75, share)) * 1000) / 1000
+    }
+    const up = () => {
+      splitting = false
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      document.body.style.cursor = ''
+      saveWorkspaceSoon()
+    }
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   function setPageSize(n: number) {
     app.pageSize = n
     sizeMenu = null
@@ -688,7 +712,7 @@
       </div>
       {#if isTable && tableView === 'data' && tab.tableRef}
         <!-- DataGrip-style: part of the grid's surface, no boxed inputs -->
-        <div class="filterbar">
+        <div class="filterbar" bind:this={filterBar}>
           <div class="fpart">
             <span class="ficon where"><Icon name="filter" size={14} /></span>
             <span class="kw" class:on={!!tab.tableRef.where}>WHERE</span>
@@ -697,7 +721,9 @@
               {#if tab.tableRef.where}<button class="x-btn fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
             </div>
           </div>
-          <div class="fpart order">
+          <div class="fpart order" style:flex="0 0 {app.orderShare * 100}%">
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="fsplit" class:on={splitting} title="끌어서 폭 조정 · 더블클릭하면 기본값" onmousedown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
             <span class="ficon order"><Icon name="sortLines" size={14} /></span>
             <span class="kw" class:on={!!tab.tableRef.orderBy}>ORDER BY</span>
             <div class="fwrap">
@@ -912,8 +938,22 @@
     padding: 2px 4px 2px 10px;
   }
   .fpart.order {
-    flex: 1.4;
+    position: relative;
     border-left: 1px solid var(--border);
+  }
+  /* drag handle on the WHERE | ORDER BY border */
+  .fsplit {
+    position: absolute;
+    left: -4px;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    cursor: col-resize;
+    z-index: 2;
+  }
+  .fsplit:hover,
+  .fsplit.on {
+    background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 4px, transparent 4px);
   }
   .ficon {
     display: inline-flex;
