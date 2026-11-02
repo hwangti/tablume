@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { installTooltips } from './lib/tooltip'
   import Sidebar from './components/Sidebar.svelte'
   import QueryTab from './components/QueryTab.svelte'
   import ConnectionDialog from './components/ConnectionDialog.svelte'
@@ -14,6 +15,7 @@
   let ready = $state(false)
 
   onMount(async () => {
+    installTooltips()
     await loadConnections()
     await loadWorkspace()
     ready = true
@@ -86,13 +88,29 @@
     })
   })
 
-  // No scrollbar on the tab strip (it took height): the wheel scrolls it.
+  // No scrollbar on the tab strip (it took height): the wheel scrolls it,
+  // and a shadow on either side shows there are more tabs that way.
   function tabsWheel(e: WheelEvent) {
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
       tabsEl.scrollLeft += e.deltaY
       e.preventDefault()
     }
   }
+
+  let moreLeft = $state(false)
+  let moreRight = $state(false)
+  function tabsEdges() {
+    if (!tabsEl) return
+    moreLeft = tabsEl.scrollLeft > 1
+    moreRight = tabsEl.scrollLeft + tabsEl.clientWidth < tabsEl.scrollWidth - 1
+  }
+  $effect(() => {
+    void app.tabs.length
+    requestAnimationFrame(tabsEdges)
+    const ro = new ResizeObserver(tabsEdges)
+    if (tabsEl) ro.observe(tabsEl)
+    return () => ro.disconnect()
+  })
 
   function tabMouseDown(e: MouseEvent, id: string) {
     if (e.button === 1) {
@@ -139,7 +157,8 @@
   <div class="vdivider" onmousedown={startDrag}></div>
 
   <main>
-    <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel}>
+    <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
+    <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel} onscroll={tabsEdges}>
       {#each app.tabs as t (t.id)}
         {@const c = connById(t.connId)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -179,6 +198,7 @@
           <Icon name="plus" size={14} />
         </button>
       {/if}
+    </div>
     </div>
 
     <div class="content">
@@ -261,6 +281,34 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  .tabs-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .tabs-wrap::before,
+  .tabs-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 1px;
+    z-index: 2;
+    width: 18px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .tabs-wrap::before {
+    left: 0;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
+  }
+  .tabs-wrap::after {
+    right: 0;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
+  }
+  .tabs-wrap.more-left::before,
+  .tabs-wrap.more-right::after {
+    opacity: 1;
   }
   .tabs {
     display: flex;

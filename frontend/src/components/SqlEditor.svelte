@@ -33,6 +33,9 @@
   import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
   import { tags as t } from '@lezer/highlight'
   import type { Driver } from '../lib/types'
+  import { formatEditor } from '../lib/format'
+  import { toast } from '../lib/state.svelte'
+  import { errText } from '../lib/api'
 
   let {
     value,
@@ -121,12 +124,29 @@
     return true
   }
 
+  function reformat(v: EditorView) {
+    try {
+      formatEditor(v, driver)
+    } catch (e) {
+      toast('SQL을 정렬할 수 없습니다: ' + errText(e).split('\n')[0], 'error')
+    }
+  }
+
+  // Toolbar button: same as Ctrl+Alt+L / Cmd+Option+L
+  export function format() {
+    if (view && !readonly) {
+      reformat(view)
+      view.focus()
+    }
+  }
+
   onMount(() => {
     const runKeys = Prec.highest(
       keymap.of([
         { key: 'Mod-Enter', run: () => (onrun(), true) },
         { key: 'Shift-Mod-Enter', run: () => (onrunall(), true) },
         { key: 'Mod-/', run: toggleComment },
+        { key: 'Mod-Alt-l', run: (v) => (readonly || reformat(v), true) },
         { key: 'Tab', run: acceptReplacing },
       ]),
     )

@@ -8,7 +8,7 @@
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
   import { api, errText } from '../lib/api'
-  import { modKey, copyText } from '../lib/clipboard'
+  import { modKey, isMac, copyText } from '../lib/clipboard'
   import {
     app,
     syncTreeRows,
@@ -35,6 +35,7 @@
   let { tab }: { tab: Tab } = $props()
 
   let view = $state<EditorView>()
+  let editor = $state<ReturnType<typeof SqlEditor>>()
   let split = $state(45) // editor height in %
   let body: HTMLDivElement
   let tick = $state(0)
@@ -533,6 +534,10 @@
         {/each}
       </select>
       <span class="sep"></span>
+      <button class="icon-btn" title="SQL 정렬 ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — 선택 영역 또는 전체" onclick={() => editor?.format()}
+        ><Icon name="format" /></button
+      >
+      <span class="sep"></span>
       <button class="icon-btn" title="SQL 파일 열기" onclick={openFile}><Icon name="open" /></button>
       <button class="icon-btn" title="SQL 파일로 저장" onclick={saveFile}><Icon name="save" /></button>
       <span class="grow"></span>
@@ -545,7 +550,7 @@
   <div class="body" bind:this={body}>
     {#if !isTable}
       <div class="editor" class:collapsed={tab.layout === 'results'} style:height="{split}%">
-        <SqlEditor value={tab.sql} driver={conn?.driver} schema={completion} onchange={onSqlChange} onrun={run} onrunall={runAll} bind:view />
+        <SqlEditor value={tab.sql} driver={conn?.driver} schema={completion} onchange={onSqlChange} onrun={run} onrunall={runAll} bind:view bind:this={editor} />
       </div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
