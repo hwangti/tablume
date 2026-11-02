@@ -936,12 +936,15 @@
     flex-direction: column;
     min-height: 0;
   }
+  /* the data / DDL / log bar follows the tab zoom too (--iz scales icons) */
   .rtabs {
+    --iz: var(--gz, 1);
+    font-size: calc(13px * var(--gz, 1));
     display: flex;
     align-items: center;
     gap: 2px;
     padding: 0 6px;
-    height: 30px;
+    height: calc(30px * var(--gz, 1));
     flex-shrink: 0;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
@@ -972,6 +975,7 @@
     background: var(--danger);
   }
   .filterbar {
+    --iz: var(--gz, 1);
     display: flex;
     align-items: stretch;
     flex-shrink: 0;
@@ -1030,20 +1034,25 @@
     align-items: center;
     gap: 1px;
   }
+  .rtabs .icon-btn {
+    width: calc(26px * var(--gz, 1));
+    height: calc(26px * var(--gz, 1));
+  }
+  .rtabs .icon-btn.sm,
   .icon-btn.sm {
-    width: 22px;
-    height: 22px;
+    width: calc(22px * var(--gz, 1));
+    height: calc(22px * var(--gz, 1));
   }
   .range {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    height: 22px;
+    height: calc(22px * var(--gz, 1));
     padding: 0 6px;
     border: none;
     border-radius: 4px;
     background: none;
-    font-size: 12px;
+    font-size: calc(12px * var(--gz, 1));
     color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -1124,12 +1133,12 @@
     overflow: hidden;
   }
   .seg button {
-    height: 22px;
+    height: calc(22px * var(--gz, 1));
     padding: 0 10px;
     border: none;
     background: none;
     color: var(--text-dim);
-    font-size: 12px;
+    font-size: calc(12px * var(--gz, 1));
     cursor: pointer;
   }
   .seg button + button {
@@ -1182,7 +1191,7 @@
   }
   .running.small {
     margin: 0 0 0 8px;
-    font-size: 12px;
+    font-size: calc(12px * var(--gz, 1));
   }
   .pending {
     color: var(--warn);
@@ -1195,7 +1204,7 @@
     align-items: center;
     gap: 4px;
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: calc(12px * var(--gz, 1));
     margin-right: 4px;
     white-space: nowrap;
     cursor: help;
@@ -1228,9 +1237,9 @@
     white-space: nowrap;
   }
   .mini {
-    height: 22px;
+    height: calc(22px * var(--gz, 1));
     padding: 0 6px;
-    font-size: 11px;
+    font-size: calc(11px * var(--gz, 1));
   }
   .rbody {
     position: relative;

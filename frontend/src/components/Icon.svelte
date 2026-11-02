@@ -60,6 +60,7 @@
   }
 </script>
 
-<svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={color} stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<!-- --iz (set by zoomed bars) scales the icon with the tab zoom -->
+<svg width={size} height={size} style:width="calc({size}px * var(--iz, 1))" style:height="calc({size}px * var(--iz, 1))" viewBox="0 0 16 16" fill="none" stroke={color} stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d={paths[name] ?? ''} />
 </svg>

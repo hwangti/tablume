@@ -433,8 +433,9 @@
     box-shadow: inset 0 -2px 0 transparent, inset 0 3px 0 var(--conn-color);
   }
   .tab.on {
-    background: var(--bg);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
     color: var(--text);
+    font-weight: 500;
     box-shadow: inset 0 -2px 0 var(--accent), inset 0 3px 0 var(--conn-color);
   }
   .tab.dragging {
