@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { fitMenu } from './lib/fit'
+  import { fitMenu, closeMenus, onCloseMenus } from './lib/fit'
+  import { modKey } from './lib/clipboard'
   import { onMount } from 'svelte'
   import { installTooltips } from './lib/tooltip'
   import Sidebar from './components/Sidebar.svelte'
@@ -185,8 +186,9 @@
   })
 
   // ---------------------------------------------------------------- tab menu
-  type TabMenuItem = { label: string; icon?: string; run: () => void; disabled?: boolean; sep?: boolean; danger?: boolean }
+  type TabMenuItem = { label: string; icon?: string; run: () => void; disabled?: boolean; sep?: boolean; danger?: boolean; kbd?: string }
   let tabMenu = $state<{ x: number; y: number; items: TabMenuItem[] } | null>(null)
+  $effect(() => onCloseMenus(() => (tabMenu = null)))
 
   function openTabMenu(e: MouseEvent, id: string) {
     e.preventDefault()
@@ -201,11 +203,12 @@
     const others = ids.filter((x) => x !== id && here(x))
     const sameConn = app.tabs.filter((x) => x.connId === t.connId && !x.detached).map((x) => x.id)
     const c = connById(t.connId)
+    closeMenus()
     tabMenu = {
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '닫기', icon: 'close', run: () => closeTab(id) },
+        { label: '닫기', icon: 'close', run: () => closeTab(id), kbd: modKey + 'W' },
         { label: '다른 탭 닫기', run: () => closeTabs(others), disabled: !others.length },
         { label: '왼쪽 탭 닫기', run: () => closeTabs(left), disabled: !left.length },
         { label: '오른쪽 탭 닫기', run: () => closeTabs(right), disabled: !right.length },
@@ -377,6 +380,7 @@
         {#if it.sep}<hr />{/if}
         <button class:danger={it.danger} disabled={it.disabled} onclick={it.run}>
           <span class="mi">{#if it.icon}<Icon name={it.icon} size={14} />{/if}</span>{it.label}
+          {#if it.kbd}<kbd>{it.kbd}</kbd>{/if}
         </button>
       {/each}
     </div>
@@ -507,6 +511,13 @@
     text-align: left;
     white-space: nowrap;
     cursor: pointer;
+  }
+  .tab-menu kbd {
+    margin-left: auto;
+    padding-left: 16px;
+    color: var(--text-dim);
+    font-family: var(--font-ui);
+    font-size: 11px;
   }
   .tab-menu button:hover:not(:disabled) {
     background: var(--bg-select);

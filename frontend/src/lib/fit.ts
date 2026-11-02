@@ -18,3 +18,19 @@ export function fitMenu(node: HTMLElement, _pos?: unknown) {
   fit()
   return { update: () => requestAnimationFrame(fit) }
 }
+
+// Only one pop-up menu is open at a time: whoever opens one calls
+// closeMenus() first, and every component with menus closes its own.
+// (Menu toggles stop the click from reaching the window handlers that
+// close menus, and right-clicks never reach them.)
+const CLOSE = 'tablume:closemenus'
+
+export function closeMenus() {
+  window.dispatchEvent(new Event(CLOSE))
+}
+
+/** Use in an $effect: runs close whenever another menu opens. */
+export function onCloseMenus(close: () => void): () => void {
+  window.addEventListener(CLOSE, close)
+  return () => window.removeEventListener(CLOSE, close)
+}

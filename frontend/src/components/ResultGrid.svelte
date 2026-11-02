@@ -12,7 +12,7 @@
 </script>
 
 <script lang="ts">
-  import { fitMenu } from '../lib/fit'
+  import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import { onMount, untrack } from 'svelte'
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
   import { copyText, modKey, isMac } from '../lib/clipboard'
@@ -714,6 +714,7 @@
   // ---- header menu (right click)
   let headMenu = $state<{ x: number; y: number; c: number } | null>(null)
   let colMenu = $state<{ x: number; y: number } | null>(null)
+  $effect(() => onCloseMenus(() => ((menu = null), (headMenu = null), (colMenu = null))))
 
   function startResize(e: MouseEvent, c: number) {
     e.preventDefault()
@@ -737,6 +738,7 @@
   function contextMenu(e: MouseEvent) {
     e.preventDefault()
     if (!sel) return
+    closeMenus()
     menu = { x: e.clientX, y: e.clientY }
   }
 </script>
@@ -771,7 +773,7 @@
         class:has-hidden={hiddenCount > 0}
         style:width="{numW}px"
         title={hiddenCount > 0 ? `컬럼 ${hiddenCount}개 숨김 · 눌러서 보이기/숨기기` : '컬럼 보이기/숨기기'}
-        onclick={(e) => (e.stopPropagation(), (colMenu = colMenu ? null : { x: e.clientX, y: e.clientY }))}
+        onclick={(e) => (e.stopPropagation(), (colMenu = colMenu ? null : (closeMenus(), { x: e.clientX, y: e.clientY })))}
       >
         <Icon name="columns" size={13} />{#if hiddenCount > 0}<span class="hc">{hiddenCount}</span>{/if}
       </button>
@@ -785,7 +787,7 @@
           title={`${col.name} ${col.type.toLowerCase()}${info?.comments?.[c] ? '\n' + info.comments[c] : ''}\n\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'} · 드래그: 순서 변경`}
           onmousedown={(e) => headDown(e, p)}
           onclick={() => headerClick(c)}
-          oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation(), (headMenu = { x: e.clientX, y: e.clientY, c }))}
+          oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation(), closeMenus(), (headMenu = { x: e.clientX, y: e.clientY, c }))}
           role="columnheader" tabindex="-1">
           {#if app.gridColNumbers}<span class="cno">{c + 1}</span>{/if}
           {#each keyIcons(c) as k (k.icon)}

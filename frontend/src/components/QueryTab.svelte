@@ -4,6 +4,7 @@
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
+  import { closeMenus, onCloseMenus } from '../lib/fit'
   import SqlPreview from './SqlPreview.svelte'
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
@@ -70,6 +71,7 @@
 
   // Positioned against the window: the result bar clips overflow.
   let exportMenu = $state<{ right: number; top: number } | null>(null)
+  $effect(() => onCloseMenus(() => ((exportMenu = null), (sizeMenu = null))))
 
   function toggleExport(e: MouseEvent) {
     e.stopPropagation()
@@ -78,6 +80,7 @@
       return
     }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    closeMenus()
     exportMenu = { right: window.innerWidth - r.right, top: r.bottom + 4 }
   }
 
@@ -303,6 +306,7 @@
       return
     }
     const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    closeMenus()
     sizeMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
   }
 

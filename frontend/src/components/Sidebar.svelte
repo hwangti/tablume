@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fitMenu } from '../lib/fit'
+  import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import Icon from './Icon.svelte'
   import {
     app,
@@ -90,9 +90,10 @@
   async function pinTable(connId: string, schema: string, t: TableNode) {
     pinTab(await openTable(connId, schema, t))
   }
-  type MenuItem = { label: string; run: () => void; danger?: boolean; icon?: string; sep?: boolean; disabled?: boolean }
+  type MenuItem = { label: string; run: () => void; danger?: boolean; icon?: string; sep?: boolean; disabled?: boolean; kbd?: string }
   let menu = $state<null | { x: number; y: number; items: MenuItem[] }>(null)
   let picker = $state<null | { connId: string; x: number; y: number }>(null)
+  $effect(() => onCloseMenus(() => ((menu = null), (picker = null), (viewMenu = false))))
 
   const blank = (): ConnConfig => ({
     id: '',
@@ -440,6 +441,7 @@
     else if (r.kind === 'routine') {
       e.preventDefault()
       const rt = r
+      closeMenus()
       menu = {
         x: e.clientX,
         y: e.clientY,
@@ -454,6 +456,7 @@
   function openPicker(connId: string, e: MouseEvent | null) {
     const el = treeEl.querySelector(`[data-key="${CSS.escape('c|' + connId)}"]`) as HTMLElement | null
     const r = el?.getBoundingClientRect()
+    closeMenus()
     picker = { connId, x: e ? e.clientX : (r?.left ?? 0) + 40, y: (r?.bottom ?? e?.clientY ?? 0) + 2 }
   }
 
@@ -469,6 +472,7 @@
     const on = st?.status === 'connected'
     const i = app.connections.findIndex((x) => x.id === c.id)
     const last = app.connections.length - 1
+    closeMenus()
     menu = {
       x: e.clientX,
       y: e.clientY,
@@ -502,14 +506,15 @@
 
   function tableMenu(e: MouseEvent, c: ConnConfig, s: SchemaNode, t: TableNode) {
     e.preventDefault()
+    closeMenus()
     menu = {
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '데이터 보기', icon: 'table', run: () => openTable(c.id, s.name, t) },
+        { label: '데이터 보기', icon: 'table', run: () => openTable(c.id, s.name, t), kbd: 'Enter' },
         { label: '새 탭에서 데이터 보기', icon: 'plus', run: () => pinTable(c.id, s.name, t) },
         { label: 'DDL 보기', icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
-        { label: '이름 바꾸기 (F2)', icon: 'edit', run: () => renameTable(c.id, s.name, t.t) },
+        { label: '이름 바꾸기', icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2' },
         {
           label: 'SELECT 문을 콘솔에 넣기',
           icon: 'console',
@@ -527,6 +532,7 @@
 
   function schemaMenu(e: MouseEvent, c: ConnConfig, s: SchemaNode) {
     e.preventDefault()
+    closeMenus()
     menu = {
       x: e.clientX,
       y: e.clientY,
@@ -571,7 +577,7 @@
         class="icon-btn"
         class:active={viewMenu}
         title="보기 옵션"
-        onclick={(e) => (e.stopPropagation(), (viewMenu = !viewMenu))}
+        onclick={(e) => (e.stopPropagation(), viewMenu || closeMenus(), (viewMenu = !viewMenu))}
       >
         <Icon name="sliders" />
       </button>
@@ -766,6 +772,7 @@
       {#if it.sep}<hr />{/if}
       <button class:danger={it.danger} onclick={it.run} disabled={it.disabled}>
         <span class="mi">{#if it.icon}<Icon name={it.icon} size={14} />{/if}</span>{it.label}
+        {#if it.kbd}<kbd>{it.kbd}</kbd>{/if}
       </button>
     {/each}
   </div>
@@ -1262,6 +1269,13 @@
   }
   .menu button:hover:not(:disabled) {
     background: var(--bg-select);
+  }
+  .menu kbd {
+    margin-left: auto;
+    padding-left: 16px;
+    color: var(--text-dim);
+    font-family: var(--font-ui);
+    font-size: 11px;
   }
   .menu button:disabled {
     opacity: 0.4;
