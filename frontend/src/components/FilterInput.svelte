@@ -149,16 +149,17 @@
   .fi {
     position: relative;
     width: 100%;
-    background: var(--bg-input);
-    border-radius: 4px;
+    font-family: var(--font-mono);
   }
   input {
     position: relative;
     width: 100%;
-    height: 24px;
-    padding: 2px 26px 2px 7px;
-    font-size: 12px;
-    line-height: 18px;
+    height: calc(24px * var(--gz, 1));
+    padding: 3px 27px 3px 8px;
+    border: none;
+    border-radius: 0;
+    font-size: calc(12px * var(--gz, 1));
+    line-height: calc(18px * var(--gz, 1));
     background: transparent;
     color: transparent;
     caret-color: var(--text);
@@ -171,8 +172,8 @@
     position: absolute;
     inset: 0;
     padding: 3px 27px 3px 8px;
-    font-size: 12px;
-    line-height: 18px;
+    font-size: calc(12px * var(--gz, 1));
+    line-height: calc(18px * var(--gz, 1));
     white-space: pre;
     overflow: hidden;
     color: var(--syn-ident);
@@ -198,7 +199,7 @@
   }
   .list {
     position: absolute;
-    top: 26px;
+    top: calc(26px * var(--gz, 1));
     left: 0;
     z-index: 70;
     min-width: 220px;
@@ -210,7 +211,7 @@
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
     font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--gz, 1));
   }
   .item {
     display: flex;
@@ -226,7 +227,7 @@
   }
   .k {
     width: 22px;
-    font-size: 10px;
+    font-size: calc(10px * var(--gz, 1));
     color: var(--text-faint);
   }
   .k.col {

@@ -763,16 +763,23 @@
           </div>
       </div>
       {#if isTable && tableView === 'data' && tab.tableRef}
+        <!-- DataGrip-style: part of the grid's surface, no boxed inputs -->
         <div class="filterbar">
-          <span class="kw">WHERE</span>
-          <div class="fwrap">
-            <FilterInput bind:value={whereDraft} columns={filterCols} keywords={WHERE_KW} onsubmit={applyFilter} onrevert={revertFilter} />
-            {#if tab.tableRef.where}<button class="x-btn fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
+          <div class="fpart">
+            <span class="ficon where"><Icon name="filter" size={14} /></span>
+            <span class="kw" class:on={!!tab.tableRef.where}>WHERE</span>
+            <div class="fwrap">
+              <FilterInput bind:value={whereDraft} columns={filterCols} keywords={WHERE_KW} onsubmit={applyFilter} onrevert={revertFilter} />
+              {#if tab.tableRef.where}<button class="x-btn fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
+            </div>
           </div>
-          <span class="kw">ORDER BY</span>
-          <div class="fwrap order">
-            <FilterInput bind:value={orderDraft} columns={filterCols} keywords={ORDER_KW} onsubmit={applyFilter} onrevert={revertFilter} />
-            {#if tab.tableRef.orderBy}<button class="x-btn fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
+          <div class="fpart order">
+            <span class="ficon order"><Icon name="sortLines" size={14} /></span>
+            <span class="kw" class:on={!!tab.tableRef.orderBy}>ORDER BY</span>
+            <div class="fwrap">
+              <FilterInput bind:value={orderDraft} columns={filterCols} keywords={ORDER_KW} onsubmit={applyFilter} onrevert={revertFilter} />
+              {#if tab.tableRef.orderBy}<button class="x-btn fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
+            </div>
           </div>
         </div>
       {/if}
@@ -966,27 +973,47 @@
   }
   .filterbar {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    align-items: stretch;
     flex-shrink: 0;
     border-bottom: 1px solid var(--border);
-    background: var(--bg-panel);
+    background: var(--bg);
+  }
+  .fpart {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 3;
+    min-width: 0;
+    padding: 2px 4px 2px 10px;
+  }
+  .fpart.order {
+    flex: 1.4;
+    border-left: 1px solid var(--border);
+  }
+  .ficon {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  .ficon.where {
+    color: var(--accent);
+  }
+  .ficon.order {
+    color: var(--ok);
   }
   .kw {
-    color: var(--syn-keyword);
+    color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: calc(11.5px * var(--gz, 1));
     font-weight: 600;
     white-space: nowrap;
   }
+  .kw.on {
+    color: var(--syn-keyword);
+  }
   .fwrap {
     position: relative;
-    flex: 3;
+    flex: 1;
     min-width: 0;
-  }
-  .fwrap.order {
-    flex: 1.4;
   }
   .fclear {
     position: absolute;
