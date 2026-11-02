@@ -12,6 +12,8 @@
   import {
     app,
     syncTreeRows,
+    zoomBy,
+    setZoomLevel,
     connById,
     runSQL,
     fetchMore,
@@ -315,8 +317,23 @@
   }
 
   function applyZoom(pct: number) {
-    grid?.setZoom(pct / 100)
+    setZoomLevel(pct / 100)
     zoomDraft = String(Math.round(app.gridZoom * 100))
+  }
+
+  // Ctrl/Cmd + wheel or +/-/0 zoom the whole tab: grid, editor, DDL, log.
+  function zoomWheel(e: WheelEvent) {
+    if (!(e.ctrlKey || e.metaKey)) return
+    e.preventDefault()
+    zoomBy(e.deltaY < 0 ? 1 : -1)
+  }
+
+  function zoomKey(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    const k = e.key
+    if (k !== '0' && k !== '-' && k !== '=' && k !== '+') return
+    e.preventDefault()
+    zoomBy(k === '0' ? 0 : k === '-' ? -1 : 1)
   }
 
   function setPageSize(n: number) {
@@ -514,7 +531,8 @@
   </div>
 {/snippet}
 
-<div class="tab">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="tab" style:--gz={app.gridZoom} onwheel={zoomWheel} onkeydown={zoomKey}>
   {#if !isTable}
     <div class="toolbar">
       <button class="icon-btn run" title="실행 ({modKey}Enter) — 커서 위치 문장 또는 선택 영역" onclick={run} disabled={tab.running}>
@@ -660,45 +678,6 @@
               <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
             {/if}
           </div>
-          <div class="grp">
-            <button
-              class="btn mini zoom-btn"
-              class:dim={app.gridZoom === 1}
-              class:open={!!zoomMenu}
-              title="표 확대/축소 · {modKey}휠, {modKey}+ / - / 0"
-              onclick={toggleZoomMenu}>{Math.round(app.gridZoom * 100)}%</button
-            >
-            {#if zoomMenu}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="zoom-menu" style:right="{zoomMenu.right}px" style:top="{zoomMenu.top}px" onclick={(e) => e.stopPropagation()}>
-                <div class="zrow">
-                  <button class="icon-btn sm" title="축소" onclick={() => applyZoom(Math.round(app.gridZoom * 100) - 5)}><Icon name="minus" size={13} /></button>
-                  <input
-                    type="range"
-                    min="50"
-                    max="300"
-                    step="5"
-                    value={Math.round(app.gridZoom * 100)}
-                    oninput={(e) => applyZoom(+(e.currentTarget as HTMLInputElement).value)}
-                  />
-                  <button class="icon-btn sm" title="확대" onclick={() => applyZoom(Math.round(app.gridZoom * 100) + 5)}><Icon name="plus" size={13} /></button>
-                </div>
-                <div class="zrow">
-                  <input
-                    class="zinput"
-                    bind:value={zoomDraft}
-                    inputmode="numeric"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') applyZoom(parseFloat(zoomDraft) || 100)
-                      if (e.key === 'Escape') zoomMenu = null
-                    }}
-                    onblur={() => applyZoom(parseFloat(zoomDraft) || 100)}
-                  /><span class="pct">%</span>
-                  <button class="btn mini" onclick={() => applyZoom(100)} disabled={app.gridZoom === 1}>100%</button>
-                </div>
-              </div>
-            {/if}
-          </div>
         {/if}
         {#if isTable && tableView !== 'data'}
           <div class="grp">
@@ -743,6 +722,45 @@
             <span class="meta">{current.elapsedMs}ms</span>
           </div>
         {/if}
+          <div class="grp">
+            <button
+              class="btn mini zoom-btn"
+              class:dim={app.gridZoom === 1}
+              class:open={!!zoomMenu}
+              title="확대/축소 · {modKey}휠, {modKey}+ / - / 0"
+              onclick={toggleZoomMenu}>{Math.round(app.gridZoom * 100)}%</button
+            >
+            {#if zoomMenu}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="zoom-menu" style:right="{zoomMenu.right}px" style:top="{zoomMenu.top}px" onclick={(e) => e.stopPropagation()}>
+                <div class="zrow">
+                  <button class="icon-btn sm" title="축소" onclick={() => applyZoom(Math.round(app.gridZoom * 100) - 5)}><Icon name="minus" size={13} /></button>
+                  <input
+                    type="range"
+                    min="50"
+                    max="300"
+                    step="5"
+                    value={Math.round(app.gridZoom * 100)}
+                    oninput={(e) => applyZoom(+(e.currentTarget as HTMLInputElement).value)}
+                  />
+                  <button class="icon-btn sm" title="확대" onclick={() => applyZoom(Math.round(app.gridZoom * 100) + 5)}><Icon name="plus" size={13} /></button>
+                </div>
+                <div class="zrow">
+                  <input
+                    class="zinput"
+                    bind:value={zoomDraft}
+                    inputmode="numeric"
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') applyZoom(parseFloat(zoomDraft) || 100)
+                      if (e.key === 'Escape') zoomMenu = null
+                    }}
+                    onblur={() => applyZoom(parseFloat(zoomDraft) || 100)}
+                  /><span class="pct">%</span>
+                  <button class="btn mini" onclick={() => applyZoom(100)} disabled={app.gridZoom === 1}>100%</button>
+                </div>
+              </div>
+            {/if}
+          </div>
       </div>
       {#if isTable && tableView === 'data' && tab.tableRef}
         <div class="filterbar">
@@ -1224,6 +1242,9 @@
     user-select: text;
     -webkit-user-select: text;
   }
+  .messages .placeholder {
+    font-size: calc(13px * var(--gz, 1));
+  }
   .msg {
     display: flex;
     gap: 12px;
@@ -1233,13 +1254,13 @@
   .msg .time {
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: calc(11.5px * var(--gz, 1));
     padding-top: 1px;
   }
   .msg pre {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: calc(12px * var(--gz, 1));
     white-space: pre-wrap;
     word-break: break-word;
   }

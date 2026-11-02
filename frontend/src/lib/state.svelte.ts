@@ -285,6 +285,29 @@ export async function ensureStats() {
   }
 }
 
+// ---------------------------------------------------------------- zoom
+// One zoom for the tab contents: result grid, SQL editor, DDL, log.
+export const ZOOM_MIN = 0.5
+export const ZOOM_MAX = 3
+const ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.5, 3]
+
+export function setZoomLevel(v: number): boolean {
+  const next = Math.round(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v)) * 100) / 100
+  if (!isFinite(next) || next === app.gridZoom) return false
+  app.gridZoom = next
+  saveWorkspaceSoon()
+  return true
+}
+
+// step: +1 / -1 to the next preset, 0 back to 100%
+export function zoomBy(step: number): boolean {
+  if (step === 0) return setZoomLevel(1)
+  const z = app.gridZoom
+  const next =
+    step > 0 ? (ZOOM_STEPS.find((s) => s > z + 0.001) ?? ZOOM_MAX) : ([...ZOOM_STEPS].reverse().find((s) => s < z - 0.001) ?? ZOOM_MIN)
+  return setZoomLevel(next)
+}
+
 // ---------------------------------------------------------------- schema filter
 
 // Schemas hidden unless picked by name (the server's own catalogs).

@@ -260,7 +260,7 @@
   .wrap {
     height: 100%;
     overflow: auto;
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--gz, 1));
   }
   .bar {
     display: flex;
@@ -277,7 +277,7 @@
   }
   .hint {
     color: var(--text-faint);
-    font-size: 11.5px;
+    font-size: calc(11.5px * var(--gz, 1));
   }
   .pending {
     color: var(--warn);
@@ -289,7 +289,7 @@
     align-items: center;
     gap: 4px;
     color: var(--text-faint);
-    font-size: 11.5px;
+    font-size: calc(11.5px * var(--gz, 1));
   }
   table {
     border-collapse: collapse;
@@ -333,11 +333,11 @@
   .cell-input {
     width: 100%;
     min-width: 120px;
-    height: 24px;
+    height: calc(24px * var(--gz, 1));
     padding: 0 8px;
     border: 2px solid var(--accent);
     border-radius: 0;
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--gz, 1));
   }
   .nullbox {
     display: inline-flex;
@@ -349,7 +349,7 @@
     width: 1%;
     text-align: right;
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: calc(11px * var(--gz, 1));
   }
   .k {
     width: 1%;

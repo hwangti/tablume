@@ -371,34 +371,16 @@
   let cw = $derived(widths.map((w) => Math.round(w * z)))
   let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
 
-  export const ZOOM_MIN = 0.5
-  export const ZOOM_MAX = 3
-
-  // Ctrl+wheel / Ctrl+-/+ step through these; setZoom takes any value.
-  export function zoom(step: number) {
-    const steps = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.5, 3]
-    let next: number
-    if (step === 0) next = 1
-    else if (step > 0) next = steps.find((s) => s > app.gridZoom + 0.001) ?? ZOOM_MAX
-    else next = [...steps].reverse().find((s) => s < app.gridZoom - 0.001) ?? ZOOM_MIN
-    setZoom(next)
-  }
-
-  export function setZoom(v: number) {
-    const next = Math.round(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v)) * 100) / 100
-    if (!isFinite(next) || next === app.gridZoom) return
-    // keep the first visible row in place
-    const row = scroller ? scroller.scrollTop / ROW_H : 0
-    app.gridZoom = next
-    saveWorkspaceSoon()
-    requestAnimationFrame(() => scroller && (scroller.scrollTop = row * Math.round(24 * next)))
-  }
-
-  function wheel(e: WheelEvent) {
-    if (!(e.ctrlKey || e.metaKey)) return
-    e.preventDefault()
-    zoom(e.deltaY < 0 ? 1 : -1)
-  }
+  // Zoom (app.gridZoom) is set for the whole tab by QueryTab (Ctrl+wheel,
+  // Ctrl+-/+/0, the % button); keep the first visible row in place.
+  let lastZoom = app.gridZoom
+  $effect(() => {
+    const zz = z
+    if (zz === lastZoom || !scroller) return
+    const row = scroller.scrollTop / Math.round(24 * lastZoom)
+    lastZoom = zz
+    requestAnimationFrame(() => scroller && (scroller.scrollTop = row * Math.round(24 * zz)))
+  })
 
   function onScroll() {
     scrollTop = scroller.scrollTop
@@ -502,11 +484,6 @@
     if (mod && e.key.toLowerCase() === 'c') {
       e.preventDefault()
       copySelection(false)
-      return
-    }
-    if (mod && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
-      e.preventDefault()
-      zoom(e.key === '0' ? 0 : e.key === '-' ? -1 : 1)
       return
     }
     if (mod && e.key.toLowerCase() === 'a') {
@@ -702,7 +679,6 @@
   bind:clientHeight={viewH}
   bind:clientWidth={viewW}
   onscroll={onScroll}
-  onwheel={wheel}
   style:--gz={z}
   style:--row-h="{ROW_H}px"
   style:--head-h="{HEAD_H}px"
