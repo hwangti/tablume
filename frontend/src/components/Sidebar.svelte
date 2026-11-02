@@ -22,6 +22,8 @@
     toast,
     setZoomLevel,
     ZOOM_PRESETS,
+    ZOOM_MIN,
+    ZOOM_MAX,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -535,6 +537,17 @@
   function tableLabel(t: TableNode, driver: string) {
     return driver === 'mssql' && t.t.schema && t.t.schema !== 'dbo' ? `${t.t.schema}.${t.t.name}` : t.t.name
   }
+
+  // Zoom from the view options: typed percent (applied on Enter / blur) or ±5%.
+  function zoomStep(d: number) {
+    setZoomLevel((Math.round(app.zoom * 100 / 5) * 5 + d) / 100)
+  }
+  function zoomInput(e: Event) {
+    const el = e.currentTarget as HTMLInputElement
+    const v = parseFloat(el.value)
+    if (isFinite(v)) setZoomLevel(Math.round(v) / 100)
+    el.value = String(Math.round(app.zoom * 100)) // shows the clamped value
+  }
 </script>
 
 <svelte:window
@@ -576,8 +589,27 @@
           </div>
           <!-- Preset buttons, not a slider: the whole window (the slider too)
                rescales on every change, so dragging can't be followed. -->
-          <div class="vm-title sep">
-            화면 배율 <span class="vm-val">{Math.round(app.zoom * 100)}%</span>
+          <div class="vm-title sep zoom-head">
+            화면 배율
+            <button class="icon-btn sm" title="5% 축소" disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
+            <input
+              class="zoom-in"
+              type="number"
+              min={ZOOM_MIN * 100}
+              max={ZOOM_MAX * 100}
+              step="5"
+              value={Math.round(app.zoom * 100)}
+              title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, Enter로 적용"
+              onchange={zoomInput}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                if (e.key === 'Escape') {
+                  ;(e.currentTarget as HTMLInputElement).value = String(Math.round(app.zoom * 100))
+                  ;(e.currentTarget as HTMLInputElement).blur()
+                }
+              }}
+            /><span>%</span>
+            <button class="icon-btn sm" title="5% 확대" disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
           </div>
           <div class="theme-seg zoom-seg" role="group" title={isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}>
             {#each ZOOM_PRESETS as z (z)}
@@ -827,10 +859,26 @@
   .info {
     cursor: default;
   }
-  .vm-val {
-    margin-left: 4px;
-    color: var(--text);
+  .zoom-head {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .zoom-head > button:first-of-type {
+    margin-left: auto;
+  }
+  .zoom-in {
+    width: 44px;
+    padding: 1px 4px;
+    text-align: right;
     font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .zoom-in::-webkit-inner-spin-button,
+  .zoom-in::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
   .zoom-seg button {
     font-variant-numeric: tabular-nums;
