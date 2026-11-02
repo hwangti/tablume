@@ -975,7 +975,7 @@ export async function loadWorkspace(tabs = true) {
 
 // ---------------------------------------------------------------- tab windows
 // A tab can move into a window of its own. The main window keeps the tab
-// (marked detached, without its pane) and saves it; the tab window reports
+// (marked detached: out of the tab strip, no pane) and saves it; the tab window reports
 // changes back. Results aren't carried over: table tabs reload, consoles
 // start empty.
 
@@ -1018,11 +1018,6 @@ export async function detachTab(id: string) {
   t.preview = false // never reused for another table while it's away
   await api.OpenTabWindow(id, t.title, JSON.stringify(savedTab(t)))
   saveWorkspaceSoon()
-}
-
-// Main window: ask a tab window to put its tab back (it sends its state).
-export function requestAttach(id: string) {
-  Events.Emit('tab-window:close', id).catch(() => {})
 }
 
 function attach(id: string, s?: SavedTab) {

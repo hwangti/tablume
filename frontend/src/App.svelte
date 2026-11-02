@@ -24,11 +24,9 @@
     initTabWindow,
     initMainWindowEvents,
     detachTab,
-    requestAttach,
     backToMain,
     closeTabWindow,
   } from './lib/state.svelte'
-  import { api } from './lib/api'
   import { Window } from '@wailsio/runtime'
   import { driverLabel } from './lib/types'
 
@@ -188,18 +186,6 @@
     const i = app.tabs.findIndex((t) => t.id === id)
     const t = app.tabs[i]
     if (!t) return
-    if (t.detached) {
-      tabMenu = {
-        x: e.clientX,
-        y: e.clientY,
-        items: [
-          { label: '창으로 이동', icon: 'detach', run: () => api.FocusTabWindow(id) },
-          { label: '메인 창으로 되돌리기', icon: 'attach', run: () => requestAttach(id) },
-          { label: '닫기', icon: 'close', run: () => closeTab(id), sep: true },
-        ],
-      }
-      return
-    }
     // Bulk closes leave tabs in their own windows alone.
     const ids = app.tabs.map((x) => x.id)
     const here = (x: string) => !app.tabs.find((y) => y.id === x)?.detached
@@ -237,17 +223,23 @@
     const move = (ev: MouseEvent) => {
       if (!dragging && Math.abs(ev.clientX - x0) < 5) return
       dragging = id
+      // Positions among the shown tabs; tabs in their own windows aren't
+      // in the strip and keep their place in app.tabs.
       const els = [...tabsEl.querySelectorAll<HTMLElement>('.tab')]
-      const from = app.tabs.findIndex((t) => t.id === id)
+      const shown = els.map((el) => el.dataset.id!)
+      const from = shown.indexOf(id)
       let to = els.findIndex((el) => {
         const r = el.getBoundingClientRect()
         return ev.clientX < r.left + r.width / 2
       })
       if (to < 0) to = els.length - 1
       else if (to > from) to -= 1
-      if (to !== from && to >= 0) {
-        const [t] = app.tabs.splice(from, 1)
-        app.tabs.splice(to, 0, t)
+      if (from >= 0 && to !== from && to >= 0) {
+        shown.splice(from, 1)
+        shown.splice(to, 0, id)
+        const byId = new Map(app.tabs.map((t) => [t.id, t]))
+        let k = 0
+        app.tabs = app.tabs.map((t) => (t.detached ? t : byId.get(shown[k++])!))
       }
     }
     const up = () => {
@@ -307,7 +299,7 @@
   <main>
     <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
     <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel} onscroll={tabsEdges}>
-      {#each app.tabs as t (t.id)}
+      {#each app.tabs.filter((x) => !x.detached) as t (t.id)}
         {@const c = connById(t.connId)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div
@@ -315,15 +307,14 @@
           data-id={t.id}
           class:on={t.id === app.activeTab}
           class:dragging={dragging === t.id}
-          class:detached={t.detached}
           style:--conn-color={c?.color || 'transparent'}
-          onclick={() => (t.detached ? api.FocusTabWindow(t.id) : (app.activeTab = t.id))}
+          onclick={() => (app.activeTab = t.id)}
           onmousedown={(e) => tabMouseDown(e, t.id)}
-          ondblclick={() => !t.detached && (t.preview ? pinTab(t) : (renaming = t.id))}
+          ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
           oncontextmenu={(e) => openTabMenu(e, t.id)}
-          title={t.detached ? '새 창에서 열려 있습니다 — 클릭하면 그 창으로 이동합니다' : `${c?.name ?? ''} · ${c ? driverLabel(c.driver) : ''}`}
+          title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
         >
-          {#if t.detached}<Icon name="detach" size={13} />{:else if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
+          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
           {#if renaming === t.id}
             <!-- svelte-ignore a11y_autofocus -->
             <input
@@ -586,11 +577,6 @@
     color: var(--text);
     font-weight: 500;
     box-shadow: inset 0 -2px 0 var(--accent), inset 0 3px 0 var(--conn-color);
-  }
-  .tab.detached {
-    color: var(--text-dim);
-    font-style: italic;
-    background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--border) 45%, transparent) 6px 7px);
   }
   .tab.dragging {
     opacity: 0.6;
