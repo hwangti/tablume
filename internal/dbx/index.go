@@ -170,3 +170,37 @@ func transactionalDDL(d Dialect) bool {
 	t, ok := d.(interface{ transactionalDDL() bool })
 	return ok && t.transactionalDDL()
 }
+
+// ---- renaming tables
+
+type renameDialect interface {
+	renameTable(schema string, t Table, name string) string
+}
+
+// RenameTable renames a table or view and returns the statement it ran.
+func (m *Manager) RenameTable(id, schema string, t Table, name string) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	rd, ok := p.d.(renameDialect)
+	if !ok {
+		return "", errors.New("이 DB에서는 이름을 바꿀 수 없습니다")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("새 이름이 비어 있습니다")
+	}
+	if name == t.Name {
+		return "", errors.New("이름이 같습니다")
+	}
+	st := rd.renameTable(schema, t, name)
+	r, err := runDDL(p, schema, []string{st})
+	if err != nil {
+		return st, err
+	}
+	if r.Error != "" {
+		return st, errors.New(r.Error)
+	}
+	return st, nil
+}

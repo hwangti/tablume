@@ -252,7 +252,7 @@
 {/if}
 
 {#if apply}
-  <Modal title="컬럼 변경 적용 — {apply.sql.length}개 문장" onclose={() => (apply = null)} width={760} dismissible={false}>
+  <Modal title="컬럼 변경 적용 — {apply.sql.length}개 문장" onclose={() => (apply = null)} width={760} dismissible={false} onsubmit={() => apply && !apply.busy && !apply.error && doApply()}>
     <p class="note">
       {#if transactional}
         아래 문장을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.

@@ -9,6 +9,7 @@
     dismissible = true,
     children,
     footer,
+    onsubmit,
   }: {
     title: string
     onclose: () => void
@@ -17,6 +18,8 @@
     dismissible?: boolean
     children: Snippet
     footer?: Snippet
+    // Cmd/Ctrl/Alt+Enter: the dialog's main button
+    onsubmit?: () => void
   } = $props()
 
   // Dragging by the header moves the dialog; it stays reachable on screen.
@@ -48,6 +51,11 @@
     if (e.key === 'Escape') {
       e.stopPropagation()
       onclose()
+    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.altKey) && onsubmit && !e.defaultPrevented) {
+      // (an editor inside that handled the key itself has prevented it)
+      e.preventDefault()
+      e.stopPropagation()
+      onsubmit()
     }
   }
 </script>

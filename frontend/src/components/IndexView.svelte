@@ -311,7 +311,7 @@
 {/if}
 
 {#if form}
-  <Modal title={form.replaces ? `인덱스 고치기 — ${form.replaces}` : '인덱스 추가'} onclose={() => (form = null)} width={620} dismissible={false}>
+  <Modal title={form.replaces ? `인덱스 고치기 — ${form.replaces}` : '인덱스 추가'} onclose={() => (form = null)} width={620} dismissible={false} onsubmit={saveForm}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="form" onkeydown={formKey}>
       <div class="row">
@@ -374,7 +374,7 @@
 {/if}
 
 {#if apply}
-  <Modal title="인덱스 변경 적용 — {apply.sql.length}개 문장" onclose={() => (apply = null)} width={760} dismissible={false}>
+  <Modal title="인덱스 변경 적용 — {apply.sql.length}개 문장" onclose={() => (apply = null)} width={760} dismissible={false} onsubmit={() => apply && !apply.busy && !apply.error && doApply()}>
     <p class="note">
       {#if transactional}
         아래 문장을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.

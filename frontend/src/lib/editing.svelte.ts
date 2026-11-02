@@ -63,6 +63,18 @@ export function setCell(r: StmtResult, row: number, col: number, value: Cell) {
   }
 }
 
+/** Undoes the edits of single cells (a new row's cell goes back to unset). */
+export function revertCells(r: StmtResult, cells: [number, number][]) {
+  const st = r.edit
+  if (!st) return
+  for (const [row, col] of cells) {
+    const e = st.edits[row]
+    if (!e) continue
+    delete e[col]
+    if (!st.added[row] && Object.keys(e).length === 0) delete st.edits[row]
+  }
+}
+
 export function addRow(r: StmtResult): number {
   const st = editState(r)
   r.rows!.push((r.columns ?? []).map(() => null))

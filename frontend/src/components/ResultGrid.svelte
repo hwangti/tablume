@@ -17,7 +17,7 @@
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
   import { copyText, modKey, isMac } from '../lib/clipboard'
   import { app, toast, saveWorkspaceSoon } from '../lib/state.svelte'
-  import { cellValue, isEdited, setCell, addRow, toggleDelete, revert } from '../lib/editing.svelte'
+  import { cellValue, isEdited, setCell, addRow, toggleDelete, revert, revertCells } from '../lib/editing.svelte'
   import CellViewer from './CellViewer.svelte'
   import Icon from './Icon.svelte'
 
@@ -37,6 +37,7 @@
     rowBase = 0,
     layoutKey = '',
     onfollow,
+    onapply,
   }: {
     result: StmtResult
     columns: ResultColumn[]
@@ -60,11 +61,14 @@
     layoutKey?: string // keeps column order / hidden columns across reloads (table tabs)
     // Cmd/Alt+click on a foreign key cell: open the referenced row.
     onfollow?: (col: number, value: string, numeric: boolean) => void
+    // Cmd/Ctrl/Alt+Enter: apply the pending changes
+    onapply?: () => void
   } = $props()
 
-  // orig: the text the editor started with; leaving it unchanged keeps the
-  // cell as it was (NULL stays NULL, a new row's column stays unset)
-  let editing = $state<{ ri: number; vi: number; c: number; value: string; orig: string } | null>(null)
+  // orig: the text the editor started with. Leaving without typing keeps
+  // the cell as it was (NULL stays NULL, a new row's column stays unset);
+  // once typed in (dirty), even an emptied editor means '' (empty string).
+  let editing = $state<{ ri: number; vi: number; c: number; value: string; orig: string; dirty: boolean } | null>(null)
   let info = $derived(result.edit?.info ?? null)
   let st = $derived(result.edit)
 
@@ -104,15 +108,15 @@
       if (!quiet) openViewer(vi, p) // long text: edit in the larger editor
       return false
     }
-    editing = { ri, vi, c, value: initial ?? v ?? '', orig: v ?? '' }
+    editing = { ri, vi, c, value: initial ?? v ?? '', orig: v ?? '', dirty: initial !== undefined }
     return true
   }
 
   function commitEdit(move?: [number, number], keepEditing = false) {
     if (!editing) return
-    const { ri, vi, c, value, orig } = editing
+    const { ri, vi, c, value, orig, dirty } = editing
     editing = null
-    if (value !== orig) setCell(result, ri, c, value)
+    if (dirty || value !== orig) setCell(result, ri, c, value)
     scroller.focus({ preventScroll: true })
     if (!move) return
     let r = Math.max(0, Math.min(order.length - 1, vi + move[0]))
@@ -149,7 +153,11 @@
 
   function editorKey(e: KeyboardEvent) {
     e.stopPropagation()
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.altKey)) {
+      e.preventDefault()
+      commitEdit()
+      onapply?.()
+    } else if (e.key === 'Enter') {
       e.preventDefault()
       commitEdit([1, 0])
     } else if (e.key === 'Tab') {
@@ -518,8 +526,31 @@
     else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth + 12
   }
 
+  // edited cells in the selection, as [row, col]
+  function editedInSelection(): [number, number][] {
+    if (!sel || !result.edit) return []
+    const out: [number, number][] = []
+    for (let v = sel.r1; v <= sel.r2; v++)
+      for (let p = sel.c1; p <= sel.c2; p++) if (isEdited(result, order[v], vc[p])) out.push([order[v], vc[p]])
+    return out
+  }
+
+  function revertSelected() {
+    revertCells(result, editedInSelection())
+  }
+
   function keydown(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey
+    if (e.key === 'Enter' && (mod || e.altKey)) {
+      e.preventDefault()
+      onapply?.()
+      return
+    }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'z' && editedInSelection().length) {
+      e.preventDefault()
+      revertSelected()
+      return
+    }
     if (mod && e.key.toLowerCase() === 'c') {
       e.preventDefault()
       copySelection(false)
@@ -614,10 +645,10 @@
   // "…" while editing inline: continue in the large editor with the draft.
   function editInViewer() {
     if (!editing) return
-    const { ri, c, value, orig } = editing
+    const { ri, c, value, orig, dirty } = editing
     editing = null
     // untouched NULL stays NULL in the large editor too
-    viewing = { col: columns[c].name, value: value === orig ? val(ri, c) : value, ri, c }
+    viewing = { col: columns[c].name, value: dirty || value !== orig ? value : val(ri, c), ri, c }
   }
 
   function openViewer(vi: number, p: number) {
@@ -819,6 +850,7 @@
                 class="cell-input"
                 class:with-dots={!kind[c]}
                 bind:value={editing.value}
+                oninput={() => editing && (editing.dirty = true)}
                 use:focusInput={editing.value.length !== 1}
                 onkeydown={editorKey}
                 onblur={() => commitEdit()}
@@ -875,6 +907,9 @@
       <button onclick={setNull}>{@render mi('nullValue')}NULL로 설정</button>
       <button onclick={newRow}>{@render mi('rowAdd')}행 추가</button>
       <button class="danger" onclick={deleteRows}>{@render mi('trash')}행 삭제 / 복원 <kbd>Delete</kbd></button>
+      {#if editedInSelection().length}
+        <button onclick={revertSelected}>{@render mi('undo')}선택 셀 되돌리기 <kbd>{modKey}Z</kbd></button>
+      {/if}
       <button onclick={() => revert(result, selectedRows())}>{@render mi('undo')}선택 행 변경 되돌리기</button>
     {/if}
   </div>

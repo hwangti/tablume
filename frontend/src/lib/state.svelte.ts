@@ -41,6 +41,7 @@ export interface Message {
   time: string
   kind: 'info' | 'error'
   text: string
+  sql?: string // the statement(s), shown with syntax colors above text
 }
 
 export interface Tab {
@@ -108,7 +109,8 @@ export const app = $state({
   activeTab: '',
   pageSize: 500, // rows per query, console and table tabs
   editing: null as ConnConfig | null,
-  prompt: null as null | { title: string; resolve: (v: string | null) => void },
+  // password prompt, or a text prompt when value is set
+  prompt: null as null | { title: string; value?: string; ok?: string; resolve: (v: string | null) => void },
   confirm: null as null | { text: string; resolve: (v: boolean) => void },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
@@ -166,6 +168,21 @@ export function askPassword(title: string): Promise<string | null> {
   return new Promise((resolve) => {
     app.prompt = {
       title,
+      resolve: (v) => {
+        app.prompt = null
+        resolve(v)
+      },
+    }
+  })
+}
+
+/** Asks for a line of text (null = cancelled). */
+export function askText(title: string, value: string, ok = '확인'): Promise<string | null> {
+  return new Promise((resolve) => {
+    app.prompt = {
+      title,
+      value,
+      ok,
       resolve: (v) => {
         app.prompt = null
         resolve(v)
@@ -528,15 +545,15 @@ export async function duplicateTab(id: string) {
   if (copy.tableRef) await reloadTable(copy)
 }
 
-function log(tab: Tab, kind: Message['kind'], text: string) {
-  tab.messages.push({ time: now(), kind, text })
+function log(tab: Tab, kind: Message['kind'], text: string, sql?: string) {
+  tab.messages.push({ time: now(), kind, text, sql })
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)
 }
 
 /** Adds statements run outside the editor (grid edits, structure changes) to the tab's log. */
 export function logStatements(tab: Tab, sql: string[], outcome: string, error = '') {
   const text = sql.map((x) => x.trim().replace(/;$/, '') + ';').join('\n')
-  log(tab, error ? 'error' : 'info', `${text}\n${error || outcome}`)
+  log(tab, error ? 'error' : 'info', error || outcome, text)
 }
 
 // ---- keeping the tree in step with DDL
@@ -622,15 +639,10 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
     if (ddl.length) treeChanged(tab.connId, [schemaBefore, tab.schema], ddl.join('\n'), ddl.some((x) => SCHEMA_DDL_RE.test(x)))
     for (const r of results) {
-      if (r.error) log(tab, 'error', `${short(r.sql)}\n${r.error}`)
+      if (r.error) log(tab, 'error', r.error, short(r.sql))
       else if (r.columns && r.columns.length)
-        log(tab, 'info', `${short(r.sql)}\n${r.rows!.length}${r.hasMore ? '+' : ''}행 조회 (${r.elapsedMs}ms)`)
-      else
-        log(
-          tab,
-          'info',
-          `${short(r.sql)}\n${r.rowsAffected >= 0 ? `${r.rowsAffected}행 영향` : '완료'} (${r.elapsedMs}ms)`,
-        )
+        log(tab, 'info', `${r.rows!.length}${r.hasMore ? '+' : ''}행 조회 (${r.elapsedMs}ms)`, short(r.sql))
+      else log(tab, 'info', `${r.rowsAffected >= 0 ? `${r.rowsAffected}행 영향` : '완료'} (${r.elapsedMs}ms)`, short(r.sql))
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
     const failed = results.some((r) => r.error)
@@ -964,6 +976,34 @@ export async function followForeignKey(tab: Tab, r: StmtResult, col: number, val
   }
   pinTab(tab)
   await openTableData(tab.connId, treeSchema, table, where)
+}
+
+/**
+ * Renames a table or view (asks for the name). Tabs showing it follow the
+ * new name; the tree is reloaded.
+ */
+export async function renameTable(connId: string, schema: string, t: Table) {
+  const kind = t.type.toUpperCase().includes('VIEW') ? '뷰' : '테이블'
+  const name = (await askText(`${kind} 이름 바꾸기 — ${t.name}`, t.name, '바꾸기'))?.trim()
+  if (!name || name === t.name) return
+  let st: string
+  try {
+    st = await api.RenameTable(connId, schema, $state.snapshot(t), name)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(`${t.name} → ${name}`)
+  for (const tab of app.tabs) {
+    const ref = tab.tableRef
+    if (tab.connId !== connId || !ref || ref.schema !== schema || !sameTable(ref.table, t)) continue
+    ref.table = { ...$state.snapshot(ref.table), name }
+    if (tab.title === t.name) tab.title = name
+    logStatements(tab, [st], `${kind} 이름 바꿈`)
+    if (!tabPending(tab) && tab.results.length) reloadTable(tab) // its SELECT has the old name
+  }
+  saveWorkspaceSoon()
+  await treeChanged(connId, [schema], st)
 }
 
 /** Default sort for newly opened tables: primary key, descending. */

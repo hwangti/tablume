@@ -153,3 +153,7 @@ func (sqliteDialect) dropIndex(schema string, t Table, ix Index) (string, error)
 	}
 	return "DROP INDEX " + name, nil
 }
+
+func (d sqliteDialect) renameTable(schema string, t Table, name string) string {
+	return fmt.Sprintf("ALTER TABLE %s RENAME TO %s", d.QualifiedName(schema, t), quoteWith(name, `"`, `"`))
+}

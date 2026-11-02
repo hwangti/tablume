@@ -165,6 +165,11 @@ func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 	return a.db.ApplyIndexes(req)
 }
 
+// RenameTable renames a table or view; returns the statement it ran.
+func (a *App) RenameTable(id, schema string, t dbx.Table, name string) (string, error) {
+	return a.db.RenameTable(id, schema, t, name)
+}
+
 // FetchPage reads the next rows of a paged result (see StmtResult.Paged).
 func (a *App) FetchPage(tabID, connID, sql string, offset, n int) (dbx.FetchResponse, error) {
 	return a.db.FetchPage(tabID, connID, sql, offset, n)

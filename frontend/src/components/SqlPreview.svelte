@@ -4,7 +4,12 @@
   import { highlightCode, tagHighlighter, tags as t } from '@lezer/highlight'
   import { sqlDialect } from '../lib/cm'
 
-  let { sql, driver = '' }: { sql: string[]; driver?: string } = $props()
+  let {
+    sql = [],
+    code,
+    driver = '',
+    bare = false,
+  }: { sql?: string[]; code?: string; driver?: string; bare?: boolean } = $props()
 
   const hl = tagHighlighter([
     { tag: [t.keyword, t.operatorKeyword, t.modifier, t.bool, t.null], class: 'k' },
@@ -19,11 +24,11 @@
   type Seg = { text: string; cls: string } | null // null = line break
 
   let segs = $derived.by(() => {
-    const code = sql.map((s) => s.trim().replace(/;$/, '') + ';').join('\n')
-    const tree = sqlDialect(driver).language.parser.parse(code)
+    const text = code ?? sql.map((s) => s.trim().replace(/;$/, '') + ';').join('\n')
+    const tree = sqlDialect(driver).language.parser.parse(text)
     const out: Seg[] = []
     highlightCode(
-      code,
+      text,
       tree,
       hl,
       (text, cls) => out.push({ text, cls }),
@@ -33,7 +38,7 @@
   })
 </script>
 
-<pre class="sql mono">{#each segs as s, i (i)}{#if s}<span class={s.cls}>{s.text}</span>{:else}{'\n'}{/if}{/each}</pre>
+<pre class="sql mono" class:bare>{#each segs as s, i (i)}{#if s}<span class={s.cls}>{s.text}</span>{:else}{'\n'}{/if}{/each}</pre>
 
 <style>
   .sql {
@@ -48,6 +53,16 @@
     white-space: pre-wrap;
     user-select: text;
     -webkit-user-select: text;
+  }
+  .sql.bare {
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    font-size: 12px;
+    word-break: break-word;
   }
   .k {
     color: var(--syn-keyword);

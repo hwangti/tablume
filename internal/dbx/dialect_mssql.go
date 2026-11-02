@@ -490,3 +490,14 @@ func (d mssqlDialect) dropIndex(db string, t Table, ix Index) (string, error) {
 	}
 	return fmt.Sprintf("DROP INDEX %s ON %s", msq(ix.Name), d.QualifiedName(db, t)), nil
 }
+
+// sp_rename takes the old name as one string (schema.table) and the new
+// name bare; prefixed with the database it runs there.
+func (mssqlDialect) renameTable(db string, t Table, name string) string {
+	s := t.Schema
+	if s == "" {
+		s = "dbo"
+	}
+	lit := func(x string) string { return "N'" + strings.ReplaceAll(x, "'", "''") + "'" }
+	return fmt.Sprintf("EXEC %s.sys.sp_rename %s, %s", msq(db), lit(msq(s)+"."+msq(t.Name)), lit(name))
+}

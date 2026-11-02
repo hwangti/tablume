@@ -16,6 +16,7 @@
     activeTab,
     pinTab,
     openDDL,
+    renameTable,
     saveWorkspaceSoon,
     schemaShown,
     ensureStats,
@@ -357,6 +358,9 @@
           if (nav[i].depth < r.depth) moveCursor(nav[i].key)
         }
         break
+      case 'F2':
+        if (r?.kind === 'table') renameTable(r.c.id, r.s.name, r.t.t)
+        break
       case 'Enter':
         if (!r) break
         if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
@@ -505,6 +509,7 @@
         { label: '데이터 보기', icon: 'table', run: () => openTable(c.id, s.name, t) },
         { label: '새 탭에서 데이터 보기', icon: 'plus', run: () => pinTable(c.id, s.name, t) },
         { label: 'DDL 보기', icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
+        { label: '이름 바꾸기 (F2)', icon: 'edit', run: () => renameTable(c.id, s.name, t.t) },
         {
           label: 'SELECT 문을 콘솔에 넣기',
           icon: 'console',

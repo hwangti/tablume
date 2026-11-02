@@ -205,3 +205,7 @@ func (d mysqlDialect) createIndex(schema string, t Table, ix NewIndex) string {
 func (d mysqlDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
 	return fmt.Sprintf("DROP INDEX %s ON %s", quoteWith(ix.Name, "`", "`"), d.QualifiedName(schema, t)), nil
 }
+
+func (d mysqlDialect) renameTable(schema string, t Table, name string) string {
+	return fmt.Sprintf("RENAME TABLE %s TO %s.%s", d.QualifiedName(schema, t), quoteWith(schema, "`", "`"), quoteWith(name, "`", "`"))
+}

@@ -179,6 +179,13 @@ export function QuoteIdent(id: string, name: string): $CancellablePromise<string
 }
 
 /**
+ * RenameTable renames a table or view; returns the statement it ran.
+ */
+export function RenameTable(id: string, schema: string, t: dbx$0.Table, name: string): $CancellablePromise<string> {
+    return $Call.ByID(1939863997, id, schema, t, name);
+}
+
+/**
  * ReorderConnections saves the order of the connection list.
  */
 export function ReorderConnections(ids: string[] | null): $CancellablePromise<void> {

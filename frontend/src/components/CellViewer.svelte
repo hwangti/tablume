@@ -43,7 +43,7 @@
   }
 </script>
 
-<Modal title={column + (editable ? ' — 편집' : '')} {onclose} width={720} dismissible={!editable}>
+<Modal title={column + (editable ? ' — 편집' : '')} {onclose} width={720} dismissible={!editable} onsubmit={editable ? save : undefined}>
   {#if isNull && !editable}
     <div class="null">NULL</div>
   {:else if editable}

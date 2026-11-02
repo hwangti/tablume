@@ -404,3 +404,12 @@ func (d oracleDialect) dropIndex(schema string, t Table, ix Index) (string, erro
 	}
 	return fmt.Sprintf("DROP INDEX %s.%s", quoteWith(owner, `"`, `"`), quoteWith(ix.Name, `"`, `"`)), nil
 }
+
+func (d oracleDialect) renameTable(schema string, t Table, name string) string {
+	// ALTER TABLE ... RENAME TO works for tables in any schema; views can
+	// only be renamed with RENAME, in the session's own schema.
+	if strings.Contains(strings.ToUpper(t.Type), "VIEW") {
+		return fmt.Sprintf("RENAME %s TO %s", quoteWith(t.Name, `"`, `"`), quoteWith(name, `"`, `"`))
+	}
+	return fmt.Sprintf("ALTER TABLE %s RENAME TO %s", d.QualifiedName(schema, t), quoteWith(name, `"`, `"`))
+}

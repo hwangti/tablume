@@ -48,6 +48,7 @@ interface Api {
   ListIndexes(id: string, schema: string, t: Table): Promise<Index[] | null>
   PreviewIndexes(req: IndexRequest): Promise<string[] | null>
   ApplyIndexes(req: IndexRequest): Promise<AlterResult>
+  RenameTable(id: string, schema: string, t: Table, name: string): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
   FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
   CountResult(tabId: string, connId: string, sql: string): Promise<number>

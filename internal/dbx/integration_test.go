@@ -221,6 +221,21 @@ func TestIntegration(t *testing.T) {
 			if again, _ := m.ListIndexes(tg.cfg.ID, tg.schema, *found); len(again) != len(ixs)-1 {
 				t.Fatalf("index not dropped: %+v", again)
 			}
+			// rename and back
+			newName := "items_renamed"
+			if name == "oracle" {
+				newName = "ITEMS_RENAMED"
+			}
+			st, err := m.RenameTable(tg.cfg.ID, tg.schema, *found, newName)
+			t.Log("rename:", st)
+			if err != nil {
+				t.Fatal("rename:", err)
+			}
+			renamed := *found
+			renamed.Name = newName
+			if _, err := m.RenameTable(tg.cfg.ID, tg.schema, renamed, found.Name); err != nil {
+				t.Fatal("rename back:", err)
+			}
 			if len(ixs) > 0 && ixs[0].Primary {
 				if _, err := m.PreviewIndexes(IndexRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: *found, Drop: ixs[:1]}); err == nil {
 					t.Fatal("dropping the primary key must be refused")

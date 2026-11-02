@@ -5,7 +5,6 @@
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
   import SqlPreview from './SqlPreview.svelte'
-  import Modal from './Modal.svelte'
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
   import IndexView from './IndexView.svelte'
@@ -34,7 +33,7 @@
     logStatements,
     treeChanged,
   } from '../lib/state.svelte'
-  import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges, buildChanges } from '../lib/editing.svelte'
+  import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
   import type { Cell, StmtResult } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
@@ -118,58 +117,30 @@
   let grid = $state<ResultGrid>()
   let pending = $derived(pendingCount(current))
   let editInfo = $derived(current?.edit?.info ?? null)
-  let applyView = $state<{ sql: string[]; busy: boolean; error: string } | null>(null)
 
   async function guardPending(): Promise<boolean> {
     const n = tabPending(tab)
     return n === 0 || confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 실행할까요?`)
   }
 
-  // New rows only: nothing existing changes, so they go in without the
-  // preview. Updates and deletes are shown first.
+  // Grid edits go straight in (one transaction); the statements and the
+  // outcome are in the tab's log.
+  let applying = $state(false)
   async function openApply() {
-    if (!current || !pending) return
-    let sql: string[]
+    if (!current || !pending || applying) return
+    applying = true
+    let sql: string[] = []
     try {
       sql = (await previewChanges(tab, current)) ?? []
-    } catch (e) {
-      toast(errText(e), 'error')
-      return
-    }
-    if (buildChanges(current).every((c) => c.kind === 'insert')) {
-      try {
-        await applyEdits(sql)
-      } catch (e) {
-        toast(errText(e), 'error')
-      }
-      return
-    }
-    applyView = { sql, busy: false, error: '' }
-  }
-
-  async function applyEdits(sql: string[]) {
-    if (!current) return
-    try {
       const { count, inserted } = await applyChanges(tab, current)
       logStatements(tab, sql, `${count}건 적용`)
       toast(`${count}건 적용됨`)
       if (inserted) await rerun() // show generated values (auto ids, defaults)
     } catch (e) {
-      logStatements(tab, sql, '', errText(e) + '\n(모두 취소됨)')
-      throw e
-    }
-  }
-
-  async function doApply() {
-    const view = applyView
-    if (!current || !view) return
-    view.busy = true
-    try {
-      await applyEdits(view.sql)
-      applyView = null
-    } catch (e) {
-      view.busy = false
-      view.error = errText(e)
+      if (sql.length) logStatements(tab, sql, '', errText(e) + '\n(모두 취소됨)')
+      toast(errText(e), 'error')
+    } finally {
+      applying = false
     }
   }
 
@@ -548,7 +519,10 @@
     {#each tab.messages.slice().reverse() as m, i (tab.messages.length - i)}
       <div class="msg" class:error={m.kind === 'error'}>
         <span class="time">{m.time}</span>
-        <pre>{m.text}</pre>
+        <div class="mbody">
+          {#if m.sql}<SqlPreview code={m.sql} driver={conn?.driver} bare />{/if}
+          <pre>{m.text}</pre>
+        </div>
       </div>
     {/each}
   </div>
@@ -664,7 +638,7 @@
           {#if pending > 0}
             <div class="grp">
               <span class="pending">변경 {pending}건</span>
-              <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}S)"><Icon name="check" size={13} /> 적용</button>
+              <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}Enter · {modKey}S)"><Icon name="check" size={13} /> 적용</button>
               <button class="btn mini" onclick={() => current && revert(current)} title="모든 변경 되돌리기"><Icon name="undo" size={13} /> 되돌리기</button>
             </div>
           {/if}
@@ -825,6 +799,7 @@
             rowBase={start}
             layoutKey={tab.tableRef ? `${tab.connId}|${tab.tableRef.schema}|${tab.tableRef.table.schema}.${tab.tableRef.table.name}` : ''}
             onfollow={(c, v, num) => current && followForeignKey(tab, current, c, v, num)}
+            onapply={openApply}
           />
         {:else if isTable && tableView === 'data' && !busy}
           <div class="reload-blank">
@@ -841,19 +816,6 @@
     </div>
   </div>
 </div>
-
-{#if applyView}
-  <Modal title="변경 적용 — {applyView.sql.length}건" onclose={() => (applyView = null)} width={760} dismissible={false}>
-    <p class="dim" style="margin:0 0 8px">아래 SQL을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.</p>
-    <SqlPreview sql={applyView.sql} driver={conn?.driver} />
-    {#if applyView.error}<div class="apply-error">{applyView.error}</div>{/if}
-    {#snippet footer()}
-      <span style="flex:1"></span>
-      <button class="btn" onclick={() => (applyView = null)}>취소</button>
-      <button class="btn primary" onclick={doApply} disabled={applyView?.busy}>{applyView?.busy ? '적용 중…' : '적용'}</button>
-    {/snippet}
-  </Modal>
-{/if}
 
 <style>
   .tab {
@@ -1188,13 +1150,6 @@
     white-space: nowrap;
     cursor: help;
   }
-  .apply-error {
-    margin-top: 10px;
-    color: var(--danger);
-    white-space: pre-wrap;
-    user-select: text;
-    -webkit-user-select: text;
-  }
   .meta {
     color: var(--text-dim);
     margin: 0 4px 0 8px;
@@ -1256,6 +1211,9 @@
     font-family: var(--font-mono);
     font-size: 11.5px;
     padding-top: 1px;
+  }
+  .mbody {
+    min-width: 0;
   }
   .msg pre {
     margin: 0;

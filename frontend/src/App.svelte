@@ -128,8 +128,22 @@
   }
 
   function submitPassword() {
-    app.prompt?.resolve(password)
+    app.prompt?.resolve(app.prompt.value !== undefined ? promptText : password)
     password = ''
+  }
+
+  // text prompts start from their value
+  let promptText = $state('')
+  $effect(() => {
+    if (app.prompt?.value !== undefined) promptText = app.prompt.value
+  })
+
+  // after the value has been filled in
+  function selectAll(node: HTMLInputElement) {
+    requestAnimationFrame(() => {
+      node.focus()
+      node.select()
+    })
   }
 
   // Tabs reorder by dragging; the array is reordered live while moving.
@@ -377,13 +391,17 @@
 {#if app.prompt}
   <Modal title={app.prompt.title} onclose={() => app.prompt?.resolve(null)} width={380} dismissible={false}>
     <form onsubmit={(e) => (e.preventDefault(), submitPassword())}>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input type="password" bind:value={password} autofocus style="width:100%" placeholder="비밀번호" />
+      {#if app.prompt.value !== undefined}
+        <input type="text" class="mono" bind:value={promptText} use:selectAll style="width:100%" spellcheck="false" />
+      {:else}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input type="password" bind:value={password} autofocus style="width:100%" placeholder="비밀번호" />
+      {/if}
     </form>
     {#snippet footer()}
       <span style="flex:1"></span>
       <button class="btn" onclick={() => app.prompt?.resolve(null)}>취소</button>
-      <button class="btn primary" onclick={submitPassword}>연결</button>
+      <button class="btn primary" onclick={submitPassword}>{app.prompt?.ok ?? '연결'}</button>
     {/snippet}
   </Modal>
 {/if}

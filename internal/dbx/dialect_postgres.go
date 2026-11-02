@@ -306,3 +306,14 @@ func (d pgDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
 	}
 	return fmt.Sprintf("DROP INDEX %s.%s", quoteWith(schema, `"`, `"`), quoteWith(ix.Name, `"`, `"`)), nil
 }
+
+func (d pgDialect) renameTable(schema string, t Table, name string) string {
+	kind := "TABLE"
+	switch strings.ToUpper(t.Type) {
+	case "VIEW":
+		kind = "VIEW"
+	case "MATERIALIZED VIEW":
+		kind = "MATERIALIZED VIEW"
+	}
+	return fmt.Sprintf("ALTER %s %s RENAME TO %s", kind, d.QualifiedName(schema, t), quoteWith(name, `"`, `"`))
+}
