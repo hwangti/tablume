@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fitMenu } from '../lib/fit'
   import Icon from './Icon.svelte'
   import {
     app,
@@ -755,7 +756,7 @@
 {/if}
 
 {#if menu}
-  <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px">
+  <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px" use:fitMenu={menu}>
     {#each menu.items as it (it.label)}
       {#if it.sep}<hr />{/if}
       <button class:danger={it.danger} onclick={it.run} disabled={it.disabled}>

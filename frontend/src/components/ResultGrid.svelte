@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { fitMenu } from '../lib/fit'
   import { onMount, untrack } from 'svelte'
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
   import { copyText, modKey } from '../lib/clipboard'
@@ -794,7 +795,7 @@
 {#snippet mi(name: string)}<span class="mi"><Icon {name} size={14} /></span>{/snippet}
 
 {#if menu}
-  <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px">
+  <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px" use:fitMenu={menu}>
     <button onclick={() => copySelection(false)}>{@render mi('copy')}복사 <kbd>{modKey}C</kbd></button>
     <button onclick={() => copySelection(true)}>{@render mi('copy')}헤더 포함 복사</button>
     <button onclick={copyInList}>{@render mi('list')}IN (…) 목록으로 복사</button>
@@ -813,7 +814,7 @@
 
 {#if colMenu}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="menu colmenu" style:left="{colMenu.x}px" style:top="{colMenu.y}px" onclick={(e) => e.stopPropagation()}>
+  <div class="menu colmenu" style:left="{colMenu.x}px" style:top="{colMenu.y}px" use:fitMenu={colMenu} onclick={(e) => e.stopPropagation()}>
     <label class="cm-head">
       <!-- all shown: hides all but the first; otherwise shows all -->
       <input
@@ -847,7 +848,7 @@
 
 {#if headMenu}
   {@const hc = headMenu.c}
-  <div class="menu" style:left="{headMenu.x}px" style:top="{headMenu.y}px">
+  <div class="menu" style:left="{headMenu.x}px" style:top="{headMenu.y}px" use:fitMenu={headMenu}>
     <button onclick={() => setHidden([...hiddenNames, columns[hc].name])} disabled={vc.length <= 1}>{@render mi('eyeOff')}이 컬럼 숨기기</button>
     {#if hiddenCount > 0}<button onclick={() => setHidden([])}>{@render mi('view')}숨긴 컬럼 모두 보이기 ({hiddenCount})</button>{/if}
     {#if orderNames.length}<button onclick={() => ((orderNames = []), storeLayout())}>{@render mi('undo')}컬럼 순서 원래대로</button>{/if}

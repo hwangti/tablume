@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fitMenu } from './lib/fit'
   import { onMount } from 'svelte'
   import { installTooltips } from './lib/tooltip'
   import Sidebar from './components/Sidebar.svelte'
@@ -172,14 +173,6 @@
   // ---------------------------------------------------------------- tab menu
   type TabMenuItem = { label: string; icon?: string; run: () => void; disabled?: boolean; sep?: boolean; danger?: boolean }
   let tabMenu = $state<{ x: number; y: number; items: TabMenuItem[] } | null>(null)
-  let tabMenuEl = $state<HTMLDivElement>()
-  // keep the menu inside the window
-  $effect(() => {
-    if (!tabMenu || !tabMenuEl) return
-    const r = tabMenuEl.getBoundingClientRect()
-    if (r.right > innerWidth - 4) tabMenuEl.style.left = Math.max(4, innerWidth - r.width - 4) + 'px'
-    if (r.bottom > innerHeight - 4) tabMenuEl.style.top = Math.max(4, innerHeight - r.height - 4) + 'px'
-  })
 
   function openTabMenu(e: MouseEvent, id: string) {
     e.preventDefault()
@@ -365,7 +358,7 @@
     </div>
   </main>
   {#if tabMenu}
-    <div class="tab-menu" bind:this={tabMenuEl} style:left="{tabMenu.x}px" style:top="{tabMenu.y}px">
+    <div class="tab-menu" style:left="{tabMenu.x}px" style:top="{tabMenu.y}px" use:fitMenu={tabMenu}>
       {#each tabMenu.items as it (it.label)}
         {#if it.sep}<hr />{/if}
         <button class:danger={it.danger} disabled={it.disabled} onclick={it.run}>
