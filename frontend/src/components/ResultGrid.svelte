@@ -829,10 +829,16 @@
 {#if colMenu}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="menu colmenu" style:left="{colMenu.x}px" style:top="{colMenu.y}px" onclick={(e) => e.stopPropagation()}>
-    <div class="cm-head">
+    <label class="cm-head">
+      <!-- all shown: hides all but the first; otherwise shows all -->
+      <input
+        type="checkbox"
+        checked={hiddenCount === 0}
+        indeterminate={hiddenCount > 0 && vc.length > 0}
+        onchange={() => setHidden(hiddenCount === 0 ? columns.slice(1).map((col) => col.name) : [])}
+      />
       <span>컬럼 {vc.length}/{columns.length}</span>
-      <button class="link" onclick={() => setHidden([])}>모두 보이기</button>
-    </div>
+    </label>
     <div class="cm-list">
       {#each columns as col, i (i)}
         <label>
@@ -1060,11 +1066,14 @@
   }
   .cm-head {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 2px 6px 6px;
+    gap: 6px;
+    margin-bottom: 4px;
+    padding: 3px 6px 7px;
+    border-bottom: 1px solid var(--border);
     color: var(--text-dim);
     font-size: 12px;
+    cursor: pointer;
   }
   .cm-list {
     max-height: 340px;

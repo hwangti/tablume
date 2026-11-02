@@ -122,7 +122,7 @@
         <span class="mono">{p}</span>
         <span class="hint">{names.filter((n) => globMatch(p, n)).length}개</span>
         <button class="x-btn" title="패턴 지우기" onclick={() => save({ patterns: f.patterns.filter((x) => x !== p) })}>
-          <Icon name="close" size={12} />
+          <Icon name="close" size={14} />
         </button>
       </div>
     {/each}

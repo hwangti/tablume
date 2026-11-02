@@ -227,7 +227,7 @@
           {:else}
             <span class="name" class:preview={t.preview} title={t.preview ? '미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.' : ''}>{t.title}</span>
           {/if}
-          <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label="닫기"><Icon name="close" size={12} /></button>
+          <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label="닫기"><Icon name="close" size={14} /></button>
         </div>
       {/each}
       {#if app.connections.length}
@@ -454,7 +454,12 @@
   }
   .x {
     display: inline-flex;
-    padding: 2px;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
     border: none;
     border-radius: 3px;
     background: none;
