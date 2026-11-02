@@ -4,7 +4,7 @@
   // statements that are shown before they run.
   import { api, errText } from '../lib/api'
   import { copyText } from '../lib/clipboard'
-  import { toast } from '../lib/state.svelte'
+  import { toast, openConsole } from '../lib/state.svelte'
   import type { Column, Table } from '../lib/types'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
@@ -14,8 +14,9 @@
     schema,
     table,
     driver = '',
+    version = 0,
     onchanged,
-  }: { connId: string; schema: string; table: Table; driver?: string; onchanged?: () => void } = $props()
+  }: { connId: string; schema: string; table: Table; driver?: string; version?: number; onchanged?: () => void } = $props()
 
   let cols = $state<Column[] | null>(null)
   let error = $state('')
@@ -33,9 +34,15 @@
       .catch((e) => key === loadedFor && (error = errText(e)))
   }
 
+  // version: bumped after index changes (unique flags) — reloads unless
+  // column edits are waiting, which a reload would throw away
+  let loadedVersion = 0
   $effect(() => {
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
+    const v = version
     if (key !== loadedFor) load()
+    else if (v !== loadedVersion && !Object.keys(draft).length) load()
+    loadedVersion = v
   })
 
   let sel = $state(-1)
@@ -144,19 +151,24 @@
           ? '하나라도 실패하면 전부 취소됩니다. 아무것도 바뀌지 않았습니다.'
           : `${r.total}개 중 ${r.applied}개는 이미 적용됐습니다 (이 DB는 DDL을 되돌릴 수 없습니다).`
         if (!r.rolledBack && r.applied > 0) {
-          load()
-          onchanged?.()
+          draft = {}
+          onchanged ? onchanged() : load()
         }
         return
       }
       apply = null
       toast(`컬럼 변경 ${r.applied}건 적용됨`)
-      load()
-      onchanged?.()
+      draft = {}
+      onchanged ? onchanged() : load()
     } catch (e) {
       a.busy = false
       a.error = errText(e)
     }
+  }
+
+  function openSql(sql: string[]) {
+    apply = null
+    openConsole(connId, { schema, sql: sql.join(';\n') + ';\n', title: `컬럼 변경: ${table.name}` })
   }
 
   function copyRow(c: Column) {
@@ -172,6 +184,7 @@
 {:else}
   <div class="wrap">
     <div class="bar">
+      <span class="title">컬럼 <span class="count">{cols.length}</span></span>
       {#if table.comment}<span class="tcomment">{table.comment}</span>{/if}
       <span class="grow"></span>
       {#if readOnlyReason}
@@ -249,6 +262,7 @@
     {/if}
     {#snippet footer()}
       <button class="btn" onclick={() => apply && copyText(apply.sql.join(';\n') + ';')}><Icon name="copy" size={13} /> SQL 복사</button>
+      <button class="btn" title="실행하지 않고 새 SQL 콘솔에 옮깁니다" onclick={() => apply && openSql(apply.sql)}><Icon name="console" size={13} /> 콘솔에서 열기</button>
       <span style="flex:1"></span>
       <button class="btn" onclick={() => (apply = null)}>닫기</button>
       <button class="btn primary" onclick={doApply} disabled={apply?.busy || !!apply?.error}>{apply?.busy ? '적용 중…' : '적용'}</button>
@@ -258,9 +272,15 @@
 
 <style>
   .wrap {
-    height: 100%;
-    overflow: auto;
     font-size: 12.5px;
+  }
+  .title {
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .count {
+    color: var(--text-faint);
+    font-weight: normal;
   }
   .bar {
     display: flex;

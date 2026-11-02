@@ -4,7 +4,7 @@
   // changes, the statements are shown before they run.
   import { api, errText, type AlterResult } from '../lib/api'
   import { copyText } from '../lib/clipboard'
-  import { toast } from '../lib/state.svelte'
+  import { toast, openConsole } from '../lib/state.svelte'
   import type { Column, Index, NewIndex, Table } from '../lib/types'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
@@ -199,6 +199,12 @@
     onchanged?.()
   }
 
+  // the statements, not run, in a new console (to adjust or run later)
+  function openSql(sql: string[]) {
+    apply = null
+    openConsole(connId, { schema, sql: sql.join(';\n') + ';\n', title: `인덱스: ${table.name}` })
+  }
+
   function formKey(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type === 'text') {
       e.preventDefault()
@@ -214,6 +220,7 @@
 {:else}
   <div class="wrap">
     <div class="bar">
+      <span class="title">인덱스 <span class="count">{indexes.length}</span></span>
       {#if readOnlyReason}
         <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> 읽기 전용</span>
       {:else}
@@ -378,6 +385,7 @@
     {/if}
     {#snippet footer()}
       <button class="btn" onclick={() => apply && copyText(apply.sql.join(';\n') + ';')}><Icon name="copy" size={13} /> SQL 복사</button>
+      <button class="btn" title="실행하지 않고 새 SQL 콘솔에 옮깁니다" onclick={() => apply && openSql(apply.sql)}><Icon name="console" size={13} /> 콘솔에서 열기</button>
       <span style="flex:1"></span>
       <button class="btn" onclick={() => (apply = null)}>닫기</button>
       <button class="btn primary" onclick={doApply} disabled={apply?.busy || !!apply?.error}>{apply?.busy ? '적용 중…' : '적용'}</button>
@@ -387,9 +395,16 @@
 
 <style>
   .wrap {
-    height: 100%;
-    overflow: auto;
+    margin-top: 14px;
     font-size: 12.5px;
+  }
+  .title {
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .count {
+    color: var(--text-faint);
+    font-weight: normal;
   }
   .bar {
     display: flex;

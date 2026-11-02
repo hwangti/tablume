@@ -672,8 +672,7 @@
           <div class="grp">
             {#if tableView === 'ddl'}
               <div class="seg" role="group">
-                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>컬럼</button>
-                <button class:on={app.ddlMode === 'index'} onclick={() => ((app.ddlMode = 'index'), saveWorkspaceSoon())}>인덱스</button>
+                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>컬럼·인덱스</button>
                 <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>DDL</button>
               </div>
               {#if app.ddlMode === 'sql' && ddl}
@@ -745,21 +744,23 @@
           </div>
         {/if}
         {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
-          <StructureView
-            connId={tab.connId}
-            schema={tab.tableRef.schema}
-            table={tab.tableRef.table}
-            driver={conn?.driver}
-            onchanged={() => ddlVersion++}
-          />
-        {:else if isTable && tableView === 'ddl' && app.ddlMode === 'index' && tab.tableRef}
-          <IndexView
-            connId={tab.connId}
-            schema={tab.tableRef.schema}
-            table={tab.tableRef.table}
-            driver={conn?.driver}
-            onchanged={() => ddlVersion++}
-          />
+          <div class="structure">
+            <StructureView
+              connId={tab.connId}
+              schema={tab.tableRef.schema}
+              table={tab.tableRef.table}
+              driver={conn?.driver}
+              version={ddlVersion}
+              onchanged={() => ddlVersion++}
+            />
+            <IndexView
+              connId={tab.connId}
+              schema={tab.tableRef.schema}
+              table={tab.tableRef.table}
+              driver={conn?.driver}
+              onchanged={() => ddlVersion++}
+            />
+          </div>
         {:else if isTable && tableView === 'ddl'}
           {#if ddlError}
             <div class="msg error"><pre>{ddlError}</pre></div>
@@ -933,6 +934,12 @@
     height: 6px;
     border-radius: 50%;
     background: var(--danger);
+  }
+  /* columns and indexes, one scroll */
+  .structure {
+    height: 100%;
+    overflow: auto;
+    padding-bottom: 16px;
   }
   .filterbar {
     display: flex;

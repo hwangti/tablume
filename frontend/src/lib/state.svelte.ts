@@ -118,7 +118,7 @@ export const app = $state({
   zoom: 1, // whole window
   orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
-  ddlMode: 'table' as 'sql' | 'table' | 'index', // structure tab: columns, indexes or the DDL text
+  ddlMode: 'table' as 'sql' | 'table', // structure tab: columns and indexes, or the DDL text
   theme: getTheme(),
   // Databases this build includes (a build can leave some out).
   drivers: DRIVERS.map((d) => d.id) as Driver[],
@@ -1015,7 +1015,8 @@ export async function loadWorkspace(tabs = true) {
       setTheme(data.theme)
     }
     // (saved as ddlView since the table became the default; the old ddlMode key is ignored)
-    if (data.ddlView === 'table' || data.ddlView === 'sql' || data.ddlView === 'index') app.ddlMode = data.ddlView
+    if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
+    else if (data.ddlView === 'index') app.ddlMode = 'table' // was a view of its own
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
     // (the old per-tab gridZoom is ignored)
