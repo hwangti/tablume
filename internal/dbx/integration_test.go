@@ -182,6 +182,50 @@ func TestIntegration(t *testing.T) {
 			if n, err := m.CountRows(tg.cfg.ID, tg.schema, *found, idCol+" >= 2"); err != nil || n != 2 {
 				t.Fatalf("count where: %d %v", n, err)
 			}
+
+			// indexes: the primary key is listed first; create, list, drop
+			ixs, err := m.ListIndexes(tg.cfg.ID, tg.schema, *found)
+			if err != nil {
+				t.Fatal("indexes:", err)
+			}
+			t.Logf("indexes: %+v", ixs)
+			if name != "sqlite" && (len(ixs) == 0 || !ixs[0].Primary) { // sqlite: INTEGER PRIMARY KEY is the rowid
+				t.Fatalf("primary key index missing: %+v", ixs)
+			}
+			ixName := "ix_items_name_price"
+			if name == "oracle" {
+				ixName = strings.ToUpper(ixName)
+			}
+			req := IndexRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: *found,
+				Create: []NewIndex{{Name: ixName, Unique: true, Columns: []IndexColumn{{Name: colsInfo[1].Name}, {Name: colsInfo[2].Name, Desc: true}}}}}
+			stmts, err := m.PreviewIndexes(req)
+			t.Log("create:", stmts, err)
+			if r, err := m.ApplyIndexes(req); err != nil || r.Error != "" || r.Applied != 1 {
+				t.Fatalf("create index: %v %+v", err, r)
+			}
+			ixs, _ = m.ListIndexes(tg.cfg.ID, tg.schema, *found)
+			var made *Index
+			for i := range ixs {
+				if ixs[i].Name == ixName {
+					made = &ixs[i]
+				}
+			}
+			if made == nil || !made.Unique || len(made.Columns) != 2 || !strings.HasSuffix(made.Columns[1], " DESC") ||
+				!strings.EqualFold(strings.Trim(made.Columns[0], `"`), colsInfo[1].Name) {
+				t.Fatalf("created index: %+v", ixs)
+			}
+			req = IndexRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: *found, Drop: []Index{*made}}
+			if r, err := m.ApplyIndexes(req); err != nil || r.Error != "" || r.Applied != 1 {
+				t.Fatalf("drop index: %v %+v", err, r)
+			}
+			if again, _ := m.ListIndexes(tg.cfg.ID, tg.schema, *found); len(again) != len(ixs)-1 {
+				t.Fatalf("index not dropped: %+v", again)
+			}
+			if len(ixs) > 0 && ixs[0].Primary {
+				if _, err := m.PreviewIndexes(IndexRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: *found, Drop: ixs[:1]}); err == nil {
+					t.Fatal("dropping the primary key must be refused")
+				}
+			}
 		})
 	}
 }

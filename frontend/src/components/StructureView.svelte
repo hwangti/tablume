@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The table's columns as a table (the "표" side of the DDL tab). Type,
+  // The table's columns as a table (the "컬럼" side of the structure tab). Type,
   // NULL, default and comment can be edited: the changes become ALTER
   // statements that are shown before they run.
   import { api, errText } from '../lib/api'

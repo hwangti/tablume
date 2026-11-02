@@ -27,6 +27,10 @@ export function ApplyChanges(req: dbx$0.ApplyRequest): $CancellablePromise<numbe
     return $Call.ByID(2359809804, req);
 }
 
+export function ApplyIndexes(req: dbx$0.IndexRequest): $CancellablePromise<dbx$0.AlterResult> {
+    return $Call.ByID(3256930453, req);
+}
+
 export function Cancel(tabID: string): $CancellablePromise<void> {
     return $Call.ByID(2191755235, tabID);
 }
@@ -104,6 +108,10 @@ export function ListConnections(): $CancellablePromise<dbx$0.ConnConfig[] | null
     return $Call.ByID(786053378);
 }
 
+export function ListIndexes(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<dbx$0.Index[] | null> {
+    return $Call.ByID(3383199879, id, schema, t);
+}
+
 export function ListRoutines(id: string, schema: string): $CancellablePromise<dbx$0.Routine[] | null> {
     return $Call.ByID(520382220, id, schema);
 }
@@ -156,6 +164,10 @@ export function PreviewAlter(req: dbx$0.AlterRequest): $CancellablePromise<strin
 
 export function PreviewChanges(req: dbx$0.ApplyRequest): $CancellablePromise<string[] | null> {
     return $Call.ByID(2333735256, req);
+}
+
+export function PreviewIndexes(req: dbx$0.IndexRequest): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2242878793, req);
 }
 
 export function QualifiedName(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {

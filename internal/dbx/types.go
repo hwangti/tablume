@@ -64,7 +64,7 @@ type Column struct {
 	PK       bool   `json:"pk"`
 	Comment  string `json:"comment"`
 	Unique   bool   `json:"unique"` // in a unique constraint/index (not the PK)
-	FK       string `json:"fk"`     // referenced "table.column" if a foreign key
+	FK       string `json:"fk"`     // referenced "table.column" ("schema.table.column" in another schema)
 	Default  string `json:"default"`
 	// Extra: auto increment / identity / generated, for the structure view.
 	Extra string `json:"extra"`

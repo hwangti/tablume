@@ -118,7 +118,7 @@ export const app = $state({
   zoom: 1, // whole window
   orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
-  ddlMode: 'table' as 'sql' | 'table', // DDL tab: columns table first
+  ddlMode: 'table' as 'sql' | 'table' | 'index', // structure tab: columns, indexes or the DDL text
   theme: getTheme(),
   // Databases this build includes (a build can leave some out).
   drivers: DRIVERS.map((d) => d.id) as Driver[],
@@ -752,9 +752,24 @@ export function cancel(tab: Tab) {
 
 const sameTable = (a: Table, b: Table) => a.schema === b.schema && a.name === b.name
 
-export async function openTableData(connId: string, schema: string, t: Table): Promise<Tab> {
+/**
+ * Opens a table's data in a tab. With where (following a foreign key), a
+ * tab already showing the table gets that filter.
+ */
+export async function openTableData(connId: string, schema: string, t: Table, where?: string): Promise<Tab> {
   // The table is already open in a tab (pinned or preview): go there.
-  const open = app.tabs.find((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))
+  const open = app.tabs.find(
+    (x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t) && !(where !== undefined && x.detached),
+  )
+  if (open && where !== undefined) {
+    app.activeTab = open.id
+    if (open.tableRef!.where !== where || !open.results.length) {
+      const prev = open.tableRef!.where
+      open.tableRef!.where = where
+      if (!(await reloadTable(open))) open.tableRef!.where = prev // kept its unsaved edits
+    }
+    return open
+  }
   if (open?.detached) {
     api.FocusTabWindow(open.id)
     return open
@@ -767,7 +782,7 @@ export async function openTableData(connId: string, schema: string, t: Table): P
     if (!tab.results.length && !tab.opening) await reloadTable(tab)
     return tab
   }
-  const ref: TableRef = { schema, table: t, where: '', orderBy: '' }
+  const ref: TableRef = { schema, table: t, where: where ?? '', orderBy: '' }
   // Show the tab right away (with a loading state); building the SELECT
   // may need a round trip (PK lookup) before the query even starts.
   if (tab) {
@@ -857,6 +872,46 @@ export async function openDDL(connId: string, schema: string, t: Table) {
   }
 }
 
+/**
+ * Cmd/Alt+click on a foreign key cell: opens the referenced table filtered
+ * to the row the value points at. The tab it came from is pinned so the
+ * new one doesn't replace it.
+ */
+export async function followForeignKey(tab: Tab, r: StmtResult, col: number, value: string, numeric: boolean) {
+  const info = r.edit?.info
+  const ref = info?.refs?.[col]
+  if (!info || !ref) return
+  const conn = app.connections.find((c) => c.id === tab.connId)
+  // "table.column", or "schema.table.column" when it's in another schema
+  const parts = ref.split('.')
+  const column = parts.pop()!
+  const name = parts.pop()!
+  const other = parts.join('.')
+  const mssql = conn?.driver === 'mssql' // tree node = database, schema inside it
+  const treeSchema = mssql || !other ? info.schema : other
+  const tableSchema = mssql ? other || info.table.schema : ''
+  const known = app.conn[tab.connId]?.schemas
+    .find((s) => s.name === treeSchema)
+    ?.tables?.find((n) => n.t.name === name && (!mssql || n.t.schema === tableSchema))?.t
+  const table: Table = known ? $state.snapshot(known) : { schema: tableSchema, name, type: 'TABLE', comment: '', rows: -1, size: -1 }
+  let lit: string
+  if (numeric && /^-?\d+(\.\d+)?$/.test(value)) lit = value
+  else {
+    let v = value.replace(/'/g, "''")
+    if (conn?.driver === 'mysql' || conn?.driver === 'mariadb') v = v.replace(/\\/g, '\\\\')
+    lit = `'${v}'`
+  }
+  let where: string
+  try {
+    where = `${await api.QuoteIdent(tab.connId, column)} = ${lit}`
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  pinTab(tab)
+  await openTableData(tab.connId, treeSchema, table, where)
+}
+
 /** Default sort for newly opened tables: primary key, descending. */
 async function applyPkDesc(connId: string, ref: TableRef) {
   try {
@@ -872,20 +927,21 @@ async function applyPkDesc(connId: string, ref: TableRef) {
 
 /** Re-queries a table data tab from its filter / sort. */
 /** Re-runs a table tab's query (after a filter or sort change, or refresh). */
-export async function reloadTable(tab: Tab) {
+export async function reloadTable(tab: Tab): Promise<boolean> {
   const ref = tab.tableRef
-  if (!ref) return
-  if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return
+  if (!ref) return false
+  if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return false
   // a tab restored from the last session: connect first
-  if (!(await connect(tab.connId))) return
+  if (!(await connect(tab.connId))) return false
   try {
     tab.sql = await tableSelect(tab)
   } catch (e) {
     toast(errText(e), 'error')
-    return
+    return false
   }
   saveWorkspaceSoon()
   await runSQL(tab, tab.sql, -1)
+  return true
 }
 
 export function pinTab(tab: Tab | undefined) {
@@ -959,7 +1015,7 @@ export async function loadWorkspace(tabs = true) {
       setTheme(data.theme)
     }
     // (saved as ddlView since the table became the default; the old ddlMode key is ignored)
-    if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
+    if (data.ddlView === 'table' || data.ddlView === 'sql' || data.ddlView === 'index') app.ddlMode = data.ddlView
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
     // (the old per-tab gridZoom is ignored)

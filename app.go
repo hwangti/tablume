@@ -155,6 +155,16 @@ func (a *App) PreviewAlter(req dbx.AlterRequest) ([]string, error) { return a.db
 
 func (a *App) ApplyAlter(req dbx.AlterRequest) (dbx.AlterResult, error) { return a.db.ApplyAlter(req) }
 
+func (a *App) ListIndexes(id, schema string, t dbx.Table) ([]dbx.Index, error) {
+	return a.db.ListIndexes(id, schema, t)
+}
+
+func (a *App) PreviewIndexes(req dbx.IndexRequest) ([]string, error) { return a.db.PreviewIndexes(req) }
+
+func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
+	return a.db.ApplyIndexes(req)
+}
+
 // FetchPage reads the next rows of a paged result (see StmtResult.Paged).
 func (a *App) FetchPage(tabID, connID, sql string, offset, n int) (dbx.FetchResponse, error) {
 	return a.db.FetchPage(tabID, connID, sql, offset, n)

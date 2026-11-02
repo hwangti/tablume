@@ -43,7 +43,7 @@ export interface Column {
     "unique": boolean;
 
     /**
-     * referenced "table.column" if a foreign key
+     * referenced "table.column" ("schema.table.column" in another schema)
      */
     "fk": string;
     "default": string;
@@ -178,6 +178,64 @@ export interface ExecResponse {
 export interface FetchResponse {
     "rows": (any[] | null)[] | null;
     "hasMore": boolean;
+}
+
+export interface Index {
+    "name": string;
+
+    /**
+     * Schema is the index's own schema when it can differ from the
+     * table's (Oracle); "" otherwise.
+     */
+    "schema": string;
+
+    /**
+     * Columns are the key columns as shown: "a", "b DESC", "c(10)" or an
+     * expression.
+     */
+    "columns": string[] | null;
+
+    /**
+     * non-key columns (SQL Server, PostgreSQL)
+     */
+    "include": string[] | null;
+    "unique": boolean;
+    "primary": boolean;
+
+    /**
+     * Constraint names the PRIMARY KEY / UNIQUE constraint the index backs
+     * ("" = a plain index); dropping it drops the constraint.
+     */
+    "constraint": string;
+
+    /**
+     * BTREE, HASH, GIN, NONCLUSTERED, NORMAL ...
+     */
+    "type": string;
+
+    /**
+     * partial / filtered index
+     */
+    "where": string;
+}
+
+export interface IndexColumn {
+    "name": string;
+    "desc": boolean;
+}
+
+export interface IndexRequest {
+    "connId": string;
+    "schema": string;
+    "table": Table;
+    "drop": Index[] | null;
+    "create": NewIndex[] | null;
+}
+
+export interface NewIndex {
+    "name": string;
+    "columns": IndexColumn[] | null;
+    "unique": boolean;
 }
 
 export interface ResultColumn {

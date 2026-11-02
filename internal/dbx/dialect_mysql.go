@@ -64,7 +64,7 @@ func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t
 	return scanColumns(ctx, q, `SELECT c.COLUMN_NAME, c.COLUMN_TYPE, c.IS_NULLABLE, c.COLUMN_KEY = 'PRI', c.COLUMN_COMMENT,
 		EXISTS (SELECT 1 FROM information_schema.STATISTICS s WHERE s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME
 			AND s.COLUMN_NAME = c.COLUMN_NAME AND s.NON_UNIQUE = 0 AND s.INDEX_NAME <> 'PRIMARY'),
-		(SELECT CONCAT(k.REFERENCED_TABLE_NAME, '.', k.REFERENCED_COLUMN_NAME) FROM information_schema.KEY_COLUMN_USAGE k
+		(SELECT CONCAT(IF(k.REFERENCED_TABLE_SCHEMA <> k.TABLE_SCHEMA, CONCAT(k.REFERENCED_TABLE_SCHEMA, '.'), ''), k.REFERENCED_TABLE_NAME, '.', k.REFERENCED_COLUMN_NAME) FROM information_schema.KEY_COLUMN_USAGE k
 			WHERE k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME AND k.COLUMN_NAME = c.COLUMN_NAME
 			AND k.REFERENCED_TABLE_NAME IS NOT NULL LIMIT 1),
 		-- defaults as SQL expressions: MariaDB already reports them that way;
@@ -172,3 +172,36 @@ func (mysqlDialect) RoutineSource(ctx context.Context, conn *sql.Conn, schema st
 }
 
 func (mysqlDialect) Param(int, string) string { return "?" }
+
+// ---- indexes
+
+func (mysqlDialect) listIndexes(ctx context.Context, q Querier, schema string, t Table) ([]Index, error) {
+	rows, err := rowStrings(ctx, q, `SELECT INDEX_NAME, NON_UNIQUE, INDEX_TYPE, COLUMN_NAME, COALESCE(SUB_PART, ''), COALESCE(COLLATION, '')
+		FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+		ORDER BY INDEX_NAME <> 'PRIMARY', INDEX_NAME, SEQ_IN_INDEX`, schema, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	return groupIndexes(rows, func(r []string) Index {
+		ix := Index{Name: r[0], Unique: r[1] == "0", Primary: r[0] == "PRIMARY", Type: r[2]}
+		if ix.Primary {
+			ix.Constraint = "PRIMARY KEY"
+		}
+		return ix
+	}, func(ix *Index, r []string) {
+		c := r[3]
+		if c != "" && r[4] != "" {
+			c += "(" + r[4] + ")"
+		}
+		ix.Columns = append(ix.Columns, colExpr(c, r[5] == "D"))
+	}), nil
+}
+
+func (d mysqlDialect) createIndex(schema string, t Table, ix NewIndex) string {
+	quote := func(s string) string { return quoteWith(s, "`", "`") }
+	return fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)", uniqueKw(ix.Unique), quote(ix.Name), d.QualifiedName(schema, t), indexColumns(ix, quote))
+}
+
+func (d mysqlDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
+	return fmt.Sprintf("DROP INDEX %s ON %s", quoteWith(ix.Name, "`", "`"), d.QualifiedName(schema, t)), nil
+}

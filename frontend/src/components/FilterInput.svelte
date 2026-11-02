@@ -155,7 +155,7 @@
     position: relative;
     width: 100%;
     height: 24px;
-    padding: 3px 27px 3px 8px;
+    padding: 3px 27px 3px 1ch;
     border: none;
     border-radius: 0;
     font-size: 12px;
@@ -171,7 +171,7 @@
   .hl {
     position: absolute;
     inset: 0;
-    padding: 3px 27px 3px 8px;
+    padding: 3px 27px 3px 1ch;
     font-size: 12px;
     line-height: 18px;
     white-space: pre;

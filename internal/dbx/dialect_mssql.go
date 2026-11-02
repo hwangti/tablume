@@ -109,7 +109,7 @@ func (mssqlDialect) ListColumns(ctx context.Context, q Querier, db string, t Tab
 			WHERE i.is_unique = 1 AND i.is_primary_key = 0 AND ic.is_included_column = 0 AND sc.name = c.COLUMN_NAME
 			AND i.object_id = OBJECT_ID(QUOTENAME(c.TABLE_CATALOG) + '.' + QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)))
 			THEN 1 ELSE 0 END,
-		(SELECT TOP 1 rt.name + '.' + rc.name FROM `+d+`.sys.foreign_key_columns fkc
+		(SELECT TOP 1 CASE WHEN SCHEMA_NAME(rt.schema_id) <> c.TABLE_SCHEMA THEN SCHEMA_NAME(rt.schema_id) + '.' ELSE '' END + rt.name + '.' + rc.name FROM `+d+`.sys.foreign_key_columns fkc
 			JOIN `+d+`.sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
 			JOIN `+d+`.sys.objects rt ON rt.object_id = fkc.referenced_object_id
 			JOIN `+d+`.sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
@@ -447,4 +447,46 @@ func (mssqlDialect) RoutineSource(ctx context.Context, conn *sql.Conn, db string
 
 func (mssqlDialect) Param(n int, _ string) string {
 	return fmt.Sprintf("@p%d", n)
+}
+
+// ---- indexes
+
+func (mssqlDialect) listIndexes(ctx context.Context, q Querier, db string, t Table) ([]Index, error) {
+	d := msq(db)
+	s := t.Schema
+	if s == "" {
+		s = "dbo"
+	}
+	rows, err := rowStrings(ctx, q, `SELECT i.name, CAST(i.is_unique AS int), CAST(i.is_primary_key AS int),
+		CASE WHEN i.is_primary_key = 1 OR i.is_unique_constraint = 1 THEN i.name ELSE '' END,
+		i.type_desc, COALESCE(i.filter_definition, ''), CAST(ic.is_included_column AS int), col.name, CAST(ic.is_descending_key AS int)
+		FROM `+d+`.sys.indexes i
+		JOIN `+d+`.sys.objects o ON o.object_id = i.object_id JOIN `+d+`.sys.schemas sc ON sc.schema_id = o.schema_id
+		JOIN `+d+`.sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+		JOIN `+d+`.sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+		WHERE o.name = @p2 AND sc.name = @p1 AND i.type > 0
+		ORDER BY i.is_primary_key DESC, i.name, ic.is_included_column, ic.key_ordinal, ic.index_column_id`, s, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	return groupIndexes(rows, func(r []string) Index {
+		return Index{Name: r[0], Unique: r[1] == "1", Primary: r[2] == "1", Constraint: r[3], Type: r[4], Where: r[5]}
+	}, func(ix *Index, r []string) {
+		if r[6] == "1" {
+			ix.Include = append(ix.Include, r[7])
+		} else {
+			ix.Columns = append(ix.Columns, colExpr(r[7], r[8] == "1"))
+		}
+	}), nil
+}
+
+func (d mssqlDialect) createIndex(db string, t Table, ix NewIndex) string {
+	return fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)", uniqueKw(ix.Unique), msq(ix.Name), d.QualifiedName(db, t), indexColumns(ix, msq))
+}
+
+func (d mssqlDialect) dropIndex(db string, t Table, ix Index) (string, error) {
+	if ix.Constraint != "" {
+		return fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", d.QualifiedName(db, t), msq(ix.Constraint)), nil
+	}
+	return fmt.Sprintf("DROP INDEX %s ON %s", msq(ix.Name), d.QualifiedName(db, t)), nil
 }

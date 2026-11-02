@@ -110,10 +110,16 @@ func (m *Manager) PreviewAlter(req AlterRequest) ([]string, error) {
 // ApplyAlter runs the statements: in one transaction where DDL is
 // transactional, otherwise one by one, stopping at the first error.
 func (m *Manager) ApplyAlter(req AlterRequest) (AlterResult, error) {
-	p, ad, stmts, err := m.alterPlan(req)
+	p, _, stmts, err := m.alterPlan(req)
 	if err != nil {
 		return AlterResult{}, err
 	}
+	return runDDL(p, req.Schema, stmts)
+}
+
+// runDDL runs DDL statements on one connection: in a transaction where
+// the database supports that, otherwise one by one up to the first error.
+func runDDL(p *pool, schema string, stmts []string) (AlterResult, error) {
 	res := AlterResult{Total: len(stmts)}
 	ctx, cancel := metaCtx()
 	defer cancel()
@@ -122,10 +128,10 @@ func (m *Manager) ApplyAlter(req AlterRequest) (AlterResult, error) {
 		return res, err
 	}
 	defer conn.Close()
-	if q := p.d.UseSchema(req.Schema); q != "" {
+	if q := p.d.UseSchema(schema); q != "" {
 		_, _ = conn.ExecContext(ctx, q)
 	}
-	if ad.transactionalDDL() {
+	if transactionalDDL(p.d) {
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return res, err

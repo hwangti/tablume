@@ -8,6 +8,8 @@ package dbx
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -85,3 +87,69 @@ func (sqliteDialect) DDL(ctx context.Context, q *sql.Conn, schema string, t Tabl
 }
 
 func (sqliteDialect) Param(int, string) string { return "?" }
+
+// ---- indexes
+
+// SQLite DDL runs inside transactions like any other statement.
+func (sqliteDialect) transactionalDDL() bool { return true }
+
+func (sqliteDialect) listIndexes(ctx context.Context, q Querier, schema string, t Table) ([]Index, error) {
+	if schema == "" {
+		schema = "main"
+	}
+	rows, err := rowStrings(ctx, q, `SELECT il.name, il."unique", il.origin = 'pk', CASE WHEN il.origin IN ('pk', 'u') THEN il.origin ELSE '' END,
+		il.partial, COALESCE(ix.name, ''), ix."desc"
+		FROM pragma_index_list(?1, ?2) il, pragma_index_xinfo(il.name, ?2) ix
+		WHERE ix."key" = 1
+		ORDER BY il.origin = 'pk' DESC, il.name, ix.seqno`, t.Name, schema)
+	if err != nil {
+		return nil, err
+	}
+	out := groupIndexes(rows, func(r []string) Index {
+		ix := Index{Name: r[0], Unique: r[1] == "1", Primary: r[2] == "1"}
+		switch r[3] {
+		case "pk":
+			ix.Constraint = "PRIMARY KEY"
+		case "u":
+			ix.Constraint = "UNIQUE"
+		}
+		if r[4] == "1" {
+			ix.Where = "…"
+		}
+		return ix
+	}, func(ix *Index, r []string) {
+		ix.Columns = append(ix.Columns, colExpr(r[5], r[6] == "1"))
+	})
+	// partial indexes: the WHERE part is only in the CREATE statement
+	for i := range out {
+		if out[i].Where == "" {
+			continue
+		}
+		var src string
+		_ = q.QueryRowContext(ctx, `SELECT sql FROM `+quoteWith(schema, `"`, `"`)+`.sqlite_master WHERE type = 'index' AND name = ?`, out[i].Name).Scan(&src)
+		if k := strings.LastIndex(strings.ToUpper(src), " WHERE "); k >= 0 {
+			out[i].Where = strings.TrimSpace(src[k+7:])
+		}
+	}
+	return out, nil
+}
+
+func (sqliteDialect) createIndex(schema string, t Table, ix NewIndex) string {
+	quote := func(s string) string { return quoteWith(s, `"`, `"`) }
+	name := quote(ix.Name)
+	if schema != "" && schema != "main" {
+		name = quote(schema) + "." + name // the table can't be qualified here
+	}
+	return fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)", uniqueKw(ix.Unique), name, quote(t.Name), indexColumns(ix, quote))
+}
+
+func (sqliteDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
+	if ix.Constraint != "" {
+		return "", errors.New("PRIMARY KEY / UNIQUE 제약에 딸린 인덱스는 테이블을 다시 만들어야 지울 수 있습니다")
+	}
+	name := quoteWith(ix.Name, `"`, `"`)
+	if schema != "" && schema != "main" {
+		name = quoteWith(schema, `"`, `"`) + "." + name
+	}
+	return "DROP INDEX " + name, nil
+}

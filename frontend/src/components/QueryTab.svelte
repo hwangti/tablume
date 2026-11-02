@@ -7,6 +7,7 @@
   import Modal from './Modal.svelte'
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
+  import IndexView from './IndexView.svelte'
   import { api, errText } from '../lib/api'
   import { modKey, isMac, copyText } from '../lib/clipboard'
   import {
@@ -28,6 +29,7 @@
     PAGE_SIZES,
     openConsole,
     type Tab,
+    followForeignKey,
   } from '../lib/state.svelte'
   import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
   import type { Cell, StmtResult } from '../lib/types'
@@ -583,7 +585,7 @@
             <Icon name="table" size={13} /> 데이터
           </button>
           <button class="rtab" class:on={tableView === 'ddl'} onclick={() => (tableView = 'ddl')}>
-            <Icon name="ddl" size={13} /> DDL
+            <Icon name="ddl" size={13} /> 구조
           </button>
           <button class="rtab" class:on={tableView === 'log'} onclick={() => (tableView = 'log')}>
             로그
@@ -670,8 +672,9 @@
           <div class="grp">
             {#if tableView === 'ddl'}
               <div class="seg" role="group">
-                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>표</button>
-                <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>SQL</button>
+                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>컬럼</button>
+                <button class:on={app.ddlMode === 'index'} onclick={() => ((app.ddlMode = 'index'), saveWorkspaceSoon())}>인덱스</button>
+                <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>DDL</button>
               </div>
               {#if app.ddlMode === 'sql' && ddl}
                 <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
@@ -749,6 +752,14 @@
             driver={conn?.driver}
             onchanged={() => ddlVersion++}
           />
+        {:else if isTable && tableView === 'ddl' && app.ddlMode === 'index' && tab.tableRef}
+          <IndexView
+            connId={tab.connId}
+            schema={tab.tableRef.schema}
+            table={tab.tableRef.table}
+            driver={conn?.driver}
+            onchanged={() => ddlVersion++}
+          />
         {:else if isTable && tableView === 'ddl'}
           {#if ddlError}
             <div class="msg error"><pre>{ddlError}</pre></div>
@@ -776,6 +787,7 @@
             onloadprev={loadPrev}
             rowBase={start}
             layoutKey={tab.tableRef ? `${tab.connId}|${tab.tableRef.schema}|${tab.tableRef.table.schema}.${tab.tableRef.table.name}` : ''}
+            onfollow={(c, v, num) => current && followForeignKey(tab, current, c, v, num)}
           />
         {:else if isTable && tableView === 'data' && !busy}
           <div class="reload-blank">
@@ -968,9 +980,11 @@
   .kw {
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+    /* the input's own left padding is one space wide: no gap on top */
+    margin-right: -6px;
   }
   .kw.on {
     color: var(--syn-keyword);

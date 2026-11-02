@@ -15,7 +15,7 @@
   import { fitMenu } from '../lib/fit'
   import { onMount, untrack } from 'svelte'
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
-  import { copyText, modKey } from '../lib/clipboard'
+  import { copyText, modKey, isMac } from '../lib/clipboard'
   import { app, toast, saveWorkspaceSoon } from '../lib/state.svelte'
   import { cellValue, isEdited, setCell, addRow, toggleDelete, revert } from '../lib/editing.svelte'
   import CellViewer from './CellViewer.svelte'
@@ -36,6 +36,7 @@
     onsort,
     rowBase = 0,
     layoutKey = '',
+    onfollow,
   }: {
     result: StmtResult
     columns: ResultColumn[]
@@ -57,6 +58,8 @@
     onsort?: (col: number) => void
     rowBase?: number // number of the first row (paged table data)
     layoutKey?: string // keeps column order / hidden columns across reloads (table tabs)
+    // Cmd/Alt+click on a foreign key cell: open the referenced row.
+    onfollow?: (col: number, value: string, numeric: boolean) => void
   } = $props()
 
   let editing = $state<{ ri: number; vi: number; c: number; value: string } | null>(null)
@@ -429,7 +432,29 @@
     return !!sel && vi >= sel.r1 && vi <= sel.r2 && c >= sel.c1 && c <= sel.c2
   }
 
+  // ---- foreign keys: Cmd (Mac) / Alt / Ctrl (Windows) + click opens the
+  // referenced row; while the key is held, FK cells look like links.
+  const linkKey = (e: MouseEvent | KeyboardEvent) => e.metaKey || e.altKey || (!isMac && e.ctrlKey)
+  let linkHeld = $state(false)
+
+  function fkTarget(vi: number, p: number): { c: number; v: string } | null {
+    const c = vc[p]
+    const v = val(order[vi], c)
+    return onfollow && info?.refs?.[c] && v !== null ? { c, v } : null
+  }
+
+  function follow(vi: number, p: number): boolean {
+    const t = fkTarget(vi, p)
+    if (!t) return false
+    onfollow?.(t.c, t.v, numeric[t.c])
+    return true
+  }
+
   function cellDown(e: MouseEvent, vi: number, c: number) {
+    if (e.button === 0 && linkKey(e) && !e.shiftKey && follow(vi, c)) {
+      e.preventDefault()
+      return
+    }
     if (e.button === 2 && isSel(vi, c)) return
     if (e.shiftKey && anchor) focus = { r: vi, c }
     else anchor = focus = { r: vi, c }
@@ -657,11 +682,17 @@
   }
 </script>
 
-<svelte:window onclick={() => ((menu = null), (headMenu = null), (colMenu = null))} />
+<svelte:window
+  onclick={() => ((menu = null), (headMenu = null), (colMenu = null))}
+  onkeydown={(e) => (linkHeld = linkKey(e))}
+  onkeyup={(e) => (linkHeld = linkKey(e))}
+  onblur={() => (linkHeld = false)}
+/>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="grid"
+  class:link-held={linkHeld}
   bind:this={scroller}
   bind:clientHeight={viewH}
   bind:clientWidth={viewW}
@@ -748,6 +779,7 @@
             class:added={st?.added[ri]}
             class:deleted={st?.deleted[ri]}
             class:editing={editing?.ri === ri && editing?.c === c}
+            class:fk={!!onfollow && !!info?.refs?.[c] && v !== null}
             style:width="{cw[c]}px"
             onmousedown={(e) => cellDown(e, vi, p)}
             onmouseover={(e) => cellOver(e, vi, p)}
@@ -800,6 +832,11 @@
     <button onclick={() => copySelection(true)}>{@render mi('copy')}헤더 포함 복사</button>
     <button onclick={copyInList}>{@render mi('list')}IN (…) 목록으로 복사</button>
     {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>{@render mi('view')}값 보기 <kbd>Shift+Enter</kbd></button>{/if}
+    {#if focus && fkTarget(focus.r, focus.c)}
+      <button onclick={() => focus && follow(focus.r, focus.c)}
+        >{@render mi('link')}참조 행 열기 ({info?.refs?.[vc[focus.c]]}) <kbd>{isMac ? '⌘' : 'Alt+'}클릭</kbd></button
+      >
+    {/if}
     <button onclick={selectAll}>{@render mi('selectAll')}전체 선택</button>
     {#if info?.editable || info?.insertable}
       <hr />
@@ -1021,6 +1058,11 @@
   }
   .cell-input.with-dots {
     padding-right: 26px; /* room for the "…" button */
+  }
+  .grid.link-held .td.fk:hover {
+    cursor: pointer;
+    color: var(--accent);
+    text-decoration: underline;
   }
   .td.same {
     background: var(--cell-same);

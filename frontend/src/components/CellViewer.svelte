@@ -2,6 +2,7 @@
   import type { Cell } from '../lib/types'
   import { copyText } from '../lib/clipboard'
   import Modal from './Modal.svelte'
+  import TextEditor from './TextEditor.svelte'
   import { untrack } from 'svelte'
 
   let {
@@ -46,9 +47,9 @@
   {#if isNull && !editable}
     <div class="null">NULL</div>
   {:else if editable}
-    <textarea class="mono" bind:value={text} oninput={() => (isNull = false)} placeholder={isNull ? 'NULL' : ''}></textarea>
+    <TextEditor value={text} onchange={(v) => ((text = v), (isNull = false))} placeholder={isNull ? 'NULL' : ''} onsubmit={save} />
   {:else}
-    <textarea class="mono" readonly value={shown}></textarea>
+    <TextEditor value={shown} readonly />
   {/if}
   {#snippet footer()}
     <span class="dim">{isNull ? 'NULL' : `${text.length.toLocaleString()}자`}</span>
@@ -60,7 +61,7 @@
       {#if json && json !== text}<button class="btn" onclick={() => (text = json!)}>JSON 정렬</button>{/if}
       <button class="btn" onclick={() => ((isNull = true), (text = ''))}>NULL로 설정</button>
       <button class="btn" onclick={onclose}>취소</button>
-      <button class="btn primary" onclick={save}>적용</button>
+      <button class="btn primary" onclick={save} title="Ctrl+Enter / Cmd+Enter">적용</button>
     {:else}
       <button class="btn" onclick={() => copyText(shown)} disabled={isNull}>복사</button>
       <button class="btn primary" onclick={onclose}>닫기</button>
@@ -69,14 +70,6 @@
 </Modal>
 
 <style>
-  textarea {
-    width: 100%;
-    height: 420px;
-    resize: vertical;
-    font-size: 12.5px;
-    line-height: 1.5;
-    white-space: pre;
-  }
   .null {
     padding: 40px;
     text-align: center;

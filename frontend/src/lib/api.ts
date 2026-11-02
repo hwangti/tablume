@@ -1,5 +1,20 @@
 import * as App from '../../bindings/tablume/app'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange } from './types'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex } from './types'
+
+export interface AlterResult {
+  applied: number
+  total: number
+  error: string
+  rolledBack: boolean
+}
+
+export interface IndexRequest {
+  connId: string
+  schema: string
+  table: Table
+  drop: Index[]
+  create: NewIndex[]
+}
 
 export interface AlterRequest {
   connId: string
@@ -29,7 +44,10 @@ interface Api {
   ListRoutines(id: string, schema: string): Promise<Routine[]>
   RoutineSource(id: string, schema: string, r: Routine): Promise<string>
   PreviewAlter(req: AlterRequest): Promise<string[]>
-  ApplyAlter(req: AlterRequest): Promise<{ applied: number; total: number; error: string; rolledBack: boolean }>
+  ApplyAlter(req: AlterRequest): Promise<AlterResult>
+  ListIndexes(id: string, schema: string, t: Table): Promise<Index[] | null>
+  PreviewIndexes(req: IndexRequest): Promise<string[] | null>
+  ApplyIndexes(req: IndexRequest): Promise<AlterResult>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
   FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
   CountResult(tabId: string, connId: string, sql: string): Promise<number>

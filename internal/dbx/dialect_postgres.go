@@ -86,7 +86,7 @@ func (pgDialect) ListColumns(ctx context.Context, q Querier, schema string, t Ta
 		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)),
 		COALESCE(col_description(a.attrelid, a.attnum), ''),
 		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisunique AND NOT i.indisprimary AND a.attnum = ANY(i.indkey)),
-		(SELECT rc.relname || '.' || ra.attname FROM pg_constraint con
+		(SELECT CASE WHEN rc.relnamespace <> c.relnamespace THEN (SELECT rn.nspname FROM pg_namespace rn WHERE rn.oid = rc.relnamespace) || '.' ELSE '' END || rc.relname || '.' || ra.attname FROM pg_constraint con
 			JOIN pg_class rc ON rc.oid = con.confrelid
 			JOIN pg_attribute ra ON ra.attrelid = con.confrelid AND ra.attnum = con.confkey[array_position(con.conkey, a.attnum)]
 			WHERE con.conrelid = a.attrelid AND con.contype = 'f' AND a.attnum = ANY(con.conkey) LIMIT 1),
@@ -263,4 +263,46 @@ func (pgDialect) Param(n int, typ string) string {
 		return fmt.Sprintf("$%d", n)
 	}
 	return fmt.Sprintf("CAST($%d::text AS %s)", n, typ)
+}
+
+// ---- indexes
+
+func (pgDialect) listIndexes(ctx context.Context, q Querier, schema string, t Table) ([]Index, error) {
+	rows, err := rowStrings(ctx, q, `SELECT ic.relname, i.indisunique, i.indisprimary, COALESCE(con.conname, ''), am.amname,
+		COALESCE(pg_get_expr(i.indpred, i.indrelid, true), ''),
+		k <= i.indnkeyatts,
+		pg_get_indexdef(i.indexrelid, k, true) || CASE WHEN k <= i.indnkeyatts AND i.indoption[k - 1] & 1 = 1 THEN ' DESC' ELSE '' END
+		FROM pg_index i
+		JOIN pg_class ic ON ic.oid = i.indexrelid
+		JOIN pg_class c ON c.oid = i.indrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_am am ON am.oid = ic.relam
+		LEFT JOIN pg_constraint con ON con.conindid = i.indexrelid AND con.conrelid = i.indrelid AND con.contype IN ('p', 'u', 'x')
+		CROSS JOIN LATERAL generate_series(1, i.indnatts) k
+		WHERE n.nspname = $1 AND c.relname = $2
+		ORDER BY i.indisprimary DESC, ic.relname, k`, schema, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	yes := func(s string) bool { return s == "true" || s == "t" }
+	return groupIndexes(rows, func(r []string) Index {
+		return Index{Name: r[0], Unique: yes(r[1]), Primary: yes(r[2]), Constraint: r[3], Type: strings.ToUpper(r[4]), Where: r[5]}
+	}, func(ix *Index, r []string) {
+		if yes(r[6]) {
+			ix.Columns = append(ix.Columns, r[7])
+		} else {
+			ix.Include = append(ix.Include, r[7])
+		}
+	}), nil
+}
+
+func (d pgDialect) createIndex(schema string, t Table, ix NewIndex) string {
+	quote := func(s string) string { return quoteWith(s, `"`, `"`) }
+	return fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)", uniqueKw(ix.Unique), quote(ix.Name), d.QualifiedName(schema, t), indexColumns(ix, quote))
+}
+
+func (d pgDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
+	if ix.Constraint != "" {
+		return fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", d.QualifiedName(schema, t), quoteWith(ix.Constraint, `"`, `"`)), nil
+	}
+	return fmt.Sprintf("DROP INDEX %s.%s", quoteWith(schema, `"`, `"`), quoteWith(ix.Name, `"`, `"`)), nil
 }

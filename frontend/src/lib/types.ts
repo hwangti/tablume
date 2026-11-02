@@ -52,6 +52,24 @@ export interface Column {
   extra?: string // auto increment / identity / generated
 }
 
+export interface Index {
+  name: string
+  schema: string // the index's own schema when it differs (Oracle)
+  columns: string[] // key columns as shown: "a", "b DESC", "c(10)", expressions
+  include: string[] | null // non-key columns (SQL Server, PostgreSQL)
+  unique: boolean
+  primary: boolean
+  constraint: string // PRIMARY KEY / UNIQUE constraint it backs, '' = plain index
+  type: string
+  where: string // partial / filtered index
+}
+
+export interface NewIndex {
+  name: string
+  columns: { name: string; desc: boolean }[]
+  unique: boolean
+}
+
 export interface Routine {
   schema: string
   name: string

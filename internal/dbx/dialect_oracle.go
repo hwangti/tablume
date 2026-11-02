@@ -189,7 +189,7 @@ func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, 
 		CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
 			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'U' AND kc.column_name = c.column_name)
 			THEN 1 ELSE 0 END,
-		(SELECT MIN(rc.table_name || '.' || rc.column_name) FROM all_constraints k
+		(SELECT MIN(CASE WHEN rc.owner <> c.owner THEN rc.owner || '.' END || rc.table_name || '.' || rc.column_name) FROM all_constraints k
 			JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
 			JOIN all_cons_columns rc ON rc.owner = k.r_owner AND rc.constraint_name = k.r_constraint_name AND rc.position = kc.position
 			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'R' AND kc.column_name = c.column_name),
@@ -340,4 +340,67 @@ func (oracleDialect) Param(n int, typ string) string {
 		return fmt.Sprintf("TO_TIMESTAMP(:%d, 'YYYY-MM-DD HH24:MI:SS.FF')", n)
 	}
 	return fmt.Sprintf(":%d", n)
+}
+
+// ---- indexes
+
+func (oracleDialect) listIndexes(ctx context.Context, q Querier, schema string, t Table) ([]Index, error) {
+	rows, err := rowStrings(ctx, q, `SELECT i.index_name, CASE i.uniqueness WHEN 'UNIQUE' THEN 1 ELSE 0 END,
+		CASE c.constraint_type WHEN 'P' THEN 1 ELSE 0 END, c.constraint_name, i.index_type, i.owner,
+		ic.column_name, ic.descend, ic.column_position
+		FROM all_indexes i
+		JOIN all_ind_columns ic ON ic.index_owner = i.owner AND ic.index_name = i.index_name
+		LEFT JOIN all_constraints c ON c.owner = i.table_owner AND c.table_name = i.table_name
+			AND c.index_name = i.index_name AND c.constraint_type IN ('P', 'U')
+		WHERE i.table_owner = :1 AND i.table_name = :2 AND i.index_type NOT LIKE 'LOB%'
+		ORDER BY CASE c.constraint_type WHEN 'P' THEN 0 ELSE 1 END, i.index_name, ic.column_position`, schema, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	out := groupIndexes(rows, func(r []string) Index {
+		ix := Index{Name: r[0], Unique: r[1] == "1", Primary: r[2] == "1", Constraint: r[3], Type: r[4]}
+		if r[5] != schema {
+			ix.Schema = r[5]
+		}
+		return ix
+	}, func(ix *Index, r []string) {
+		ix.Columns = append(ix.Columns, colExpr(r[6], r[7] == "DESC"))
+	})
+	// Function-based and DESC columns show as hidden SYS_NC...$ columns;
+	// the expression is in ALL_IND_EXPRESSIONS (a LONG, read one by one).
+	for i := range out {
+		ix := &out[i]
+		for j, c := range ix.Columns {
+			name, desc := strings.CutSuffix(c, " DESC")
+			if !strings.HasPrefix(name, "SYS_NC") {
+				continue
+			}
+			owner := ix.Schema
+			if owner == "" {
+				owner = schema
+			}
+			var expr sql.NullString
+			if q.QueryRowContext(ctx, `SELECT column_expression FROM all_ind_expressions
+				WHERE index_owner = :1 AND index_name = :2 AND column_position = :3`, owner, ix.Name, j+1).Scan(&expr) == nil && expr.Valid {
+				ix.Columns[j] = colExpr(strings.ReplaceAll(strings.TrimSpace(expr.String), `"`, ""), desc)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (d oracleDialect) createIndex(schema string, t Table, ix NewIndex) string {
+	quote := func(s string) string { return quoteWith(s, `"`, `"`) }
+	return fmt.Sprintf("CREATE %sINDEX %s.%s ON %s (%s)", uniqueKw(ix.Unique), quote(schema), quote(ix.Name), d.QualifiedName(schema, t), indexColumns(ix, quote))
+}
+
+func (d oracleDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
+	if ix.Constraint != "" {
+		return fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", d.QualifiedName(schema, t), quoteWith(ix.Constraint, `"`, `"`)), nil
+	}
+	owner := ix.Schema
+	if owner == "" {
+		owner = schema
+	}
+	return fmt.Sprintf("DROP INDEX %s.%s", quoteWith(owner, `"`, `"`), quoteWith(ix.Name, `"`, `"`)), nil
 }
