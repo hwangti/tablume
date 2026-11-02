@@ -41,8 +41,8 @@
 
   let paramsHint = $derived(
     {
-      mysql: '예: tls=true&loc=Local',
-      mariadb: '예: tls=true&loc=Local',
+      mysql: '예: tls=true 또는 tls=skip-verify, tls-ca=/경로/ca.pem',
+      mariadb: '예: tls=true 또는 tls=skip-verify, tls-ca=/경로/ca.pem',
       postgres: '예: sslmode=require',
       mssql: '예: encrypt=true&TrustServerCertificate=false',
       oracle: '예: SSL=true&SSL VERIFY=false',

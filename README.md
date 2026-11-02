@@ -109,6 +109,7 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 - **Oracle**: "서비스 이름"(예: `ORCL`, `FREEPDB1`, `XEPDB1`)으로 접속하고, 필요하면 "SID 사용"을 체크하세요. 11g도 지원합니다. 테이블 미리보기는 `ROWNUM`을 씁니다. 스키마 목록은 12c 이상에서 Oracle 내부 계정(SYS, XDB 등)을 숨깁니다.
 - **SQL Server**: 트리의 첫 단계는 데이터베이스입니다. 이름 있는 인스턴스는 호스트에 `host\SQLEXPRESS`처럼 적으면 됩니다. 기본값은 `TrustServerCertificate=true`입니다.
 - **MySQL/MariaDB**: 영향받은 행 수는 실제로 바뀐 행이 아니라 조건에 맞은 행 기준입니다(`clientFoundRows`).
+- **MySQL/MariaDB TLS**: 추가 옵션에 `tls=true`를 넣으면 서버 인증서를 OS가 확인합니다. 회사나 서버가 직접 만든 인증서라서 확인에 실패하면(macOS는 "표준을 준수하지 않음"으로 더 엄격하게 거부합니다) `tls-ca=/경로/ca.pem`으로 그 CA를 지정하세요. 이때는 Go가 그 CA로 직접 확인합니다. 확인 없이 암호화만 하려면 `tls=skip-verify`를 씁니다(DataGrip의 기본 SSL 동작과 같습니다). SSH 터널을 거칠 때도 인증서는 DB 호스트 이름으로 확인합니다.
 - **추가 옵션** 칸에 드라이버 옵션을 `key=value&key2=value2` 형식으로 넣을 수 있습니다. 예: `tls=true`, `sslmode=require`, `encrypt=true`
 - 트랜잭션: 기본은 autocommit입니다. 탭마다 연결이 하나로 고정되어 있어서 `BEGIN`/`START TRANSACTION` … `COMMIT`/`ROLLBACK`을 직접 실행해도 같은 세션에서 처리됩니다.
 

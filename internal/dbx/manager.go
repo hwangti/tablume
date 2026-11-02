@@ -104,6 +104,15 @@ func open(cfg ConnConfig) (*pool, error) {
 		dsnCfg.Host = "127.0.0.1"
 		dsnCfg.Port = tun.localPort()
 	}
+	mysqlLike := cfg.Driver == "mysql" || cfg.Driver == "mariadb"
+	if mysqlLike {
+		if dsnCfg.Params, err = mysqlTLS(cfg, tun != nil); err != nil {
+			if tun != nil {
+				tun.Close()
+			}
+			return nil, err
+		}
+	}
 	db, err := sql.Open(d.DriverName(), d.DSN(dsnCfg))
 	if err != nil {
 		if tun != nil {
@@ -121,6 +130,9 @@ func open(cfg ConnConfig) (*pool, error) {
 	p := &pool{db: db, d: d, cfg: cfg, tun: tun}
 	if err := db.PingContext(ctx); err != nil {
 		p.close()
+		if mysqlLike {
+			err = certHint(err)
+		}
 		return nil, err
 	}
 	return p, nil
