@@ -777,6 +777,8 @@ export async function reloadTable(tab: Tab) {
   const ref = tab.tableRef
   if (!ref) return
   if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return
+  // a tab restored from the last session: connect first
+  if (!(await connect(tab.connId))) return
   try {
     tab.sql = await tableSelect(tab)
   } catch (e) {

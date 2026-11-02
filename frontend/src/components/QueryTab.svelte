@@ -54,6 +54,16 @@
   let current = $derived<StmtResult | undefined>(
     isTable ? tab.results[0] : tab.activeResult >= 0 ? tab.results[tab.activeResult] : undefined,
   )
+  // A table tab restored from the last session loads when it is shown and
+  // its connection is already up (otherwise it offers "connect and load").
+  let autoLoaded = false
+  $effect(() => {
+    if (autoLoaded || !isTable || current || tab.running || tab.opening) return
+    if (app.activeTab !== tab.id || !connected) return
+    autoLoaded = true
+    reloadTable(tab)
+  })
+
   // Positioned against the window: the result bar clips overflow.
   let exportMenu = $state<{ right: number; top: number } | null>(null)
 
@@ -600,6 +610,15 @@
             </button>
           </div>
         {/if}
+        {#if isTable && tableView === 'data' && !current && !busy}
+          <!-- restored tab, not loaded yet -->
+          <div class="grp">
+            <button class="icon-btn" title={connected ? '불러오기' : '연결하고 불러오기'} onclick={() => reloadTable(tab)}>
+              <Icon name="refresh" size={14} />
+            </button>
+            <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole} disabled={!tab.sql}><Icon name="console" size={14} /></button>
+          </div>
+        {/if}
         {#if current && (!isTable || tableView === 'data')}
           {#if pending > 0}
             <div class="grp">
@@ -783,6 +802,14 @@
             rowBase={start}
             layoutKey={tab.tableRef ? `${tab.connId}|${tab.tableRef.schema}|${tab.tableRef.table.schema}.${tab.tableRef.table.name}` : ''}
           />
+        {:else if isTable && tableView === 'data' && !busy}
+          <div class="reload-blank">
+            <button class="btn primary" onclick={() => reloadTable(tab)}>
+              <Icon name={connected ? 'refresh' : 'plug'} size={14} />
+              {connected ? '데이터 불러오기' : '연결하고 불러오기'}
+            </button>
+            {#if !connected && conn}<span class="dim">{conn.name}</span>{/if}
+          </div>
         {:else}
           {@render logList(!isTable)}
         {/if}
@@ -1218,6 +1245,19 @@
   }
   .msg.error pre {
     color: var(--danger);
+  }
+  .reload-blank {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 100%;
+  }
+  .reload-blank .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .placeholder {
     padding: 30px;
