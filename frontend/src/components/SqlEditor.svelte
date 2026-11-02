@@ -89,7 +89,7 @@
   ])
 
   const theme = EditorView.theme({
-    '&': { height: '100%', fontSize: 'calc(13px * var(--gz, 1))', backgroundColor: 'var(--bg)', color: 'var(--syn-ident)' },
+    '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--bg)', color: 'var(--syn-ident)' },
     '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.55' },
     '.cm-content': { caretColor: 'var(--text)', padding: '6px 0' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)', borderLeftWidth: '2px' },
@@ -101,7 +101,7 @@
     '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--accent) 22%, transparent)' },
     '&.cm-focused .cm-matchingBracket': { backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)', outline: 'none' },
     '.cm-tooltip': { backgroundColor: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' },
-    '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)', fontSize: 'calc(12.5px * var(--gz, 1))' },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)', fontSize: '12.5px' },
     '.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px !important' },
     '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'var(--bg-select)', color: 'var(--text)' },
     '.cm-completionDetail': { color: 'var(--text-dim)', fontStyle: 'normal', marginLeft: '8px' },
@@ -184,12 +184,6 @@
       }),
     })
     return () => view?.destroy()
-  })
-
-  // The font follows the tab zoom (--gz): re-measure lines when it changes.
-  $effect(() => {
-    void app.gridZoom
-    view?.requestMeasure()
   })
 
   // Reconfigure dialect / completion schema when they change.

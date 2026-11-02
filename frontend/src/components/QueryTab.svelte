@@ -12,8 +12,6 @@
   import {
     app,
     syncTreeRows,
-    zoomBy,
-    setZoomLevel,
     connById,
     runSQL,
     fetchMore,
@@ -301,41 +299,6 @@
     sizeMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
   }
 
-  // zoom popover: any value from 50% to 300%
-  let zoomMenu = $state<{ right: number; top: number } | null>(null)
-  let zoomDraft = $state('')
-
-  function toggleZoomMenu(e: MouseEvent) {
-    e.stopPropagation()
-    if (zoomMenu) {
-      zoomMenu = null
-      return
-    }
-    const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    zoomDraft = String(Math.round(app.gridZoom * 100))
-    zoomMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
-  }
-
-  function applyZoom(pct: number) {
-    setZoomLevel(pct / 100)
-    zoomDraft = String(Math.round(app.gridZoom * 100))
-  }
-
-  // Ctrl/Cmd + wheel or +/-/0 zoom the whole tab: grid, editor, DDL, log.
-  function zoomWheel(e: WheelEvent) {
-    if (!(e.ctrlKey || e.metaKey)) return
-    e.preventDefault()
-    zoomBy(e.deltaY < 0 ? 1 : -1)
-  }
-
-  function zoomKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
-    const k = e.key
-    if (k !== '0' && k !== '-' && k !== '=' && k !== '+') return
-    e.preventDefault()
-    zoomBy(k === '0' ? 0 : k === '-' ? -1 : 1)
-  }
-
   function setPageSize(n: number) {
     app.pageSize = n
     sizeMenu = null
@@ -512,7 +475,7 @@
   })
 </script>
 
-<svelte:window onclick={() => ((exportMenu = null), (sizeMenu = null), (zoomMenu = null))} />
+<svelte:window onclick={() => ((exportMenu = null), (sizeMenu = null))} />
 
 {#snippet logList(hint: boolean)}
   <div class="messages">
@@ -532,7 +495,7 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="tab" style:--gz={app.gridZoom} onwheel={zoomWheel} onkeydown={zoomKey}>
+<div class="tab">
   {#if !isTable}
     <div class="toolbar">
       <button class="icon-btn run" title="실행 ({modKey}Enter) — 커서 위치 문장 또는 선택 영역" onclick={run} disabled={tab.running}>
@@ -722,45 +685,6 @@
             <span class="meta">{current.elapsedMs}ms</span>
           </div>
         {/if}
-          <div class="grp">
-            <button
-              class="btn mini zoom-btn"
-              class:dim={app.gridZoom === 1}
-              class:open={!!zoomMenu}
-              title="확대/축소 · {modKey}휠, {modKey}+ / - / 0"
-              onclick={toggleZoomMenu}>{Math.round(app.gridZoom * 100)}%</button
-            >
-            {#if zoomMenu}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="zoom-menu" style:right="{zoomMenu.right}px" style:top="{zoomMenu.top}px" onclick={(e) => e.stopPropagation()}>
-                <div class="zrow">
-                  <button class="icon-btn sm" title="축소" onclick={() => applyZoom(Math.round(app.gridZoom * 100) - 5)}><Icon name="minus" size={13} /></button>
-                  <input
-                    type="range"
-                    min="50"
-                    max="300"
-                    step="5"
-                    value={Math.round(app.gridZoom * 100)}
-                    oninput={(e) => applyZoom(+(e.currentTarget as HTMLInputElement).value)}
-                  />
-                  <button class="icon-btn sm" title="확대" onclick={() => applyZoom(Math.round(app.gridZoom * 100) + 5)}><Icon name="plus" size={13} /></button>
-                </div>
-                <div class="zrow">
-                  <input
-                    class="zinput"
-                    bind:value={zoomDraft}
-                    inputmode="numeric"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') applyZoom(parseFloat(zoomDraft) || 100)
-                      if (e.key === 'Escape') zoomMenu = null
-                    }}
-                    onblur={() => applyZoom(parseFloat(zoomDraft) || 100)}
-                  /><span class="pct">%</span>
-                  <button class="btn mini" onclick={() => applyZoom(100)} disabled={app.gridZoom === 1}>100%</button>
-                </div>
-              </div>
-            {/if}
-          </div>
       </div>
       {#if isTable && tableView === 'data' && tab.tableRef}
         <!-- DataGrip-style: part of the grid's surface, no boxed inputs -->
@@ -936,15 +860,13 @@
     flex-direction: column;
     min-height: 0;
   }
-  /* the data / DDL / log bar follows the tab zoom too (--iz scales icons) */
   .rtabs {
-    --iz: var(--gz, 1);
-    font-size: calc(13px * var(--gz, 1));
+    font-size: 13px;
     display: flex;
     align-items: center;
     gap: 2px;
     padding: 0 6px;
-    height: calc(30px * var(--gz, 1));
+    height: 30px;
     flex-shrink: 0;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
@@ -975,7 +897,6 @@
     background: var(--danger);
   }
   .filterbar {
-    --iz: var(--gz, 1);
     display: flex;
     align-items: stretch;
     flex-shrink: 0;
@@ -1007,7 +928,7 @@
   .kw {
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: calc(11.5px * var(--gz, 1));
+    font-size: 11.5px;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -1035,24 +956,24 @@
     gap: 1px;
   }
   .rtabs .icon-btn {
-    width: calc(26px * var(--gz, 1));
-    height: calc(26px * var(--gz, 1));
+    width: 26px;
+    height: 26px;
   }
   .rtabs .icon-btn.sm,
   .icon-btn.sm {
-    width: calc(22px * var(--gz, 1));
-    height: calc(22px * var(--gz, 1));
+    width: 22px;
+    height: 22px;
   }
   .range {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    height: calc(22px * var(--gz, 1));
+    height: 22px;
     padding: 0 6px;
     border: none;
     border-radius: 4px;
     background: none;
-    font-size: calc(12px * var(--gz, 1));
+    font-size: 12px;
     color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -1064,45 +985,6 @@
   }
   .size-menu {
     min-width: 150px;
-  }
-  .zoom-btn.dim {
-    color: var(--text-faint);
-  }
-  .zoom-btn.open {
-    background: var(--bg-hover);
-  }
-  .zoom-menu {
-    position: fixed;
-    z-index: 60;
-    display: flex;
-    flex-direction: column;
-    width: 210px;
-    gap: 6px;
-    padding: 8px;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  }
-  .zrow {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .zrow input[type='range'] {
-    flex: 1;
-    min-width: 0;
-    accent-color: var(--accent);
-  }
-  .zinput {
-    width: 52px;
-    padding: 2px 6px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  .pct {
-    flex: 1;
-    color: var(--text-dim);
   }
   .size-menu button.on {
     color: var(--accent);
@@ -1133,12 +1015,12 @@
     overflow: hidden;
   }
   .seg button {
-    height: calc(22px * var(--gz, 1));
+    height: 22px;
     padding: 0 10px;
     border: none;
     background: none;
     color: var(--text-dim);
-    font-size: calc(12px * var(--gz, 1));
+    font-size: 12px;
     cursor: pointer;
   }
   .seg button + button {
@@ -1191,7 +1073,7 @@
   }
   .running.small {
     margin: 0 0 0 8px;
-    font-size: calc(12px * var(--gz, 1));
+    font-size: 12px;
   }
   .pending {
     color: var(--warn);
@@ -1204,7 +1086,7 @@
     align-items: center;
     gap: 4px;
     color: var(--text-faint);
-    font-size: calc(12px * var(--gz, 1));
+    font-size: 12px;
     margin-right: 4px;
     white-space: nowrap;
     cursor: help;
@@ -1237,9 +1119,9 @@
     white-space: nowrap;
   }
   .mini {
-    height: calc(22px * var(--gz, 1));
+    height: 22px;
     padding: 0 6px;
-    font-size: calc(11px * var(--gz, 1));
+    font-size: 11px;
   }
   .rbody {
     position: relative;
@@ -1279,7 +1161,7 @@
     -webkit-user-select: text;
   }
   .messages .placeholder {
-    font-size: calc(13px * var(--gz, 1));
+    font-size: 13px;
   }
   .msg {
     display: flex;
@@ -1290,13 +1172,13 @@
   .msg .time {
     color: var(--text-faint);
     font-family: var(--font-mono);
-    font-size: calc(11.5px * var(--gz, 1));
+    font-size: 11.5px;
     padding-top: 1px;
   }
   .msg pre {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: calc(12px * var(--gz, 1));
+    font-size: 12px;
     white-space: pre-wrap;
     word-break: break-word;
   }

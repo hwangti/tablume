@@ -1,4 +1,5 @@
 import { api, errText } from './api'
+import { Window } from '@wailsio/runtime'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import type { Cell, Column, ConnConfig, Routine, SchemaFilter, StmtResult, Table } from './types'
@@ -110,7 +111,7 @@ export const app = $state({
   // What the schema tree shows next to each table / column.
   treeView: { comment: true, tableCount: true, rows: false, size: false },
   tableOpen: { pkDesc: false },
-  gridZoom: 1,
+  zoom: 1, // whole window
   gridColNumbers: false, // column numbers in result headers
   ddlMode: 'table' as 'sql' | 'table', // DDL tab: columns table first
   theme: getTheme(),
@@ -286,15 +287,25 @@ export async function ensureStats() {
 }
 
 // ---------------------------------------------------------------- zoom
-// One zoom for the tab contents: result grid, SQL editor, DDL, log.
-export const ZOOM_MIN = 0.5
-export const ZOOM_MAX = 3
-const ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.5, 3]
+// One zoom for the whole window, done by the webview itself (like browser
+// zoom), so every part scales the same. The native webviews stop at 100%.
+export const ZOOM_MIN = 1
+export const ZOOM_MAX = 2
+const ZOOM_STEPS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2]
+
+function applyZoom() {
+  const z = app.zoom
+  Window.SetZoom(z).catch(() => {
+    // No native window (server build in a browser): CSS zoom instead.
+    document.documentElement.style.zoom = z === 1 ? '' : String(z)
+  })
+}
 
 export function setZoomLevel(v: number): boolean {
   const next = Math.round(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v)) * 100) / 100
-  if (!isFinite(next) || next === app.gridZoom) return false
-  app.gridZoom = next
+  if (!isFinite(next) || next === app.zoom) return false
+  app.zoom = next
+  applyZoom()
   saveWorkspaceSoon()
   return true
 }
@@ -302,7 +313,7 @@ export function setZoomLevel(v: number): boolean {
 // step: +1 / -1 to the next preset, 0 back to 100%
 export function zoomBy(step: number): boolean {
   if (step === 0) return setZoomLevel(1)
-  const z = app.gridZoom
+  const z = app.zoom
   const next =
     step > 0 ? (ZOOM_STEPS.find((s) => s > z + 0.001) ?? ZOOM_MAX) : ([...ZOOM_STEPS].reverse().find((s) => s < z - 0.001) ?? ZOOM_MIN)
   return setZoomLevel(next)
@@ -867,7 +878,7 @@ export function saveWorkspaceSoon() {
       pageSize: app.pageSize,
       treeView: app.treeView,
       tableOpen: app.tableOpen,
-      gridZoom: app.gridZoom,
+      zoom: app.zoom,
       gridColNumbers: app.gridColNumbers,
       ddlView: app.ddlMode,
       theme: app.theme,
@@ -903,7 +914,11 @@ export async function loadWorkspace() {
     // (saved as ddlView since the table became the default; the old ddlMode key is ignored)
     if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
-    if (typeof data.gridZoom === 'number' && data.gridZoom >= 0.5 && data.gridZoom <= 3) app.gridZoom = data.gridZoom
+    // (the old per-tab gridZoom is ignored)
+    if (typeof data.zoom === 'number' && data.zoom > ZOOM_MIN && data.zoom <= ZOOM_MAX) {
+      app.zoom = data.zoom
+      applyZoom()
+    }
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
       app.tabs.push({

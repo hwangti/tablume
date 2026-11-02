@@ -7,7 +7,7 @@
   import Modal from './components/Modal.svelte'
   import Icon from './components/Icon.svelte'
   import logo from './assets/logo.svg'
-  import { app, loadConnections, loadWorkspace, openConsole, closeTab, closeTabs, duplicateTab, connById, activeTab, saveWorkspaceSoon, pinTab } from './lib/state.svelte'
+  import { app, loadConnections, loadWorkspace, openConsole, closeTab, closeTabs, duplicateTab, connById, activeTab, saveWorkspaceSoon, pinTab, zoomBy } from './lib/state.svelte'
   import { driverLabel } from './lib/types'
 
   let sideW = $state(270)
@@ -16,6 +16,8 @@
 
   onMount(async () => {
     installTooltips()
+    // passive: false so the page itself doesn't scroll while zooming
+    window.addEventListener('wheel', zoomWheel, { passive: false, capture: true })
     await loadConnections()
     await loadWorkspace()
     ready = true
@@ -50,6 +52,35 @@
         app.activeTab = t.id
       }
     }
+  }
+
+  // Window zoom: Ctrl/Cmd + = / - / 0 (numpad too) and Ctrl/Cmd + wheel,
+  // anywhere in the window (caught before the editor sees the key).
+  function zoomKey(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    const c = e.code
+    const step =
+      e.key === '0' || c === 'Numpad0'
+        ? 0
+        : e.key === '-' || e.key === '_' || c === 'NumpadSubtract'
+          ? -1
+          : e.key === '=' || e.key === '+' || c === 'NumpadAdd'
+            ? 1
+            : null
+    if (step === null) return
+    e.preventDefault()
+    e.stopPropagation()
+    zoomBy(step)
+  }
+
+  // A trackpad sends a stream of small deltas; one step per 120 ms at most.
+  let lastWheelZoom = 0
+  function zoomWheel(e: WheelEvent) {
+    if (!(e.ctrlKey || e.metaKey) || Math.abs(e.deltaY) < 1) return
+    e.preventDefault()
+    if (e.timeStamp - lastWheelZoom < 120) return
+    lastWheelZoom = e.timeStamp
+    zoomBy(e.deltaY < 0 ? 1 : -1)
   }
 
   // Next / previous tab: Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+PageDown / PageUp,
@@ -189,7 +220,7 @@
   let renaming = $state<string | null>(null)
 </script>
 
-<svelte:window onkeydown={keydown} onkeydowncapture={switchKey} onclick={() => (tabMenu = null)} onblur={() => (tabMenu = null)} />
+<svelte:window onkeydown={keydown} onkeydowncapture={(e) => (zoomKey(e), switchKey(e))} onclick={() => (tabMenu = null)} onblur={() => (tabMenu = null)} />
 
 <div class="layout" style:grid-template-columns="{sideW}px 1px 1fr">
   <Sidebar />

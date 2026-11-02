@@ -179,11 +179,8 @@
   }
 
 
-  // Zoom (Ctrl + wheel / Ctrl +, -, 0) scales rows, fonts and widths;
-  // widths[] stay in 100% units so resizing survives zoom changes.
-  let z = $derived(app.gridZoom)
-  let ROW_H = $derived(Math.round(24 * z))
-  let HEAD_H = $derived(Math.round(28 * z))
+  const ROW_H = 24
+  const HEAD_H = 28
   // The "load previous rows" bar takes a row of its own above the data.
   let TOP_PAD = $derived(canLoadPrev || loadingPrev ? ROW_H : 0)
   let BODY_T = $derived(HEAD_H + TOP_PAD)
@@ -367,20 +364,9 @@
   let first = $derived(Math.max(0, Math.floor((scrollTop - TOP_PAD) / ROW_H) - OVERSCAN))
   let last = $derived(Math.min(order.length, Math.ceil((scrollTop - TOP_PAD + viewH) / ROW_H) + OVERSCAN))
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
-  let numW = $derived(Math.round(Math.max(44, String(rowBase + rows.length).length * 8 + 20) * z))
-  let cw = $derived(widths.map((w) => Math.round(w * z)))
+  let numW = $derived(Math.max(44, String(rowBase + rows.length).length * 8 + 20))
+  let cw = $derived(widths.map((w) => Math.round(w)))
   let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
-
-  // Zoom (app.gridZoom) is set for the whole tab by QueryTab (Ctrl+wheel,
-  // Ctrl+-/+/0, the % button); keep the first visible row in place.
-  let lastZoom = app.gridZoom
-  $effect(() => {
-    const zz = z
-    if (zz === lastZoom || !scroller) return
-    const row = scroller.scrollTop / Math.round(24 * lastZoom)
-    lastZoom = zz
-    requestAnimationFrame(() => scroller && (scroller.scrollTop = row * Math.round(24 * zz)))
-  })
 
   function onScroll() {
     scrollTop = scroller.scrollTop
@@ -649,7 +635,7 @@
     e.stopPropagation()
     const x0 = e.clientX
     const w0 = widths[c]
-    const move = (ev: MouseEvent) => (widths[c] = Math.max(40, w0 + (ev.clientX - x0) / z))
+    const move = (ev: MouseEvent) => (widths[c] = Math.max(40, w0 + (ev.clientX - x0)))
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
@@ -679,7 +665,6 @@
   bind:clientHeight={viewH}
   bind:clientWidth={viewW}
   onscroll={onScroll}
-  style:--gz={z}
   style:--row-h="{ROW_H}px"
   style:--head-h="{HEAD_H}px"
   onkeydown={keydown}
@@ -888,7 +873,7 @@
     outline: none;
     font-family: var(--font-mono);
     font-variant-ligatures: none;
-    font-size: calc(12.5px * var(--gz));
+    font-size: 12.5px;
     background: var(--bg);
   }
 
@@ -932,13 +917,13 @@
 
   .th .type {
     color: var(--text-faint);
-    font-size: calc(11px * var(--gz));
+    font-size: 11px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .th .sort {
-    font-size: calc(9px * var(--gz));
+    font-size: 9px;
     color: var(--accent);
   }
 
@@ -984,7 +969,7 @@
     color: var(--text-faint);
     background: var(--bg-panel);
     border-right: 1px solid var(--border);
-    font-size: calc(11px * var(--gz));
+    font-size: 11px;
     cursor: default;
   }
 
@@ -1014,7 +999,7 @@
   .cno {
     flex-shrink: 0;
     color: var(--text-faint);
-    font-size: calc(10.5px * var(--gz, 1));
+    font-size: 10.5px;
     font-weight: 400;
     font-variant-numeric: tabular-nums;
   }

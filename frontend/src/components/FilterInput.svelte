@@ -154,12 +154,12 @@
   input {
     position: relative;
     width: 100%;
-    height: calc(24px * var(--gz, 1));
+    height: 24px;
     padding: 3px 27px 3px 8px;
     border: none;
     border-radius: 0;
-    font-size: calc(12px * var(--gz, 1));
-    line-height: calc(18px * var(--gz, 1));
+    font-size: 12px;
+    line-height: 18px;
     background: transparent;
     color: transparent;
     caret-color: var(--text);
@@ -172,8 +172,8 @@
     position: absolute;
     inset: 0;
     padding: 3px 27px 3px 8px;
-    font-size: calc(12px * var(--gz, 1));
-    line-height: calc(18px * var(--gz, 1));
+    font-size: 12px;
+    line-height: 18px;
     white-space: pre;
     overflow: hidden;
     color: var(--syn-ident);
@@ -199,7 +199,7 @@
   }
   .list {
     position: absolute;
-    top: calc(26px * var(--gz, 1));
+    top: 26px;
     left: 0;
     z-index: 70;
     min-width: 220px;
@@ -211,7 +211,7 @@
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
     font-family: var(--font-mono);
-    font-size: calc(12.5px * var(--gz, 1));
+    font-size: 12.5px;
   }
   .item {
     display: flex;
@@ -227,7 +227,7 @@
   }
   .k {
     width: 22px;
-    font-size: calc(10px * var(--gz, 1));
+    font-size: 10px;
     color: var(--text-faint);
   }
   .k.col {
