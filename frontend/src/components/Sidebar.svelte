@@ -21,9 +21,7 @@
     moveConnection,
     toast,
     setZoomLevel,
-    zoomBy,
-    ZOOM_MIN,
-    ZOOM_MAX,
+    ZOOM_PRESETS,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -576,19 +574,15 @@
               >
             {/each}
           </div>
-          <div class="vm-title sep">화면 배율</div>
-          <div class="zoom-row" title={isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}>
-            <button class="icon-btn sm" title="축소" disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomBy(-1)}><Icon name="minus" size={13} /></button>
-            <input
-              type="range"
-              min={ZOOM_MIN * 100}
-              max={ZOOM_MAX * 100}
-              step="5"
-              value={Math.round(app.zoom * 100)}
-              oninput={(e) => setZoomLevel(+(e.currentTarget as HTMLInputElement).value / 100)}
-            />
-            <button class="icon-btn sm" title="확대" disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomBy(1)}><Icon name="plus" size={13} /></button>
-            <button class="zoom-val" title="100%로" disabled={app.zoom === 1} onclick={() => zoomBy(0)}>{Math.round(app.zoom * 100)}%</button>
+          <!-- Preset buttons, not a slider: the whole window (the slider too)
+               rescales on every change, so dragging can't be followed. -->
+          <div class="vm-title sep">
+            화면 배율 <span class="vm-val">{Math.round(app.zoom * 100)}%</span>
+          </div>
+          <div class="theme-seg zoom-seg" role="group" title={isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}>
+            {#each ZOOM_PRESETS as z (z)}
+              <button class:on={Math.abs(app.zoom - z) < 0.001} onclick={() => setZoomLevel(z)}>{Math.round(z * 100)}</button>
+            {/each}
           </div>
           <div class="vm-title sep">트리에 표시</div>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
@@ -833,36 +827,13 @@
   .info {
     cursor: default;
   }
-  .zoom-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin: 2px 4px 4px;
-  }
-  .zoom-row input[type='range'] {
-    flex: 1 1 0;
-    width: 0;
-    min-width: 0;
-    accent-color: var(--accent);
-  }
-  .zoom-val {
-    width: 46px;
-    padding: 1px 0;
-    border: none;
-    border-radius: 3px;
-    background: none;
+  .vm-val {
+    margin-left: 4px;
     color: var(--text);
-    font: inherit;
     font-variant-numeric: tabular-nums;
-    text-align: right;
-    cursor: pointer;
   }
-  .zoom-val:hover:not(:disabled) {
-    background: var(--bg-hover);
-  }
-  .zoom-val:disabled {
-    color: var(--text-dim);
-    cursor: default;
+  .zoom-seg button {
+    font-variant-numeric: tabular-nums;
   }
   .theme-seg {
     display: flex;
