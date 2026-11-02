@@ -273,3 +273,9 @@ textarea:focus {
   word-break: break-word;
   pointer-events: none;
 }
+
+/* see main.ts: rings only for keyboard navigation */
+:root:not(.kbd-nav) button:focus,
+:root:not(.kbd-nav) [tabindex]:focus {
+  outline: none;
+}
