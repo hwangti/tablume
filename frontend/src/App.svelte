@@ -27,7 +27,7 @@
     backToMain,
     closeTabWindow,
   } from './lib/state.svelte'
-  import { Window } from '@wailsio/runtime'
+  import { Window } from './lib/runtime'
   import { driverLabel } from './lib/types'
 
   let sideW = $state(270)

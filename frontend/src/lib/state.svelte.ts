@@ -1,5 +1,5 @@
 import { api, errText } from './api'
-import { Events, Window } from '@wailsio/runtime'
+import { Events, Window, windowLabel } from './runtime'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import type { Cell, Column, ConnConfig, Routine, SchemaFilter, StmtResult, Table } from './types'
@@ -979,8 +979,9 @@ export async function loadWorkspace(tabs = true) {
 // changes back. Results aren't carried over: table tabs reload, consoles
 // start empty.
 
-// Set when this page is a tab window (index.html?tab=<id>).
-export const tabWindowId = new URLSearchParams(location.search).get('tab') ?? ''
+// Set when this page is a tab window (label "tab-<id>", or ?tab=<id>).
+export const tabWindowId =
+  new URLSearchParams(location.search).get('tab') ?? (windowLabel().startsWith('tab-') ? windowLabel().slice(4) : '')
 
 type TabEvent = { id: string; tab?: SavedTab }
 

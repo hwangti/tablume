@@ -1,6 +1,6 @@
 // Theme: follow the OS (auto) or force dark / light. The choice is kept in
 // localStorage so it applies before the first paint, and in the workspace.
-import { Window } from '@wailsio/runtime'
+import { Window } from './runtime'
 import { api } from './api'
 
 export type ThemeMode = 'auto' | 'dark' | 'light'

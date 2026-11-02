@@ -95,7 +95,7 @@
   const blank = (): ConnConfig => ({
     id: '',
     name: '',
-    driver: 'mysql',
+    driver: 'mariadb',
     host: 'localhost',
     port: 3306,
     user: '',

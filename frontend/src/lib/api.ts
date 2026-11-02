@@ -1,4 +1,4 @@
-import * as App from '../../bindings/tablume/app'
+import { invoke } from '@tauri-apps/api/core'
 import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange } from './types'
 
 export interface AlterRequest {
@@ -8,8 +8,7 @@ export interface AlterRequest {
   changes: { old: Column; new: Column }[]
 }
 
-// Typed view over the generated Wails bindings, using our own types
-// (the generated ones mark every slice and pointer as nullable).
+// The backend commands (src-tauri/src/lib.rs), with the Go app's names.
 interface Api {
   ListConnections(): Promise<ConnConfig[]>
   SaveConnection(c: ConnConfig): Promise<ConnConfig>
@@ -71,7 +70,54 @@ export interface ApplyRequest {
   changes: RowChange[]
 }
 
-export const api = App as unknown as Api
+const call = <T>(cmd: string, args?: Record<string, unknown>) => invoke<T>(cmd, args)
+
+export const api: Api = {
+  ListConnections: () => call('list_connections'),
+  SaveConnection: (c) => call('save_connection', { c }),
+  DeleteConnection: (id) => call('delete_connection', { id }),
+  SetSchemaFilter: (id, f) => call('set_schema_filter', { id, f }),
+  ReorderConnections: (ids) => call('reorder_connections', { ids }),
+  TestConnection: (c) => call('test_connection', { c }),
+  NeedsPassword: (id) => call('needs_password', { id }),
+  Connect: (id, password) => call('connect', { id, password }),
+  Disconnect: (id) => call('disconnect', { id }),
+  IsConnected: (id) => call('is_connected', { id }),
+  ListSchemas: (id) => call('list_schemas', { id }),
+  ListTables: (id, schema) => call('list_tables', { id, schema }),
+  TableStats: (id, schema) => call('table_stats', { id, schema }),
+  ListColumns: (id, schema, t) => call('list_columns', { id, schema, t }),
+  CompletionColumns: (id, schema) => call('completion_columns', { id, schema }),
+  SelectSQL: (id, schema, t, cond, orderBy, limit, offset) => call('select_sql', { id, schema, t, cond, orderBy, limit, offset }),
+  ListRoutines: (id, schema) => call('list_routines', { id, schema }),
+  RoutineSource: (id, schema, r) => call('routine_source', { id, schema, r }),
+  PreviewAlter: (req) => call('preview_alter', { req }),
+  ApplyAlter: (req) => call('apply_alter', { req }),
+  CountRows: (id, schema, t, cond) => call('count_rows', { id, schema, t, cond }),
+  FetchPage: (tabId, connId, sql, offset, n) => call('fetch_page', { tabId, connId, sql, offset, n }),
+  CountResult: (tabId, connId, sql) => call('count_result', { tabId, connId, sql }),
+  QuoteIdent: (id, name) => call('quote_ident', { id, name }),
+  QualifiedName: (id, schema, t) => call('qualified_name', { id, schema, t }),
+  TableDDL: (id, schema, t) => call('table_ddl', { id, schema, t }),
+  EditInfo: (id, schema, source, columns) => call('edit_info', { id, schema, source, columns }),
+  PreviewChanges: (req) => call('preview_changes', { req }),
+  ApplyChanges: (req) => call('apply_changes', { req }),
+  Execute: (req) => call('execute', { req }),
+  FetchMore: (tabId, cursorId, n) => call('fetch_more', { tabId, cursorId, n }),
+  Cancel: (tabId) => call('cancel', { tabId }),
+  CloseSession: (tabId) => call('close_session', { tabId }),
+  PickSQLiteFile: () => call('pick_sqlite_file'),
+  PickKeyFile: () => call('pick_key_file'),
+  SaveTextFile: (name, content) => call('save_text_file', { name, content }),
+  OpenSQLFile: () => call('open_sql_file'),
+  LoadWorkspace: () => call('load_workspace'),
+  SaveWorkspace: (data) => call('save_workspace', { data }),
+  SetDarkTitleBar: (dark) => call('set_dark_title_bar', { dark }),
+  OpenTabWindow: (tabId, title, state) => call('open_tab_window', { tabId, title, state }),
+  TabWindowState: (tabId) => call('tab_window_state', { tabId }),
+  CloseTabWindow: (tabId) => call('close_tab_window', { tabId }),
+  FocusTabWindow: (tabId) => call('focus_tab_window', { tabId }),
+}
 
 export function errText(e: unknown): string {
   if (e instanceof Error) return e.message

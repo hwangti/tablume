@@ -1,7 +1,9 @@
 <script lang="ts">
   import { api, errText } from '../lib/api'
   import { app, loadConnections, disconnect, connect, toast, confirmBox } from '../lib/state.svelte'
-  import { DRIVERS, type ConnConfig, type Driver } from '../lib/types'
+  import { DRIVERS as ALL_DRIVERS, type ConnConfig, type Driver } from '../lib/types'
+  // Tauri experiment: MariaDB/MySQL only.
+  const DRIVERS = ALL_DRIVERS.filter((d) => d.id === 'mariadb' || d.id === 'mysql')
   import Modal from './Modal.svelte'
   import { untrack } from 'svelte'
 

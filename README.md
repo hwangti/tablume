@@ -1,14 +1,12 @@
-# Tablume
+# Tablume (Tauri 실험판)
 
-A lightweight cross-platform multi-database SQL client written in Go.
+> **이 브랜치(`feat/tauri-mariadb`)는 실험용입니다.** Go + Wails로 만든 Tablume의 백엔드를 Rust + [Tauri 2](https://tauri.app)로 다시 짜서 비교해 보려는 브랜치이고, **MariaDB/MySQL만** 지원합니다. 원래 앱은 `feat/initial-app` 브랜치에 있습니다.
 
-DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입니다. macOS와 Windows에서 동작합니다.
+프론트엔드(Svelte 5 + CodeMirror 6)는 Wails 판과 같습니다. 바뀐 것은 백엔드와, 프론트엔드가 백엔드를 부르는 얇은 층(`frontend/src/lib/api.ts`, `runtime.ts`)뿐입니다.
 
-![Tablume](docs/screenshot-oracle.png)
-
-- **지원 DB**: MySQL, MariaDB, Oracle, SQL Server, PostgreSQL, SQLite
-- **크기**: 실행 파일 하나, 약 35MB. JVM이나 Chromium을 함께 넣지 않고 OS에 있는 웹뷰를 씁니다. (Windows는 WebView2, macOS는 WKWebView)
-- **Oracle Instant Client가 필요 없습니다.** 순수 Go 드라이버([go-ora](https://github.com/sijms/go-ora))를 씁니다.
+- **지원 DB**: MariaDB, MySQL
+- **빠진 것**: SSH 터널, 나머지 DB 4종(Oracle, SQL Server, PostgreSQL, SQLite)
+- **설정 파일**: Wails 판과 따로 둡니다(`Tablume Tauri` 폴더). 두 앱을 함께 써도 서로의 연결 목록을 건드리지 않습니다. 연결은 새로 만들어야 합니다.
 
 ## 기능
 
@@ -114,37 +112,31 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 
 ## 개발
 
-필요한 것: Go 1.26 이상, Node 20 이상, [Wails v3](https://v3.wails.io) CLI
+필요한 것: [Rust](https://rustup.rs) (stable), Node 20 이상. 리눅스에서는 `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libdbus-1-dev`도 필요합니다.
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+npm install
 ```
 
 ```bash
-wails3 dev
+npm --prefix frontend install
 ```
 
 ```bash
-wails3 build
+npm run dev
 ```
 
 ```bash
-wails3 package
+npm run build
 ```
 
-- `wails3 dev`: 핫 리로드로 개발합니다. Go 코드를 고치면 다시 빌드하고, 프런트엔드는 Vite가 바로 반영합니다.
-- `wails3 build`: 지금 쓰는 OS용으로 빌드합니다. 결과물은 `build/bin/`에 생깁니다. 빌드 단계는 `Taskfile.yml`에 있습니다.
-- `wails3 package`: 배포용 빌드입니다. macOS에서는 `build/bin/Tablume.app`까지 만듭니다.
-- 프런트엔드가 부르는 Go 함수(`frontend/bindings/`)는 빌드할 때 `app.go`에서 다시 만들어집니다. 직접 만들려면 `wails3 task bindings`를 실행합니다.
-- 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 합니다. Wails v3의 기본값은 GTK4라서 Taskfile이 `gtk3` 태그를 붙입니다.
-- Windows용 `.exe`는 리눅스나 macOS에서도 `wails3 build GOOS=windows`로 만들 수 있습니다.
-- `wails3 task build:server`는 창 없이 HTTP 서버로만 뜨는 빌드를 만듭니다. 브라우저로 http://localhost:8080 을 열어 화면을 확인할 수 있습니다(창 배율 같은 네이티브 기능은 빠집니다).
-- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 한국어로 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
-- macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
+- `npm run dev`: Vite 개발 서버를 띄우고 앱을 디버그 빌드로 실행합니다. Rust 코드를 고치면 다시 빌드합니다.
+- `npm run build`: 배포용 빌드입니다. 실행 파일은 `src-tauri/target/release/`에, 설치 파일(macOS `.app`/`.dmg`, Windows 설치 프로그램)은 `src-tauri/target/release/bundle/`에 생깁니다.
+- macOS 앱은 macOS에서, Windows 앱은 Windows에서 빌드합니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
 
 ### GitHub Actions로 배포 파일 만들기
 
-`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(Apple Silicon) `.app` zip과 Windows `.exe`를 만들어 아티팩트로 올립니다.
+`.github/workflows/build.yml`은 이 브랜치에 푸시할 때마다 돌아갑니다. macOS(Apple Silicon) `.app` zip과 `.dmg`, Windows `.exe`(설치 없이 실행)와 설치 프로그램을 아티팩트로 올립니다.
 
 macOS 빌드는 서명되지 않았기 때문에 처음 실행할 때 Finder에서 우클릭 → 열기를 하거나, 다음 명령을 실행해야 합니다.
 
@@ -155,57 +147,36 @@ xattr -dr com.apple.quarantine Tablume.app
 ### 테스트
 
 ```bash
-go test ./internal/...
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-이 명령은 SQL 문장 분리기만 단위 테스트합니다. 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
+이 명령은 SQL 문장 분리기와 페이징만 단위 테스트합니다. 실제 MariaDB에 대한 통합 테스트는 테스트용 DB를 띄운 뒤 실행합니다.
 
 ```bash
 docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
 ```
 
 ```bash
-docker run -d --name t-pg -e POSTGRES_PASSWORD=pw -p 5432:5432 postgres:17-alpine
-```
-
-```bash
-docker run -d --name t-ora -e ORACLE_PASSWORD=pw -e APP_USER=app -e APP_USER_PASSWORD=pw -p 1521:1521 gvenzl/oracle-free:slim-faststart
-```
-
-```bash
-docker run -d --name t-mssql -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=Passw0rd!' -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
-```
-
-DB가 모두 뜨면 통합 테스트를 실행합니다.
-
-```bash
-TABLUME_IT=1 go test ./internal/dbx/ -v
+TABLUME_IT=1 cargo test --manifest-path src-tauri/Cargo.toml integration -- --nocapture
 ```
 
 ## 구조
 
 ```
-main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API (App 서비스)
-menu.go                    macOS 메뉴 막대
-Taskfile.yml               빌드 단계 (wails3 build / package / dev)
-internal/dbx/              DB 계층
-  dialect.go               DB별 접속 문자열과 메타데이터 쿼리
-  manager.go               연결 풀, 탭별 세션, 실행/취소/커서
-  split.go                 SQL 스크립트를 문장 단위로 나누기 (DB별 규칙)
-internal/store/            연결 목록(JSON)과 키체인 연동
-frontend/                  Svelte 5 + CodeMirror 6 UI
+src-tauri/                 Tauri 앱 (Rust)
+  src/lib.rs               프론트엔드가 부르는 명령, 탭 창, macOS 메뉴
+  src/db.rs                연결 풀, 탭별 세션(실행/취소/커서), 메타데이터, 편집, ALTER
+  src/sql.rs               SQL 스크립트를 문장 단위로 나누기, 페이징, 원본 테이블 찾기
+  src/store.rs             연결 목록(JSON)과 키체인 연동
+  tauri.conf.json          창, 번들 설정
+  capabilities/            웹뷰에 허용하는 Tauri API
+frontend/                  Svelte 5 + CodeMirror 6 UI (Wails 판과 같음)
 ```
 
 설정 파일 위치:
 
-- macOS: `~/Library/Application Support/Tablume/`
-- Windows: `%AppData%\Tablume\`
-
-## 다음에 하면 좋을 것
-
-- 수동 커밋 모드 토글
-- 쿼리 히스토리
-- 인덱스/제약조건 트리
+- macOS: `~/Library/Application Support/Tablume Tauri/`
+- Windows: `%AppData%\Tablume Tauri\`
 
 ## 라이선스
 
