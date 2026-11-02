@@ -76,6 +76,24 @@
   let dragging = $state<string | null>(null)
   let tabsEl: HTMLDivElement
 
+  // The active tab is always scrolled into view (a new tab opens at the end).
+  $effect(() => {
+    const id = app.activeTab
+    void app.tabs.length
+    requestAnimationFrame(() => {
+      const el = tabsEl?.querySelector<HTMLElement>(`.tab[data-id="${CSS.escape(id)}"]`)
+      el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+  })
+
+  // No scrollbar on the tab strip (it took height): the wheel scrolls it.
+  function tabsWheel(e: WheelEvent) {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      tabsEl.scrollLeft += e.deltaY
+      e.preventDefault()
+    }
+  }
+
   function tabMouseDown(e: MouseEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault()
@@ -121,12 +139,13 @@
   <div class="vdivider" onmousedown={startDrag}></div>
 
   <main>
-    <div class="tabs" bind:this={tabsEl}>
+    <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel}>
       {#each app.tabs as t (t.id)}
         {@const c = connById(t.connId)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div
           class="tab"
+          data-id={t.id}
           class:on={t.id === app.activeTab}
           class:dragging={dragging === t.id}
           style:--conn-color={c?.color || 'transparent'}
@@ -252,6 +271,10 @@
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
     overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
   .tab {
     display: flex;

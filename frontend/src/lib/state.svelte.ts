@@ -584,6 +584,14 @@ export async function countResult(tab: Tab, r: StmtResult): Promise<number | nul
   return r.total ?? null
 }
 
+// A table tab counted its rows exactly (COUNT, or every row fetched with no
+// WHERE): show that in the tree instead of the statistics estimate.
+export function syncTreeRows(connId: string, schema: string, t: Table, n: number) {
+  const s = app.conn[connId]?.schemas.find((x) => x.name === schema)
+  const node = s?.tables?.find((x) => x.t.schema === t.schema && x.t.name === t.name)
+  if (node && node.t.rows !== n) node.t.rows = n
+}
+
 // Inserts fetched rows at index `at`, moving the row-indexed edit state of
 // the rows behind them.
 function insertFetched(r: StmtResult, at: number, rows: Cell[][]) {
@@ -650,8 +658,10 @@ export function cancel(tab: Tab) {
 const sameTable = (a: Table, b: Table) => a.schema === b.schema && a.name === b.name
 
 export async function openTableData(connId: string, schema: string, t: Table): Promise<Tab> {
+  // The table is already open in a tab (pinned or preview): go there.
+  const open = app.tabs.find((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))
   // A preview tab with unsaved edits is never replaced.
-  let tab = app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
+  let tab = open ?? app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
   if (tab && tab.connId === connId && tab.tableRef?.schema === schema && sameTable(tab.tableRef.table, t)) {
     app.activeTab = tab.id // same table clicked again: keep its filter
     // (a tab restored from the last session hasn't run yet)

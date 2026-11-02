@@ -371,12 +371,22 @@
   let cw = $derived(widths.map((w) => Math.round(w * z)))
   let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
 
+  export const ZOOM_MIN = 0.5
+  export const ZOOM_MAX = 3
+
+  // Ctrl+wheel / Ctrl+-/+ step through these; setZoom takes any value.
   export function zoom(step: number) {
-    const steps = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2]
-    let i = steps.findIndex((s) => s >= app.gridZoom - 0.001)
-    if (i < 0) i = steps.length - 1
-    const next = step === 0 ? 1 : steps[Math.max(0, Math.min(steps.length - 1, i + step))]
-    if (next === app.gridZoom) return
+    const steps = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.5, 3]
+    let next: number
+    if (step === 0) next = 1
+    else if (step > 0) next = steps.find((s) => s > app.gridZoom + 0.001) ?? ZOOM_MAX
+    else next = [...steps].reverse().find((s) => s < app.gridZoom - 0.001) ?? ZOOM_MIN
+    setZoom(next)
+  }
+
+  export function setZoom(v: number) {
+    const next = Math.round(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v)) * 100) / 100
+    if (!isFinite(next) || next === app.gridZoom) return
     // keep the first visible row in place
     const row = scroller ? scroller.scrollTop / ROW_H : 0
     app.gridZoom = next

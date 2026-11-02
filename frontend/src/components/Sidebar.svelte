@@ -279,17 +279,18 @@
     if (dragJustEnded) return
     cursor = r.key
     treeEl.focus({ preventScroll: true })
-    if (r.kind === 'conn' || r.kind === 'schema' || r.kind === 'rgroup') toggle(r)
-    else if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
+    // connections and folders open with the chevron or a double-click
+    if (r.kind === 'table') openTable(r.c.id, r.s.name, r.t)
     else if (r.kind === 'routine') openRoutine(r.c.id, r.s.name, r.r)
     else if (r.kind === 'info') r.run?.()
   }
 
-  // Click opens a preview tab (replaced by the next click); double-click
-  // keeps it open.
+  // Table: click opens a preview tab (replaced by the next click),
+  // double-click keeps it open. Connection / schema: double-click expands.
   function rowDblClick(r: Row) {
+    if (dragJustEnded) return
     if (r.kind === 'table') pinTable(r.c.id, r.s.name, r.t)
-    else if (r.kind === 'conn' && app.conn[r.c.id]?.status === 'connected') openConsole(r.c.id)
+    else if (r.kind === 'conn' || r.kind === 'schema' || r.kind === 'rgroup') toggle(r)
   }
 
   function moveCursor(key: string, block: ScrollLogicalPosition = 'nearest') {
@@ -576,13 +577,13 @@
           <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
           <label
             ><input type="checkbox" bind:checked={app.treeView.rows} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> 테이블
-            행 수 (통계 기준 추정)</label
+            행 수</label
           >
           <label
             ><input type="checkbox" bind:checked={app.treeView.size} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> 테이블
             크기</label
           >
-          <div class="vm-note">행 수 · 크기는 켜 둔 동안만 따로 가져옵니다</div>
+
           <div class="vm-title sep">결과 표</div>
           <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> 컬럼 번호 표시</label>
           <div class="vm-title sep">테이블 열 때</div>
@@ -943,11 +944,7 @@
     background: var(--bg-input);
     color: var(--text);
   }
-  .vm-note {
-    color: var(--text-faint);
-    font-size: 11px;
-    margin-top: -2px;
-  }
+
   .dbicon {
     display: inline-flex;
     color: var(--text-faint);

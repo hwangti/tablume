@@ -674,33 +674,14 @@ func (oracleDialect) ListTables(ctx context.Context, q Querier, schema string) (
 }
 
 func (oracleDialect) TableStats(ctx context.Context, q Querier, schema string) ([]Table, error) {
-	// num_rows comes from optimizer statistics (NULL until gathered).
-	stats, err := scanStats(ctx, q, `SELECT table_name, num_rows, -1 FROM all_tables WHERE owner = :1`, schema)
-	if err != nil {
-		return nil, err
-	}
-	// Sizes: USER_SEGMENTS for the login user's own schema, DBA_SEGMENTS
-	// for others when the user may read it; otherwise unknown.
-	var sizes []Table
-	if strings.EqualFold(firstString(ctx, q, "SELECT USER FROM dual"), schema) {
-		sizes, err = scanStats(ctx, q, `SELECT segment_name, -1, SUM(bytes) FROM user_segments GROUP BY segment_name`)
-	} else {
-		sizes, err = scanStats(ctx, q, `SELECT segment_name, -1, SUM(bytes) FROM dba_segments WHERE owner = :1 GROUP BY segment_name`, schema)
-	}
-	if err == nil {
-		size := make(map[string]int64, len(sizes))
-		for _, s := range sizes {
-			size[s.Name] = s.Size
-		}
-		for i := range stats {
-			if b, ok := size[stats[i].Name]; ok {
-				stats[i].Size = b
-			} else if stats[i].Rows >= 0 {
-				stats[i].Size = 0 // deferred segment creation: no segment yet
-			}
-		}
-	}
-	return stats, nil
+	// Rows and size both come from optimizer statistics (NULL until
+	// gathered): size is the table's blocks times the tablespace block
+	// size. USER_SEGMENTS / DBA_SEGMENTS would be exact but can take many
+	// seconds on a schema with lots of segments.
+	return scanStats(ctx, q, `SELECT t.table_name, t.num_rows,
+		CASE WHEN t.blocks IS NULL THEN -1 ELSE t.blocks * NVL(ts.block_size, 8192) END
+		FROM all_tables t LEFT JOIN user_tablespaces ts ON ts.tablespace_name = t.tablespace_name
+		WHERE t.owner = :1`, schema)
 }
 
 func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {

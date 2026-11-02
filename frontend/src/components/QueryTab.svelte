@@ -11,6 +11,7 @@
   import { modKey, copyText } from '../lib/clipboard'
   import {
     app,
+    syncTreeRows,
     connById,
     runSQL,
     fetchMore,
@@ -189,6 +190,14 @@
   let counting = $state(false)
   // Everything fits in what's loaded: just the row count, no paging.
   let whole = $derived(!!current && start === 0 && !current.hasMore)
+
+  // exact row count of an unfiltered table → the tree's row count
+  $effect(() => {
+    const ref = tab.tableRef
+    if (!isTable || !ref || ref.where.trim() || !current || current.error || tab.running) return
+    const n = whole ? loaded : total
+    if (n !== null && n >= 0) syncTreeRows(tab.connId, ref.schema, ref.table, n)
+  })
   let sizeMenu = $state<{ right: number; top: number } | null>(null)
 
   async function count() {
@@ -277,6 +286,26 @@
     }
     const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
     sizeMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
+  }
+
+  // zoom popover: any value from 50% to 300%
+  let zoomMenu = $state<{ right: number; top: number } | null>(null)
+  let zoomDraft = $state('')
+
+  function toggleZoomMenu(e: MouseEvent) {
+    e.stopPropagation()
+    if (zoomMenu) {
+      zoomMenu = null
+      return
+    }
+    const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    zoomDraft = String(Math.round(app.gridZoom * 100))
+    zoomMenu = { right: window.innerWidth - b.right, top: b.bottom + 4 }
+  }
+
+  function applyZoom(pct: number) {
+    grid?.setZoom(pct / 100)
+    zoomDraft = String(Math.round(app.gridZoom * 100))
   }
 
   function setPageSize(n: number) {
@@ -455,7 +484,7 @@
   })
 </script>
 
-<svelte:window onclick={() => ((exportMenu = null), (sizeMenu = null))} />
+<svelte:window onclick={() => ((exportMenu = null), (sizeMenu = null), (zoomMenu = null))} />
 
 {#snippet logList(hint: boolean)}
   <div class="messages">
@@ -607,11 +636,45 @@
               <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
             {/if}
           </div>
-          {#if app.gridZoom !== 1}
-            <div class="grp">
-              <button class="btn mini" title="표 확대/축소 초기화 ({modKey}0) · {modKey}+휠로 조절" onclick={() => grid?.zoom(0)}>{Math.round(app.gridZoom * 100)}%</button>
-            </div>
-          {/if}
+          <div class="grp">
+            <button
+              class="btn mini zoom-btn"
+              class:dim={app.gridZoom === 1}
+              class:open={!!zoomMenu}
+              title="표 확대/축소 · {modKey}휠, {modKey}+ / - / 0"
+              onclick={toggleZoomMenu}>{Math.round(app.gridZoom * 100)}%</button
+            >
+            {#if zoomMenu}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="zoom-menu" style:right="{zoomMenu.right}px" style:top="{zoomMenu.top}px" onclick={(e) => e.stopPropagation()}>
+                <div class="zrow">
+                  <button class="icon-btn sm" title="축소" onclick={() => applyZoom(Math.round(app.gridZoom * 100) - 5)}><Icon name="minus" size={13} /></button>
+                  <input
+                    type="range"
+                    min="50"
+                    max="300"
+                    step="5"
+                    value={Math.round(app.gridZoom * 100)}
+                    oninput={(e) => applyZoom(+(e.currentTarget as HTMLInputElement).value)}
+                  />
+                  <button class="icon-btn sm" title="확대" onclick={() => applyZoom(Math.round(app.gridZoom * 100) + 5)}><Icon name="plus" size={13} /></button>
+                </div>
+                <div class="zrow">
+                  <input
+                    class="zinput"
+                    bind:value={zoomDraft}
+                    inputmode="numeric"
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') applyZoom(parseFloat(zoomDraft) || 100)
+                      if (e.key === 'Escape') zoomMenu = null
+                    }}
+                    onblur={() => applyZoom(parseFloat(zoomDraft) || 100)}
+                  /><span class="pct">%</span>
+                  <button class="btn mini" onclick={() => applyZoom(100)} disabled={app.gridZoom === 1}>100%</button>
+                </div>
+              </div>
+            {/if}
+          </div>
         {/if}
         {#if isTable && tableView !== 'data'}
           <div class="grp">
@@ -648,7 +711,6 @@
             <button class="icon-btn sm" title="마지막으로" disabled={busy || whole || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
             {#if sizeMenu}
               <div class="menu size-menu" style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
-                <div class="hint">한 번에 불러올 행 수</div>
                 {#each PAGE_SIZES as n (n)}
                   <button class:on={app.pageSize === n} onclick={() => setPageSize(n)}>{n.toLocaleString()}</button>
                 {/each}
@@ -916,6 +978,45 @@
   }
   .size-menu {
     min-width: 150px;
+  }
+  .zoom-btn.dim {
+    color: var(--text-faint);
+  }
+  .zoom-btn.open {
+    background: var(--bg-hover);
+  }
+  .zoom-menu {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    width: 210px;
+    gap: 6px;
+    padding: 8px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .zrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .zrow input[type='range'] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent);
+  }
+  .zinput {
+    width: 52px;
+    padding: 2px 6px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .pct {
+    flex: 1;
+    color: var(--text-dim);
   }
   .size-menu button.on {
     color: var(--accent);

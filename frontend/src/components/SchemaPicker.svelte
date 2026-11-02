@@ -109,8 +109,7 @@
   <div class="list">
     <label class="opt">
       <input type="checkbox" checked={f.all} onchange={(e) => setAll((e.currentTarget as HTMLInputElement).checked)} />
-      <span>전체 스키마</span>
-      <span class="hint">시스템 스키마 제외</span>
+      <span title="시스템 스키마 제외">전체 스키마</span>
     </label>
     <label class="opt">
       <input type="checkbox" checked={f.current} onchange={(e) => save({ current: (e.currentTarget as HTMLInputElement).checked })} />
