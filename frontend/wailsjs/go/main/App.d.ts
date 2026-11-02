@@ -61,6 +61,8 @@ export function QualifiedName(arg1:string,arg2:string,arg3:dbx.Table):Promise<st
 
 export function QuoteIdent(arg1:string,arg2:string):Promise<string>;
 
+export function ReorderConnections(arg1:Array<string>):Promise<void>;
+
 export function RoutineSource(arg1:string,arg2:string,arg3:dbx.Routine):Promise<string>;
 
 export function SaveConnection(arg1:dbx.ConnConfig):Promise<dbx.ConnConfig>;
@@ -71,6 +73,10 @@ export function SaveWorkspace(arg1:string):Promise<void>;
 
 export function SelectSQL(arg1:string,arg2:string,arg3:dbx.Table,arg4:string,arg5:string,arg6:number,arg7:number):Promise<string>;
 
+export function SetSchemaFilter(arg1:string,arg2:dbx.SchemaFilter):Promise<void>;
+
 export function TableDDL(arg1:string,arg2:string,arg3:dbx.Table):Promise<string>;
+
+export function TableStats(arg1:string,arg2:string):Promise<Array<dbx.Table>>;
 
 export function TestConnection(arg1:dbx.ConnConfig):Promise<main.TestResult>;

@@ -16,6 +16,10 @@
     pinTab,
     openDDL,
     saveWorkspaceSoon,
+    schemaShown,
+    ensureStats,
+    moveConnection,
+    toast,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -24,6 +28,7 @@
   import { setTheme, type ThemeMode } from '../lib/theme'
   import { copyText } from '../lib/clipboard'
   import { driverLabel, type ConnConfig, type Column, type Routine } from '../lib/types'
+  import SchemaPicker from './SchemaPicker.svelte'
 
   let filter = $state('')
   let viewMenu = $state(false)
@@ -80,7 +85,9 @@
   async function pinTable(connId: string, schema: string, t: TableNode) {
     pinTab(await openTable(connId, schema, t))
   }
-  let menu = $state<null | { x: number; y: number; items: { label: string; run: () => void; danger?: boolean }[] }>(null)
+  type MenuItem = { label: string; run: () => void; danger?: boolean; icon?: string; sep?: boolean; disabled?: boolean }
+  let menu = $state<null | { x: number; y: number; items: MenuItem[] }>(null)
+  let picker = $state<null | { connId: string; x: number; y: number }>(null)
 
   const blank = (): ConnConfig => ({
     id: '',
@@ -101,17 +108,15 @@
     return !filter || name.toLowerCase().includes(filter.toLowerCase())
   }
 
+  // Schemas picked for the tree (see SchemaPicker).
   function visibleSchemas(id: string): SchemaNode[] {
     const st = app.conn[id]
     if (!st) return []
-    const c = app.connections.find((x) => x.id === id)
-    const sys = new Set(['information_schema', 'pg_catalog', 'mysql', 'performance_schema', 'sys', 'tempdb', 'model', 'msdb'])
-    if (st.showAllSchemas || c?.driver === 'sqlite') return st.schemas
-    return st.schemas.filter((s) => !sys.has(s.name) || s.name === st.current || s.expanded)
+    return st.schemas.filter((s) => schemaShown(id, s.name))
   }
 
-  // While filtering, every schema's table list is loaded in the background
-  // and only schemas with a matching table are shown, already expanded.
+  // The filter searches the table lists already loaded; schemas never
+  // opened aren't fetched for it (that can be slow on a big server).
   let filtering = $derived(filter.trim() !== '')
 
   function shownSchemas(id: string): SchemaNode[] {
@@ -120,28 +125,9 @@
     return list.filter((s) => (s.tables ?? []).some((t) => matches(t.t.name)))
   }
 
-  function pendingSchemas(id: string): number {
-    return filtering ? visibleSchemas(id).filter((s) => s.tables === null || s.loading).length : 0
+  function unloadedSchemas(id: string): number {
+    return filtering ? visibleSchemas(id).filter((s) => s.tables === null).length : 0
   }
-
-  let loadingAll = false
-  $effect(() => {
-    if (!filtering || loadingAll) return
-    const todo: [string, SchemaNode][] = []
-    for (const c of app.connections) {
-      if (app.conn[c.id]?.status !== 'connected') continue
-      for (const s of visibleSchemas(c.id)) if (s.tables === null && !s.loading) todo.push([c.id, s])
-    }
-    if (!todo.length) return
-    loadingAll = true
-    ;(async () => {
-      // A few at a time, so a server with many schemas isn't flooded.
-      for (let i = 0; i < todo.length; i += 4) {
-        await Promise.all(todo.slice(i, i + 4).map(([id, s]) => loadTables(id, s)))
-      }
-      loadingAll = false
-    })()
-  })
 
   function keyIcon(col: { pk: boolean; unique?: boolean; fk?: string }): { name: string; color: string } {
     if (col.pk) return { name: 'key', color: 'var(--key-pk)' }
@@ -175,6 +161,7 @@
     for (const c of app.connections) {
       const st = app.conn[c.id]
       out.push({ kind: 'conn', key: 'c|' + c.id, depth: 0, c })
+      if (connDrag?.active) continue // dragging a connection: connections only
       if (st?.status === 'error' && st.error) out.push({ kind: 'info', key: 'ce|' + c.id, depth: 1, text: st.error, cls: 'err-line' })
       if (st?.status !== 'connected' || !st.expanded) continue
       for (const s of shownSchemas(c.id)) {
@@ -199,13 +186,25 @@
           }
         }
       }
-      if (filtering && pendingSchemas(c.id) > 0)
-        out.push({ kind: 'info', key: 'f|' + c.id, depth: 1, text: `테이블 찾는 중… (스키마 ${pendingSchemas(c.id)}개 남음)`, cls: 'searching' })
-      else if (filtering && shownSchemas(c.id).length === 0)
+      if (filtering && shownSchemas(c.id).length === 0)
         out.push({ kind: 'info', key: 'f|' + c.id, depth: 1, text: '일치하는 테이블이 없습니다', cls: 'searching' })
-      const hidden = hiddenCount(c.id)
-      if (hidden > 0 && !filtering)
-        out.push({ kind: 'info', key: 'h|' + c.id, depth: 1, text: `시스템 스키마 ${hidden}개 더 보기`, cls: 'more', run: () => (st.showAllSchemas = true) })
+      if (filtering && unloadedSchemas(c.id) > 0)
+        out.push({
+          kind: 'info',
+          key: 'fu|' + c.id,
+          depth: 1,
+          text: `펼친 적 없는 스키마 ${unloadedSchemas(c.id)}개는 찾지 않습니다`,
+          cls: 'searching',
+        })
+      if (!filtering && visibleSchemas(c.id).length === 0 && st.schemas.length > 0)
+        out.push({
+          kind: 'info',
+          key: 'h|' + c.id,
+          depth: 1,
+          text: '표시할 스키마를 고르세요',
+          cls: 'more',
+          run: () => openPicker(c.id, null),
+        })
     }
     return out
   })
@@ -235,7 +234,49 @@
     else if (r.kind === 'rgroup') await toggleRoutines(r.c.id, r.s)
   }
 
+  // ---------------------------------------------------------------- reorder
+  // Dragging a connection row shows only the connection rows; dropping puts
+  // it before the row under the pointer.
+  let connDrag = $state<null | { id: string; y: number; active: boolean; to: number }>(null)
+  let dragJustEnded = false
+
+  function connDown(e: PointerEvent, c: ConnConfig) {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return
+    connDrag = { id: c.id, y: e.clientY, active: false, to: -1 }
+  }
+
+  function dragMove(e: PointerEvent) {
+    if (!connDrag) return
+    if (!connDrag.active) {
+      if (Math.abs(e.clientY - connDrag.y) < 5) return
+      connDrag.active = true
+      tip = null
+    }
+    const els = [...treeEl.querySelectorAll('.node.conn')] as HTMLElement[]
+    let to = els.length
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect()
+      if (e.clientY < r.top + r.height / 2) {
+        to = i
+        break
+      }
+    }
+    connDrag.to = to
+  }
+
+  function dragEnd() {
+    const d = connDrag
+    connDrag = null
+    if (!d?.active) return
+    dragJustEnded = true
+    setTimeout(() => (dragJustEnded = false))
+    const from = app.connections.findIndex((c) => c.id === d.id)
+    if (d.to < 0 || from < 0) return
+    moveConnection(d.id, d.to > from ? d.to - 1 : d.to)
+  }
+
   function rowClick(r: Row) {
+    if (dragJustEnded) return
     cursor = r.key
     treeEl.focus({ preventScroll: true })
     if (r.kind === 'conn' || r.kind === 'schema' || r.kind === 'rgroup') toggle(r)
@@ -267,6 +308,10 @@
     st.expanded = true
     const s = st.schemas.find((x) => x.name === ref.schema)
     if (!s) return
+    if (!schemaShown(tab.connId, s.name)) {
+      toast(`${s.name} 스키마는 트리에 표시하지 않도록 골라 두었습니다`)
+      return
+    }
     if (!s.expanded) {
       s.expanded = true
       if (s.tables === null) await loadTables(tab.connId, s)
@@ -390,15 +435,17 @@
         x: e.clientX,
         y: e.clientY,
         items: [
-          { label: '소스 열기', run: () => openRoutine(rt.c.id, rt.s.name, rt.r) },
-          { label: '이름 복사', run: () => copyText(rt.r.name) },
+          { label: '소스 열기', icon: 'code', run: () => openRoutine(rt.c.id, rt.s.name, rt.r) },
+          { label: '이름 복사', icon: 'copy', run: () => copyText(rt.r.name) },
         ],
       }
     }
   }
 
-  function hiddenCount(id: string) {
-    return (app.conn[id]?.schemas.length ?? 0) - visibleSchemas(id).length
+  function openPicker(connId: string, e: MouseEvent | null) {
+    const el = treeEl.querySelector(`[data-key="${CSS.escape('c|' + connId)}"]`) as HTMLElement | null
+    const r = el?.getBoundingClientRect()
+    picker = { connId, x: e ? e.clientX : (r?.left ?? 0) + 40, y: (r?.bottom ?? e?.clientY ?? 0) + 2 }
   }
 
   async function toggleConn(c: ConnConfig) {
@@ -411,15 +458,28 @@
     e.preventDefault()
     const st = app.conn[c.id]
     const on = st?.status === 'connected'
+    const i = app.connections.findIndex((x) => x.id === c.id)
+    const last = app.connections.length - 1
     menu = {
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '새 콘솔', run: () => openConsole(c.id) },
-        on ? { label: '새로고침', run: () => refreshSchemas(c.id) } : { label: '연결', run: () => connect(c.id) },
-        ...(on ? [{ label: '연결 해제', run: () => disconnect(c.id) }] : []),
-        { label: '편집…', run: () => (app.editing = { ...c }) },
-        { label: '복제', run: () => (app.editing = { ...c, id: '', name: c.name + ' 복사본' }) },
+        { label: '새 콘솔', icon: 'console', run: () => openConsole(c.id) },
+        on
+          ? { label: '새로고침', icon: 'refresh', run: () => refreshSchemas(c.id) }
+          : { label: '연결', icon: 'plug', run: () => connect(c.id) },
+        ...(on
+          ? [
+              { label: '표시할 스키마…', icon: 'schemas', run: () => openPicker(c.id, e) },
+              { label: '연결 해제', icon: 'unplug', run: () => disconnect(c.id) },
+            ]
+          : []),
+        { label: '편집…', icon: 'edit', run: () => (app.editing = { ...c }), sep: true },
+        { label: '복제', icon: 'copy', run: () => (app.editing = { ...c, id: '', name: c.name + ' 복사본' }) },
+        { label: '맨 위로', icon: 'toTop', run: () => moveConnection(c.id, 0), sep: true, disabled: i === 0 },
+        { label: '위로', icon: 'arrowUp', run: () => moveConnection(c.id, i - 1), disabled: i === 0 },
+        { label: '아래로', icon: 'arrowDown', run: () => moveConnection(c.id, i + 1), disabled: i === last },
+        { label: '맨 아래로', icon: 'toBottom', run: () => moveConnection(c.id, last), disabled: i === last },
       ],
     }
   }
@@ -437,19 +497,20 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: 'DDL 보기', run: () => openDDL(c.id, s.name, t.t) },
-        { label: '데이터 보기', run: () => openTable(c.id, s.name, t) },
-        { label: '새 탭에서 데이터 보기', run: () => pinTable(c.id, s.name, t) },
+        { label: '데이터 보기', icon: 'table', run: () => openTable(c.id, s.name, t) },
+        { label: '새 탭에서 데이터 보기', icon: 'plus', run: () => pinTable(c.id, s.name, t) },
+        { label: 'DDL 보기', icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
         {
           label: 'SELECT 문을 콘솔에 넣기',
+          icon: 'console',
           run: async () => {
             const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100, 0)
             if (activeTab()?.connId === c.id) insertText(sql + ';')
             else openConsole(c.id, { schema: s.name, sql: sql + ';' })
           },
         },
-        { label: '이름 복사', run: () => copyText(t.t.name) },
-        { label: '전체 이름 복사', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
+        { label: '이름 복사', icon: 'copy', run: () => copyText(t.t.name), sep: true },
+        { label: '전체 이름 복사', icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
       ],
     }
   }
@@ -460,9 +521,10 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '이 스키마로 새 콘솔', run: () => openConsole(c.id, { schema: s.name }) },
-        { label: '새로고침', run: () => loadTables(c.id, s) },
-        { label: '이름 복사', run: () => copyText(s.name) },
+        { label: '이 스키마로 새 콘솔', icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
+        { label: '새로고침', icon: 'refresh', run: () => loadTables(c.id, s) },
+        { label: '표시할 스키마…', icon: 'schemas', run: () => openPicker(c.id, e) },
+        { label: '이름 복사', icon: 'copy', run: () => copyText(s.name), sep: true },
       ],
     }
   }
@@ -472,7 +534,12 @@
   }
 </script>
 
-<svelte:window onclick={() => ((menu = null), (viewMenu = false))} />
+<svelte:window
+  onclick={() => ((menu = null), (viewMenu = false))}
+  onpointermove={dragMove}
+  onpointerup={dragEnd}
+  onkeydown={(e) => e.key === 'Escape' && connDrag && (connDrag = null)}
+/>
 
 <aside>
   <div class="top">
@@ -507,8 +574,15 @@
           <div class="vm-title sep">트리에 표시</div>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
           <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
-          <label><input type="checkbox" bind:checked={app.treeView.rows} onchange={saveWorkspaceSoon} /> 테이블 행 수 (통계 기준 추정)</label>
-          <label><input type="checkbox" bind:checked={app.treeView.size} onchange={saveWorkspaceSoon} /> 테이블 크기</label>
+          <label
+            ><input type="checkbox" bind:checked={app.treeView.rows} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> 테이블
+            행 수 (통계 기준 추정)</label
+          >
+          <label
+            ><input type="checkbox" bind:checked={app.treeView.size} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> 테이블
+            크기</label
+          >
+          <div class="vm-note">행 수 · 크기는 켜 둔 동안만 따로 가져옵니다</div>
           <div class="vm-title sep">결과 표</div>
           <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> 컬럼 번호 표시</label>
           <div class="vm-title sep">테이블 열 때</div>
@@ -546,6 +620,13 @@
           class="node {r.kind}"
           class:cursor={cursor === r.key}
           class:active={r.key === activeKey}
+          class:dragging={r.kind === 'conn' && connDrag?.active && connDrag.id === r.c.id}
+          class:drop-before={r.kind === 'conn' && connDrag?.active && connDrag.to === app.connections.indexOf(r.c)}
+          class:drop-after={r.kind === 'conn' &&
+            connDrag?.active &&
+            connDrag.to === app.connections.length &&
+            app.connections.indexOf(r.c) === app.connections.length - 1}
+          onpointerdown={(e) => r.kind === 'conn' && connDown(e, r.c)}
           data-key={r.key}
           style:padding-left="{8 + r.depth * 16}px"
           style:--conn-color={r.kind === 'conn' ? r.c.color || 'transparent' : null}
@@ -576,6 +657,16 @@
             <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
             <span class="label">{r.c.name}</span>
             {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
+            {#if st?.status === 'connected' && r.c.driver !== 'sqlite' && st.schemas.length}
+              <button
+                class="pick-btn"
+                class:on={picker?.connId === r.c.id}
+                title="표시할 스키마 고르기"
+                onclick={(e) => (e.stopPropagation(), picker?.connId === r.c.id ? (picker = null) : openPicker(r.c.id, null))}
+                ondblclick={(e) => e.stopPropagation()}
+                >{visibleSchemas(r.c.id).length}/{st.schemas.length}</button
+              >
+            {/if}
             <span class="drv">{driverLabel(r.c.driver)}</span>
             <button class="icon-btn small act" title="새 콘솔" onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
               <Icon name="console" size={14} />
@@ -583,7 +674,7 @@
           {:else if r.kind === 'schema'}
             <Icon name="schema" size={15} color="var(--warn)" />
             <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
-            {#if r.s.loading}<span class="spin"></span>{/if}
+            {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : '행 수 · 크기 가져오는 중'}></span>{/if}
             {#if r.s.tables && app.treeView.tableCount}<span class="count">{r.s.tables.length.toLocaleString('ko-KR')}</span>{/if}
           {:else if r.kind === 'table'}
             <Icon name={r.t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
@@ -624,9 +715,16 @@
 {#if menu}
   <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px">
     {#each menu.items as it (it.label)}
-      <button class:danger={it.danger} onclick={it.run}>{it.label}</button>
+      {#if it.sep}<hr />{/if}
+      <button class:danger={it.danger} onclick={it.run} disabled={it.disabled}>
+        <span class="mi">{#if it.icon}<Icon name={it.icon} size={14} />{/if}</span>{it.label}
+      </button>
     {/each}
   </div>
+{/if}
+
+{#if picker}
+  <SchemaPicker connId={picker.connId} x={picker.x} y={picker.y} onclose={() => (picker = null)} />
 {/if}
 
 <style>
@@ -791,9 +889,64 @@
   .node > .dbicon {
     flex-shrink: 0;
   }
-  .conn {
+  /* Connection rows stay at the top while their schemas scroll under them;
+     the next connection pushes in over the previous one. */
+  .node.conn {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     height: 28px;
     box-shadow: inset 3px 0 0 var(--conn-color);
+    background-color: var(--bg-panel);
+  }
+  .node.conn:hover {
+    background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-panel);
+  }
+  .node.conn.cursor {
+    background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-panel);
+  }
+  .tree:focus .node.conn.cursor {
+    background: linear-gradient(var(--bg-select), var(--bg-select)) var(--bg-panel);
+  }
+  /* rows revealed by keyboard / locate aren't hidden under the sticky row */
+  .node:not(.conn) {
+    scroll-margin-top: 30px;
+  }
+  .node.conn.dragging {
+    opacity: 0.5;
+  }
+  .node.conn.drop-before {
+    box-shadow:
+      inset 3px 0 0 var(--conn-color),
+      inset 0 2px 0 var(--accent);
+  }
+  .node.conn.drop-after {
+    box-shadow:
+      inset 3px 0 0 var(--conn-color),
+      inset 0 -2px 0 var(--accent);
+  }
+  .pick-btn {
+    flex-shrink: 0;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .pick-btn:hover,
+  .pick-btn.on {
+    border-color: var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+  }
+  .vm-note {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-top: -2px;
   }
   .dbicon {
     display: inline-flex;
@@ -977,15 +1130,33 @@
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
   }
   .menu button {
-    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 8px;
     border: none;
     border-radius: 4px;
     background: none;
     text-align: left;
     cursor: pointer;
   }
-  .menu button:hover {
+  .menu button:hover:not(:disabled) {
     background: var(--bg-select);
+  }
+  .menu button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .menu hr {
+    margin: 4px 2px;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+  .mi {
+    display: inline-flex;
+    width: 14px;
+    flex-shrink: 0;
+    color: var(--text-dim);
   }
   .menu button.danger {
     color: var(--danger);

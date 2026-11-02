@@ -1,5 +1,5 @@
 import * as App from '../../wailsjs/go/main/App'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, Table, Cell, EditInfo, RowChange } from './types'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange } from './types'
 
 export interface AlterRequest {
   connId: string
@@ -14,12 +14,15 @@ interface Api {
   ListConnections(): Promise<ConnConfig[]>
   SaveConnection(c: ConnConfig): Promise<ConnConfig>
   DeleteConnection(id: string): Promise<void>
+  SetSchemaFilter(id: string, f: SchemaFilter | null): Promise<void>
+  ReorderConnections(ids: string[]): Promise<void>
   TestConnection(c: ConnConfig): Promise<{ version: string; sshHostKey: string }>
   NeedsPassword(id: string): Promise<boolean>
   Connect(id: string, password: string): Promise<string>
   Disconnect(id: string): Promise<void>
   ListSchemas(id: string): Promise<SchemaList>
   ListTables(id: string, schema: string): Promise<Table[]>
+  TableStats(id: string, schema: string): Promise<Table[]>
   ListColumns(id: string, schema: string, t: Table): Promise<Column[]>
   CompletionColumns(id: string, schema: string): Promise<Record<string, string[]>>
   SelectSQL(id: string, schema: string, t: Table, where: string, orderBy: string, limit: number, offset: number): Promise<string>

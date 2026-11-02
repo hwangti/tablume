@@ -820,20 +820,22 @@
   {/if}
 </div>
 
+{#snippet mi(name: string)}<span class="mi"><Icon {name} size={14} /></span>{/snippet}
+
 {#if menu}
   <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px">
-    <button onclick={() => copySelection(false)}>복사 <kbd>{modKey}C</kbd></button>
-    <button onclick={() => copySelection(true)}>헤더 포함 복사</button>
-    <button onclick={copyInList}>IN (…) 목록으로 복사</button>
-    {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>값 보기 <kbd>Shift+Enter</kbd></button>{/if}
-    <button onclick={selectAll}>전체 선택</button>
+    <button onclick={() => copySelection(false)}>{@render mi('copy')}복사 <kbd>{modKey}C</kbd></button>
+    <button onclick={() => copySelection(true)}>{@render mi('copy')}헤더 포함 복사</button>
+    <button onclick={copyInList}>{@render mi('list')}IN (…) 목록으로 복사</button>
+    {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>{@render mi('view')}값 보기 <kbd>Shift+Enter</kbd></button>{/if}
+    <button onclick={selectAll}>{@render mi('selectAll')}전체 선택</button>
     {#if info?.editable || info?.insertable}
       <hr />
-      {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>편집 <kbd>Enter</kbd></button>{/if}
-      <button onclick={setNull}>NULL로 설정</button>
-      <button onclick={newRow}>행 추가</button>
-      <button onclick={deleteRows}>행 삭제 / 복원 <kbd>Delete</kbd></button>
-      <button onclick={() => revert(result, selectedRows())}>선택 행 변경 되돌리기</button>
+      {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>{@render mi('edit')}편집 <kbd>Enter</kbd></button>{/if}
+      <button onclick={setNull}>{@render mi('nullValue')}NULL로 설정</button>
+      <button onclick={newRow}>{@render mi('rowAdd')}행 추가</button>
+      <button class="danger" onclick={deleteRows}>{@render mi('trash')}행 삭제 / 복원 <kbd>Delete</kbd></button>
+      <button onclick={() => revert(result, selectedRows())}>{@render mi('undo')}선택 행 변경 되돌리기</button>
     {/if}
   </div>
 {/if}
@@ -869,10 +871,10 @@
 {#if headMenu}
   {@const hc = headMenu.c}
   <div class="menu" style:left="{headMenu.x}px" style:top="{headMenu.y}px">
-    <button onclick={() => setHidden([...hiddenNames, columns[hc].name])} disabled={vc.length <= 1}>이 컬럼 숨기기</button>
-    {#if hiddenCount > 0}<button onclick={() => setHidden([])}>숨긴 컬럼 모두 보이기 ({hiddenCount})</button>{/if}
-    {#if orderNames.length}<button onclick={() => ((orderNames = []), storeLayout())}>컬럼 순서 원래대로</button>{/if}
-    <button onclick={() => copyText(columns[hc].name)}>컬럼 이름 복사</button>
+    <button onclick={() => setHidden([...hiddenNames, columns[hc].name])} disabled={vc.length <= 1}>{@render mi('eyeOff')}이 컬럼 숨기기</button>
+    {#if hiddenCount > 0}<button onclick={() => setHidden([])}>{@render mi('view')}숨긴 컬럼 모두 보이기 ({hiddenCount})</button>{/if}
+    {#if orderNames.length}<button onclick={() => ((orderNames = []), storeLayout())}>{@render mi('undo')}컬럼 순서 원래대로</button>{/if}
+    <button onclick={() => copyText(columns[hc].name)}>{@render mi('copy')}컬럼 이름 복사</button>
   </div>
 {/if}
 
@@ -1239,8 +1241,9 @@
 
   .menu button {
     display: flex;
-    justify-content: space-between;
-    padding: 5px 10px;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 8px;
     border: none;
     border-radius: 4px;
     background: none;
@@ -1248,8 +1251,25 @@
     cursor: pointer;
   }
 
-  .menu button:hover {
+  .menu button:hover:not(:disabled) {
     background: var(--bg-select);
+  }
+  .menu button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .menu button.danger {
+    color: var(--danger);
+  }
+  .menu kbd {
+    margin-left: auto;
+    padding-left: 16px;
+  }
+  .mi {
+    display: inline-flex;
+    width: 14px;
+    flex-shrink: 0;
+    color: var(--text-dim);
   }
 
   .menu hr {

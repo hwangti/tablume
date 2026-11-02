@@ -21,6 +21,14 @@ export interface ConnConfig {
   sshPassword?: string // password, or key passphrase
   sshKeyFile?: string
   sshHostKey?: string // pinned SHA256 fingerprint
+  schemas?: SchemaFilter // schemas shown in the tree; unset = all but system ones
+}
+
+export interface SchemaFilter {
+  all: boolean // every non-system schema
+  current: boolean // the session's default schema
+  names: string[]
+  patterns: string[] // * and ?, case-insensitive
 }
 
 export interface Table {

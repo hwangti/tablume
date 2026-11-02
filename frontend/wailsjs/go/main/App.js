@@ -118,6 +118,10 @@ export function QuoteIdent(arg1, arg2) {
   return window['go']['main']['App']['QuoteIdent'](arg1, arg2);
 }
 
+export function ReorderConnections(arg1) {
+  return window['go']['main']['App']['ReorderConnections'](arg1);
+}
+
 export function RoutineSource(arg1, arg2, arg3) {
   return window['go']['main']['App']['RoutineSource'](arg1, arg2, arg3);
 }
@@ -138,8 +142,16 @@ export function SelectSQL(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SelectSQL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
+export function SetSchemaFilter(arg1, arg2) {
+  return window['go']['main']['App']['SetSchemaFilter'](arg1, arg2);
+}
+
 export function TableDDL(arg1, arg2, arg3) {
   return window['go']['main']['App']['TableDDL'](arg1, arg2, arg3);
+}
+
+export function TableStats(arg1, arg2) {
+  return window['go']['main']['App']['TableStats'](arg1, arg2);
 }
 
 export function TestConnection(arg1) {

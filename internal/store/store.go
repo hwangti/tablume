@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"tablume/internal/dbx"
@@ -183,6 +184,38 @@ func (s *Store) Delete(id string) error {
 		}
 	}
 	return nil
+}
+
+// SetSchemaFilter stores which schemas the tree shows for a connection.
+func (s *Store) SetSchemaFilter(id string, f *dbx.SchemaFilter) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.list {
+		if s.list[i].ID == id {
+			s.list[i].Schemas = f
+			return s.save()
+		}
+	}
+	return nil
+}
+
+// Reorder puts the connections in the order of ids; ones not listed keep
+// their relative order at the end.
+func (s *Store) Reorder(ids []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pos := make(map[string]int, len(ids))
+	for i, id := range ids {
+		pos[id] = i
+	}
+	rank := func(r record) int {
+		if p, ok := pos[r.ID]; ok {
+			return p
+		}
+		return len(ids)
+	}
+	sort.SliceStable(s.list, func(i, j int) bool { return rank(s.list[i]) < rank(s.list[j]) })
+	return s.save()
 }
 
 // SetSSHHostKey pins the SSH server key seen on the first connection.

@@ -45,6 +45,14 @@ func (a *App) ListConnections() []dbx.ConnConfig { return a.store.List() }
 
 func (a *App) SaveConnection(c dbx.ConnConfig) (dbx.ConnConfig, error) { return a.store.Save(c) }
 
+// SetSchemaFilter stores which schemas the tree shows for a connection.
+func (a *App) SetSchemaFilter(id string, f *dbx.SchemaFilter) error {
+	return a.store.SetSchemaFilter(id, f)
+}
+
+// ReorderConnections saves the order of the connection list.
+func (a *App) ReorderConnections(ids []string) error { return a.store.Reorder(ids) }
+
 func (a *App) DeleteConnection(id string) error {
 	a.db.Disconnect(id)
 	return a.store.Delete(id)
@@ -103,6 +111,7 @@ func (a *App) IsConnected(id string) bool { return a.db.Connected(id) }
 func (a *App) ListSchemas(id string) (dbx.SchemaList, error) { return a.db.Schemas(id) }
 
 func (a *App) ListTables(id, schema string) ([]dbx.Table, error) { return a.db.Tables(id, schema) }
+func (a *App) TableStats(id, schema string) ([]dbx.Table, error) { return a.db.TableStats(id, schema) }
 
 func (a *App) ListColumns(id, schema string, t dbx.Table) ([]dbx.Column, error) {
 	return a.db.Columns(id, schema, t)

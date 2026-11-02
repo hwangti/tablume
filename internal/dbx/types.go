@@ -30,6 +30,19 @@ type ConnConfig struct {
 	SSHKeyFile  string `json:"sshKeyFile"`
 	// SSHHostKey pins the server's key (SHA256 fingerprint), set on first use.
 	SSHHostKey string `json:"sshHostKey"`
+
+	// Schemas picks the schemas shown in the tree; nil shows all but the
+	// system ones.
+	Schemas *SchemaFilter `json:"schemas,omitempty"`
+}
+
+// SchemaFilter is the set of schemas (databases on MySQL and SQL Server)
+// shown under a connection.
+type SchemaFilter struct {
+	All      bool     `json:"all"`      // every non-system schema
+	Current  bool     `json:"current"`  // the session's default schema
+	Names    []string `json:"names"`    // picked one by one
+	Patterns []string `json:"patterns"` // globs with * and ?, case-insensitive
 }
 
 type Table struct {

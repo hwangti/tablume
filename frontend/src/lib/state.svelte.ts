@@ -1,7 +1,7 @@
 import { api, errText } from './api'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
-import type { Cell, Column, ConnConfig, Routine, StmtResult, Table } from './types'
+import type { Cell, Column, ConnConfig, Routine, SchemaFilter, StmtResult, Table } from './types'
 
 export interface TableNode {
   t: Table
@@ -21,6 +21,9 @@ export interface SchemaNode {
   routines?: Routine[] | null
   routinesOpen?: boolean
   routinesLoading?: boolean
+  // row counts / sizes, loaded separately (slow on big catalogs) and only
+  // while the tree shows them
+  stats?: 'loading' | 'done'
 }
 
 export interface ConnState {
@@ -30,7 +33,6 @@ export interface ConnState {
   expanded: boolean
   schemas: SchemaNode[]
   current: string
-  showAllSchemas: boolean
 }
 
 export interface Message {
@@ -138,7 +140,7 @@ export function connById(id: string): ConnConfig | undefined {
 
 function connState(id: string): ConnState {
   if (!app.conn[id]) {
-    app.conn[id] = { status: 'idle', expanded: false, schemas: [], current: '', showAllSchemas: false }
+    app.conn[id] = { status: 'idle', expanded: false, schemas: [], current: '' }
   }
   return app.conn[id]
 }
@@ -222,9 +224,9 @@ export async function refreshSchemas(id: string) {
     st.schemas = (list.schemas ?? []).map(
       (name) => old.get(name) ?? { name, expanded: false, loading: false, tables: null },
     )
-    for (const s of st.schemas) if (s.expanded) await loadTables(id, s)
+    for (const s of st.schemas) if (s.expanded && schemaShown(id, s.name)) await loadTables(id, s)
     const cur = st.schemas.find((s) => s.name === st.current)
-    if (cur && !cur.expanded && st.schemas.every((s) => !s.expanded)) {
+    if (cur && !cur.expanded && schemaShown(id, cur.name) && st.schemas.every((s) => !s.expanded || !schemaShown(id, s.name))) {
       cur.expanded = true
       await loadTables(id, cur)
     }
@@ -242,10 +244,122 @@ export async function loadTables(id: string, s: SchemaNode) {
     s.tables = tables.map(
       (t) => old.get(t.schema + '.' + t.name) ?? { t, expanded: false, loading: false, columns: null },
     )
+    s.stats = undefined
   } catch (e) {
     s.error = errText(e)
   } finally {
     s.loading = false
+  }
+  if (s.tables && (app.treeView.rows || app.treeView.size)) await loadStats(id, s)
+}
+
+// Row counts and sizes for a schema's tables, merged into the loaded list.
+export async function loadStats(id: string, s: SchemaNode) {
+  if (!s.tables || s.stats) return
+  s.stats = 'loading'
+  try {
+    const stats = (await api.TableStats(id, s.name)) ?? []
+    const by = new Map(stats.map((x) => [x.schema + '.' + x.name, x]))
+    for (const t of s.tables) {
+      const x = by.get(t.t.schema + '.' + t.t.name)
+      if (x) {
+        t.t.rows = x.rows
+        t.t.size = x.size
+      }
+    }
+    s.stats = 'done'
+  } catch (e) {
+    s.stats = undefined
+    toast(`${s.name}: 행 수 · 크기를 가져오지 못했습니다 — ${errText(e)}`, 'error')
+  }
+}
+
+// After turning on rows or size in the tree: fetch them for the schemas
+// already loaded, one at a time.
+export async function ensureStats() {
+  if (!app.treeView.rows && !app.treeView.size) return
+  for (const c of app.connections) {
+    const st = app.conn[c.id]
+    if (st?.status !== 'connected') continue
+    for (const s of st.schemas) if (s.tables && !s.stats && schemaShown(c.id, s.name)) await loadStats(c.id, s)
+  }
+}
+
+// ---------------------------------------------------------------- schema filter
+
+// Schemas hidden unless picked by name (the server's own catalogs).
+export const SYSTEM_SCHEMAS = new Set([
+  'information_schema',
+  'pg_catalog',
+  'pg_toast',
+  'mysql',
+  'performance_schema',
+  'sys',
+  'tempdb',
+  'model',
+  'msdb',
+])
+
+export function isSystemSchema(c: ConnConfig | undefined, name: string): boolean {
+  return c?.driver !== 'sqlite' && SYSTEM_SCHEMAS.has(name)
+}
+
+export const DEFAULT_FILTER: SchemaFilter = { all: true, current: true, names: [], patterns: [] }
+
+export function schemaFilter(c: ConnConfig | undefined): SchemaFilter {
+  return c?.schemas ?? DEFAULT_FILTER
+}
+
+export function globMatch(pattern: string, name: string): boolean {
+  const re = pattern
+    .trim()
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.')
+  return new RegExp('^' + re + '$', 'i').test(name)
+}
+
+// Whether the tree shows this schema, by the connection's filter.
+export function schemaShown(connId: string, name: string): boolean {
+  const c = connById(connId)
+  if (c?.driver === 'sqlite') return true
+  const f = schemaFilter(c)
+  if (f.names.includes(name)) return true
+  if (f.current && name === app.conn[connId]?.current) return true
+  if (f.patterns.some((p) => p.trim() && globMatch(p, name))) return true
+  return f.all && !isSystemSchema(c, name)
+}
+
+export async function setSchemaFilter(connId: string, f: SchemaFilter) {
+  const c = connById(connId)
+  if (!c) return
+  const same = f.all && f.current && !f.names.length && !f.patterns.length
+  c.schemas = same ? undefined : $state.snapshot(f)
+  try {
+    await api.SetSchemaFilter(connId, c.schemas ?? null)
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+  // a newly shown schema that was open before loads its tables
+  const st = app.conn[connId]
+  for (const s of st?.schemas ?? []) if (s.expanded && s.tables === null && schemaShown(connId, s.name)) loadTables(connId, s)
+}
+
+// ---------------------------------------------------------------- order
+
+export async function moveConnection(id: string, to: number) {
+  const from = app.connections.findIndex((c) => c.id === id)
+  if (from < 0) return
+  to = Math.max(0, Math.min(app.connections.length - 1, to))
+  if (from === to) return
+  const list = [...app.connections]
+  const [c] = list.splice(from, 1)
+  list.splice(to, 0, c)
+  app.connections = list
+  try {
+    await api.ReorderConnections(list.map((x) => x.id))
+  } catch (e) {
+    toast(errText(e), 'error')
   }
 }
 

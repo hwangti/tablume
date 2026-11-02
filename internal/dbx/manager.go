@@ -233,6 +233,27 @@ func (m *Manager) Tables(id, schema string) ([]Table, error) {
 	return dedupTables(tables), nil
 }
 
+// statsDialect reports row counts (from catalog statistics) and sizes.
+type statsDialect interface {
+	TableStats(ctx context.Context, q Querier, schema string) ([]Table, error)
+}
+
+// TableStats returns schema, name, rows and size of the tables in a schema;
+// empty where the engine has none (SQLite).
+func (m *Manager) TableStats(id, schema string) ([]Table, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return nil, err
+	}
+	sd, ok := p.d.(statsDialect)
+	if !ok {
+		return []Table{}, nil
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	return sd.TableStats(ctx, p.db, schema)
+}
+
 // dedupTables drops repeated schema.name entries (the tree keys rows by
 // them, and a duplicate breaks rendering).
 func dedupTables(ts []Table) []Table {

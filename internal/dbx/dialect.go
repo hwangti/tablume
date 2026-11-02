@@ -23,6 +23,8 @@ type Dialect interface {
 	Style() string // statement splitting style, see Split
 	ListSchemas(ctx context.Context, q Querier) (SchemaList, error)
 	CurrentSchema(ctx context.Context, q Querier) string
+	// ListTables lists names, types and comments; Rows and Size are -1
+	// (see TableStats, which is slower on large catalogs).
 	ListTables(ctx context.Context, q Querier, schema string) ([]Table, error)
 	ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error)
 	// AllColumns returns table name -> column names, used for autocompletion.
@@ -113,6 +115,32 @@ func scanTables(ctx context.Context, q Querier, query string, args ...any) ([]Ta
 		}
 		out = append(out, Table{Schema: schema.String, Name: name.String, Type: typ.String,
 			Comment: comment.String, Rows: toInt64(n), Size: toInt64(size)})
+	}
+	return out, rows.Err()
+}
+
+// scanStats reads (name, rows, size) rows, optionally preceded by the
+// inner schema (mssql), into Tables carrying just those fields.
+func scanStats(ctx context.Context, q Querier, query string, args ...any) ([]Table, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	out := []Table{}
+	for rows.Next() {
+		var schema, name sql.NullString
+		var n, size any
+		if len(cols) == 4 {
+			err = rows.Scan(&schema, &name, &n, &size)
+		} else {
+			err = rows.Scan(&name, &n, &size)
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, Table{Schema: schema.String, Name: name.String, Rows: toInt64(n), Size: toInt64(size)})
 	}
 	return out, rows.Err()
 }
@@ -252,9 +280,13 @@ func (mysqlDialect) CurrentSchema(ctx context.Context, q Querier) string {
 
 func (mysqlDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
 	return scanTables(ctx, q, `SELECT TABLE_NAME, CASE TABLE_TYPE WHEN 'BASE TABLE' THEN 'TABLE' ELSE TABLE_TYPE END,
-		CASE WHEN TABLE_TYPE = 'VIEW' THEN '' ELSE TABLE_COMMENT END,
-		TABLE_ROWS, DATA_LENGTH + INDEX_LENGTH
+		CASE WHEN TABLE_TYPE = 'VIEW' THEN '' ELSE TABLE_COMMENT END, -1, -1
 		FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME`, schema)
+}
+
+func (mysqlDialect) TableStats(ctx context.Context, q Querier, schema string) ([]Table, error) {
+	return scanStats(ctx, q, `SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH + INDEX_LENGTH
+		FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE <> 'VIEW'`, schema)
 }
 
 func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
@@ -342,11 +374,17 @@ func (pgDialect) CurrentSchema(ctx context.Context, q Querier) string {
 func (pgDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
 	return scanTables(ctx, q, `SELECT c.relname,
 		CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END,
-		COALESCE(obj_description(c.oid, 'pg_class'), ''),
-		CASE WHEN c.relkind IN ('v','f') OR c.reltuples < 0 THEN -1 ELSE c.reltuples::bigint END,
-		CASE WHEN c.relkind IN ('r','m','p') THEN pg_total_relation_size(c.oid) ELSE -1 END
+		COALESCE(obj_description(c.oid, 'pg_class'), ''), -1, -1
 		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1 AND c.relkind IN ('r','v','m','p','f') ORDER BY c.relname`, schema)
+}
+
+func (pgDialect) TableStats(ctx context.Context, q Querier, schema string) ([]Table, error) {
+	return scanStats(ctx, q, `SELECT c.relname,
+		CASE WHEN c.reltuples < 0 THEN -1 ELSE c.reltuples::bigint END,
+		pg_total_relation_size(c.oid)
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relkind IN ('r','m','p')`, schema)
 }
 
 func (pgDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
@@ -436,15 +474,22 @@ func (mssqlDialect) ListTables(ctx context.Context, q Querier, db string) ([]Tab
 	d := msq(db)
 	return scanTables(ctx, q, `SELECT s.name, o.name, CASE o.type WHEN 'U' THEN 'TABLE' ELSE 'VIEW' END,
 		COALESCE((SELECT CAST(ep.value AS nvarchar(4000)) FROM `+d+`.sys.extended_properties ep
-			WHERE ep.class = 1 AND ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'), ''),
-		CASE o.type WHEN 'U' THEN COALESCE((SELECT SUM(p.rows) FROM `+d+`.sys.partitions p
-			WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)), 0) ELSE -1 END,
-		CASE o.type WHEN 'U' THEN COALESCE((SELECT SUM(a.total_pages) FROM `+d+`.sys.partitions p
-			JOIN `+d+`.sys.allocation_units a ON a.container_id = p.partition_id
-			WHERE p.object_id = o.object_id), 0) * 8192 ELSE -1 END
+			WHERE ep.class = 1 AND ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'), ''), -1, -1
 		FROM `+d+`.sys.objects o JOIN `+d+`.sys.schemas s ON s.schema_id = o.schema_id
 		WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0
 		ORDER BY CASE s.name WHEN 'dbo' THEN 0 ELSE 1 END, s.name, o.name`)
+}
+
+func (mssqlDialect) TableStats(ctx context.Context, q Querier, db string) ([]Table, error) {
+	d := msq(db)
+	return scanStats(ctx, q, `SELECT s.name, o.name,
+		COALESCE((SELECT SUM(p.rows) FROM `+d+`.sys.partitions p
+			WHERE p.object_id = o.object_id AND p.index_id IN (0, 1)), 0),
+		COALESCE((SELECT SUM(a.total_pages) FROM `+d+`.sys.partitions p
+			JOIN `+d+`.sys.allocation_units a ON a.container_id = p.partition_id
+			WHERE p.object_id = o.object_id), 0) * 8192
+		FROM `+d+`.sys.objects o JOIN `+d+`.sys.schemas s ON s.schema_id = o.schema_id
+		WHERE o.type = 'U' AND o.is_ms_shipped = 0`)
 }
 
 func (mssqlDialect) ListColumns(ctx context.Context, q Querier, db string, t Table) ([]Column, error) {
@@ -568,22 +613,94 @@ func (oracleDialect) CurrentSchema(ctx context.Context, q Querier) string {
 }
 
 func (oracleDialect) ListTables(ctx context.Context, q Querier, schema string) ([]Table, error) {
-	// num_rows comes from optimizer statistics (NULL until gathered).
-	// Sizes come from USER_SEGMENTS, so only for the login user's own schema
-	// (DBA_SEGMENTS would need extra privileges).
+	// Separate simple queries merged here: on a large data dictionary a
+	// join of the ALL_* views can get a bad plan and take many seconds.
 	// A materialized view also has a container table of the same name in
 	// ALL_TABLES: list it once, as the materialized view.
-	return scanTables(ctx, q, `SELECT o.name, o.kind, c.comments, o.num_rows, NVL(sg.bytes, -1) FROM (
-			SELECT t.table_name name, CASE WHEN m.mview_name IS NULL THEN 'TABLE' ELSE 'MATERIALIZED VIEW' END kind, t.num_rows
-				FROM all_tables t LEFT JOIN all_mviews m ON m.owner = t.owner AND m.mview_name = t.table_name
-				WHERE t.owner = :1 AND t.table_name NOT LIKE 'BIN$%'
-			UNION ALL SELECT view_name, 'VIEW', NULL FROM all_views WHERE owner = :2
-			UNION ALL SELECT m.mview_name, 'MATERIALIZED VIEW', NULL FROM all_mviews m WHERE m.owner = :3
-				AND NOT EXISTS (SELECT 1 FROM all_tables t WHERE t.owner = m.owner AND t.table_name = m.mview_name)
-		) o LEFT JOIN all_tab_comments c ON c.owner = :4 AND c.table_name = o.name
-		LEFT JOIN (SELECT segment_name, SUM(bytes) bytes FROM user_segments GROUP BY segment_name) sg
-			ON sg.segment_name = o.name AND o.kind <> 'VIEW' AND USER = :5
-		ORDER BY 1`, schema, schema, schema, schema, schema)
+	tables, err := scanStrings(ctx, q, `SELECT table_name FROM all_tables WHERE owner = :1 AND table_name NOT LIKE 'BIN$%'`, schema)
+	if err != nil {
+		return nil, err
+	}
+	views, err := scanStrings(ctx, q, `SELECT view_name FROM all_views WHERE owner = :1`, schema)
+	if err != nil {
+		return nil, err
+	}
+	mviews, err := scanStrings(ctx, q, `SELECT mview_name FROM all_mviews WHERE owner = :1`, schema)
+	if err != nil {
+		return nil, err
+	}
+	comments := map[string]string{}
+	rows, err := q.QueryContext(ctx, `SELECT table_name, comments FROM all_tab_comments WHERE owner = :1 AND comments IS NOT NULL`, schema)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var n, c sql.NullString
+		if err := rows.Scan(&n, &c); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		comments[n.String] = c.String
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	isMview := make(map[string]bool, len(mviews))
+	for _, m := range mviews {
+		isMview[m] = true
+	}
+	out := make([]Table, 0, len(tables)+len(views)+len(mviews))
+	add := func(name, typ string) {
+		out = append(out, Table{Name: name, Type: typ, Comment: comments[name], Rows: -1, Size: -1})
+	}
+	for _, t := range tables {
+		if isMview[t] {
+			add(t, "MATERIALIZED VIEW")
+			delete(isMview, t)
+		} else {
+			add(t, "TABLE")
+		}
+	}
+	for _, v := range views {
+		add(v, "VIEW")
+	}
+	for _, m := range mviews {
+		if isMview[m] { // no container table visible
+			add(m, "MATERIALIZED VIEW")
+		}
+	}
+	return out, nil
+}
+
+func (oracleDialect) TableStats(ctx context.Context, q Querier, schema string) ([]Table, error) {
+	// num_rows comes from optimizer statistics (NULL until gathered).
+	stats, err := scanStats(ctx, q, `SELECT table_name, num_rows, -1 FROM all_tables WHERE owner = :1`, schema)
+	if err != nil {
+		return nil, err
+	}
+	// Sizes: USER_SEGMENTS for the login user's own schema, DBA_SEGMENTS
+	// for others when the user may read it; otherwise unknown.
+	var sizes []Table
+	if strings.EqualFold(firstString(ctx, q, "SELECT USER FROM dual"), schema) {
+		sizes, err = scanStats(ctx, q, `SELECT segment_name, -1, SUM(bytes) FROM user_segments GROUP BY segment_name`)
+	} else {
+		sizes, err = scanStats(ctx, q, `SELECT segment_name, -1, SUM(bytes) FROM dba_segments WHERE owner = :1 GROUP BY segment_name`, schema)
+	}
+	if err == nil {
+		size := make(map[string]int64, len(sizes))
+		for _, s := range sizes {
+			size[s.Name] = s.Size
+		}
+		for i := range stats {
+			if b, ok := size[stats[i].Name]; ok {
+				stats[i].Size = b
+			} else if stats[i].Rows >= 0 {
+				stats[i].Size = 0 // deferred segment creation: no segment yet
+			}
+		}
+	}
+	return stats, nil
 }
 
 func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {

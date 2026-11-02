@@ -382,8 +382,25 @@ func TestTableMeta(t *testing.T) {
 			for _, x := range tables {
 				if x.Name == tg.table {
 					t.Logf("table: %+v", x)
-					if x.Comment != "상품 테이블" || x.Rows < 0 {
+					if x.Comment != "상품 테이블" || x.Rows != -1 || x.Size != -1 {
 						t.Errorf("table meta: %+v", x)
+					}
+					stats, err := m.TableStats(tg.cfg.ID, tg.schema)
+					if err != nil {
+						t.Fatal(err)
+					}
+					found := false
+					for _, st := range stats {
+						if st.Name == x.Name && st.Schema == x.Schema {
+							found = true
+							t.Logf("stats: %+v", st)
+							if st.Rows < 0 || st.Size < 0 {
+								t.Errorf("stats: %+v", st)
+							}
+						}
+					}
+					if !found {
+						t.Errorf("no stats for %s", x.Name)
 					}
 					cols, err := m.Columns(tg.cfg.ID, tg.schema, x)
 					if err != nil || cols[1].Comment != "상품명" {
