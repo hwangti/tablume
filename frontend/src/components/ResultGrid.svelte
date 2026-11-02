@@ -406,6 +406,11 @@
   let numW = $derived(Math.max(44, String(rowBase + rows.length).length * 8 + 20))
   let cw = $derived(widths.map((w) => Math.round(w)))
   let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
+  // The "load more / previous" bars span the visible width. They must end
+  // inside the table: a bar reaching past it (scrollLeft is fractional when
+  // zoomed) widens the scroll area, and scrolling right never ends.
+  let barLeft = $derived(Math.max(0, Math.min(scrollLeft, totalW - viewW)))
+  let barW = $derived(Math.min(viewW, Math.max(totalW, viewW - 1)))
 
   function onScroll() {
     scrollTop = scroller.scrollTop
@@ -806,7 +811,7 @@
     {/if}
 
     {#if canLoadPrev || loadingPrev}
-      <div class="more top" style:top="{HEAD_H}px" style:left="{scrollLeft}px" style:width="{viewW}px">
+      <div class="more top" style:top="{HEAD_H}px" style:left="{barLeft}px" style:width="{barW}px">
         {#if loadingPrev}이전 행 불러오는 중…{:else}<button class="link" onclick={() => onloadprev?.()}>이전 행 불러오기</button>{/if}
       </div>
     {/if}
@@ -878,7 +883,7 @@
     {/each}
 
     {#if hasMore}
-      <div class="more" style:top="{BODY_T + order.length * ROW_H}px" style:left="{scrollLeft}px" style:width="{viewW}px">
+      <div class="more" style:top="{BODY_T + order.length * ROW_H}px" style:left="{barLeft}px" style:width="{barW}px">
         {#if loadingMore}더 불러오는 중…{:else}<button class="link" onclick={onloadmore}>더 불러오기</button>{/if}
       </div>
     {/if}
