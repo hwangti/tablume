@@ -584,7 +584,7 @@
             <Icon name="schema" size={15} color="var(--warn)" />
             <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
             {#if r.s.loading}<span class="spin"></span>{/if}
-            {#if r.s.tables && app.treeView.tableCount}<span class="count">{r.s.tables.length}</span>{/if}
+            {#if r.s.tables && app.treeView.tableCount}<span class="count">{r.s.tables.length.toLocaleString('ko-KR')}</span>{/if}
           {:else if r.kind === 'table'}
             <Icon name={r.t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
             <span class="label">{tableLabel(r.t, r.c.driver)}</span>
@@ -595,7 +595,7 @@
             <Icon name="fn" size={15} color="var(--syn-type)" />
             <span class="label">프로시저 · 함수</span>
             {#if r.s.routinesLoading}<span class="spin"></span>{/if}
-            {#if r.s.routines && app.treeView.tableCount}<span class="count">{r.s.routines.length}</span>{/if}
+            {#if r.s.routines && app.treeView.tableCount}<span class="count">{r.s.routines.length.toLocaleString('ko-KR')}</span>{/if}
           {:else if r.kind === 'routine'}
             <span class="rbadge" class:f={r.r.type === 'FUNCTION'} class:k={r.r.type === 'PACKAGE'} title={routineLabel[r.r.type] ?? r.r.type}
               >{r.r.type === 'FUNCTION' ? 'F' : r.r.type === 'PACKAGE' ? 'K' : 'P'}</span
