@@ -9,34 +9,36 @@ import (
 	"tablume/internal/dbx"
 	"tablume/internal/store"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// App is bound to the frontend; every exported method becomes a JS function.
+// App is the service bound to the frontend; every exported method becomes a
+// JS function in frontend/bindings.
 type App struct {
-	ctx   context.Context
-	store *store.Store
-	db    *dbx.Manager
+	window *application.WebviewWindow
+	store  *store.Store
+	db     *dbx.Manager
 }
 
 func NewApp() *App {
-	return &App{db: dbx.NewManager()}
+	return &App{db: dbx.NewManager(), store: &store.Store{}}
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	s, err := store.Open()
 	if err != nil {
-		runtime.LogErrorf(ctx, "open store: %v", err)
-		s = &store.Store{}
+		application.Get().Logger.Error("open store", "error", err)
+		return nil
 	}
 	a.store = s
+	return nil
 }
 
-func (a *App) shutdown(context.Context) {
+func (a *App) ServiceShutdown() error {
 	for _, c := range a.store.List() {
 		a.db.Disconnect(c.ID)
 	}
+	return nil
 }
 
 // ---------------------------------------------------------------- connections
@@ -183,10 +185,16 @@ func (a *App) CloseSession(tabID string) { a.db.CloseSession(tabID) }
 
 // ---------------------------------------------------------------- files
 
+func (a *App) openFile(o application.OpenFileDialogOptions) (string, error) {
+	o.CanChooseFiles = true
+	o.Window = a.window
+	return application.Get().Dialog.OpenFileWithOptions(&o).PromptForSingleSelection()
+}
+
 func (a *App) PickSQLiteFile() (string, error) {
-	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+	return a.openFile(application.OpenFileDialogOptions{
 		Title: "SQLite 데이터베이스 파일",
-		Filters: []runtime.FileFilter{
+		Filters: []application.FileFilter{
 			{DisplayName: "SQLite (*.db;*.sqlite;*.sqlite3;*.db3)", Pattern: "*.db;*.sqlite;*.sqlite3;*.db3"},
 			{DisplayName: "모든 파일", Pattern: "*"},
 		},
@@ -201,12 +209,17 @@ func (a *App) PickKeyFile() (string, error) {
 			dir = filepath.Join(home, ".ssh")
 		}
 	}
-	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "SSH 개인 키 파일", DefaultDirectory: dir})
+	// Key files are often hidden-ish (no extension, in a dot directory).
+	return a.openFile(application.OpenFileDialogOptions{Title: "SSH 개인 키 파일", Directory: dir, ShowHiddenFiles: true})
 }
 
 // SaveTextFile asks for a path and writes content. Returns "" if cancelled.
 func (a *App) SaveTextFile(defaultName, content string) (string, error) {
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{DefaultFilename: defaultName})
+	path, err := application.Get().Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Filename:             defaultName,
+		CanCreateDirectories: true,
+		Window:               a.window,
+	}).PromptForSingleSelection()
 	if err != nil || path == "" {
 		return "", err
 	}
@@ -219,8 +232,8 @@ type OpenedFile struct {
 }
 
 func (a *App) OpenSQLFile() (*OpenedFile, error) {
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Filters: []runtime.FileFilter{{DisplayName: "SQL (*.sql)", Pattern: "*.sql"}, {DisplayName: "모든 파일", Pattern: "*"}},
+	path, err := a.openFile(application.OpenFileDialogOptions{
+		Filters: []application.FileFilter{{DisplayName: "SQL (*.sql)", Pattern: "*.sql"}, {DisplayName: "모든 파일", Pattern: "*"}},
 	})
 	if err != nil || path == "" {
 		return nil, err
@@ -246,4 +259,11 @@ func (a *App) LoadWorkspace() string {
 
 func (a *App) SaveWorkspace(data string) error {
 	return os.WriteFile(workspacePath(), []byte(data), 0o600)
+}
+
+// SetDarkTitleBar matches the native title bar (Windows) to the app theme.
+func (a *App) SetDarkTitleBar(dark bool) {
+	if a.window != nil {
+		setDarkTitleBar(a.window, dark)
+	}
 }

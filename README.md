@@ -114,25 +114,32 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 
 ## 개발
 
-필요한 것: Go 1.24 이상, Node 20 이상, [Wails v2](https://wails.io) CLI
+필요한 것: Go 1.26 이상, Node 20 이상, [Wails v3](https://v3.wails.io) CLI
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
 ```
 
 ```bash
-wails dev
+wails3 dev
 ```
 
 ```bash
-wails build
+wails3 build
 ```
 
-- `wails dev`: 핫 리로드로 개발합니다. 브라우저에서 http://localhost:34115 를 열어도 됩니다.
-- `wails build`: 지금 쓰는 OS용으로 빌드합니다. 결과물은 `build/bin/`에 생깁니다.
-- 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 하고, `-tags webkit2_41` 옵션을 붙여야 합니다.
-- Windows용 `.exe`는 리눅스나 macOS에서도 `wails build -platform windows/amd64`로 만들 수 있습니다.
-- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 한국어로 나옵니다. Wails가 영어로 만드는 메뉴 제목은 `menu_darwin.go`에서 바꾸고, macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
+```bash
+wails3 package
+```
+
+- `wails3 dev`: 핫 리로드로 개발합니다. Go 코드를 고치면 다시 빌드하고, 프런트엔드는 Vite가 바로 반영합니다.
+- `wails3 build`: 지금 쓰는 OS용으로 빌드합니다. 결과물은 `build/bin/`에 생깁니다. 빌드 단계는 `Taskfile.yml`에 있습니다.
+- `wails3 package`: 배포용 빌드입니다. macOS에서는 `build/bin/Tablume.app`까지 만듭니다.
+- 프런트엔드가 부르는 Go 함수(`frontend/bindings/`)는 빌드할 때 `app.go`에서 다시 만들어집니다. 직접 만들려면 `wails3 task bindings`를 실행합니다.
+- 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 합니다. Wails v3의 기본값은 GTK4라서 Taskfile이 `gtk3` 태그를 붙입니다.
+- Windows용 `.exe`는 리눅스나 macOS에서도 `wails3 build GOOS=windows`로 만들 수 있습니다.
+- `wails3 task build:server`는 창 없이 HTTP 서버로만 뜨는 빌드를 만듭니다. 브라우저로 http://localhost:8080 을 열어 화면을 확인할 수 있습니다(창 배율 같은 네이티브 기능은 빠집니다).
+- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 한국어로 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
 - macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
 
 ### GitHub Actions로 배포 파일 만들기
@@ -178,7 +185,9 @@ TABLUME_IT=1 go test ./internal/dbx/ -v
 ## 구조
 
 ```
-main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API
+main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API (App 서비스)
+menu.go                    macOS 메뉴 막대
+Taskfile.yml               빌드 단계 (wails3 build / package / dev)
 internal/dbx/              DB 계층
   dialect.go               DB별 접속 문자열과 메타데이터 쿼리
   manager.go               연결 풀, 탭별 세션, 실행/취소/커서

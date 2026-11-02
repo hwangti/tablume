@@ -1,6 +1,7 @@
 // Theme: follow the OS (auto) or force dark / light. The choice is kept in
 // localStorage so it applies before the first paint, and in the workspace.
-import { WindowSetBackgroundColour, WindowSetDarkTheme, WindowSetLightTheme } from '../../wailsjs/runtime/runtime'
+import { Window } from '@wailsio/runtime'
+import { api } from './api'
 
 export type ThemeMode = 'auto' | 'dark' | 'light'
 
@@ -27,17 +28,10 @@ function apply() {
   document.documentElement.dataset.theme = t
   // Native parts: window background (seen while resizing) and, on Windows,
   // the title bar.
-  try {
-    if (t === 'light') {
-      WindowSetBackgroundColour(255, 255, 255, 255)
-      if (navigator.userAgent.includes('Windows')) WindowSetLightTheme()
-    } else {
-      WindowSetBackgroundColour(30, 31, 34, 255)
-      if (navigator.userAgent.includes('Windows')) WindowSetDarkTheme()
-    }
-  } catch {
-    /* not running inside Wails (plain browser) */
-  }
+  const ignore = () => {} // not running inside a native window
+  if (t === 'light') Window.SetBackgroundColour(255, 255, 255, 255).catch(ignore)
+  else Window.SetBackgroundColour(30, 31, 34, 255).catch(ignore)
+  if (navigator.userAgent.includes('Windows')) api.SetDarkTitleBar(t === 'dark').catch(ignore)
 }
 
 export function getTheme(): ThemeMode {

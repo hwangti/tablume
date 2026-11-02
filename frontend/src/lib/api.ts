@@ -1,4 +1,4 @@
-import * as App from '../../wailsjs/go/main/App'
+import * as App from '../../bindings/tablume/app'
 import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange } from './types'
 
 export interface AlterRequest {
@@ -8,8 +8,8 @@ export interface AlterRequest {
   changes: { old: Column; new: Column }[]
 }
 
-// Typed view over the generated Wails bindings (they use classes; plain
-// objects work the same at runtime).
+// Typed view over the generated Wails bindings, using our own types
+// (the generated ones mark every slice and pointer as nullable).
 interface Api {
   ListConnections(): Promise<ConnConfig[]>
   SaveConnection(c: ConnConfig): Promise<ConnConfig>
@@ -56,6 +56,7 @@ interface Api {
   OpenSQLFile(): Promise<{ name: string; content: string } | null>
   LoadWorkspace(): Promise<string>
   SaveWorkspace(data: string): Promise<void>
+  SetDarkTitleBar(dark: boolean): Promise<void>
 }
 
 export interface ApplyRequest {

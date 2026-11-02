@@ -1,0 +1,154 @@
+# Build tasks, run through the Wails CLI: `wails3 build`, `wails3 package`,
+# `wails3 dev`, or `wails3 task <name>`.
+version: '3'
+
+vars:
+  APP_NAME: Tablume
+  BIN_DIR: build/bin
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # Target OS / architecture; default to the host (`wails3 build GOOS=windows`).
+  GOOS: '{{.GOOS | default OS}}'
+  GOARCH: '{{.ARCH | default ARCH}}'
+
+tasks:
+  # ------------------------------------------------------------ frontend
+
+  frontend:deps:
+    dir: frontend
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmds:
+      - npm install
+
+  bindings:
+    summary: Generates the TypeScript bindings for the App service
+    sources: ['**/*.go', go.mod, go.sum]
+    generates: ['frontend/bindings/**/*']
+    cmds:
+      - wails3 generate bindings -f '{{if eq OS "linux"}}-tags gtk3{{end}}' -clean=true -ts -i -noevents -silent
+
+  frontend:
+    run: once
+    dir: frontend
+    deps: [frontend:deps, bindings]
+    sources: ['**/*', exclude: node_modules/**/*]
+    generates: ['dist/**/*']
+    cmds:
+      - npm run build
+
+  dev:frontend:
+    deps: [frontend:deps]
+    dir: frontend
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+
+  # ------------------------------------------------------------ build
+
+  build:
+    summary: Builds the app for GOOS (default the host)
+    cmds:
+      - task: build:{{.GOOS}}
+
+  build:darwin:
+    deps: [frontend]
+    cmds:
+      - wails3 tool prepare-macos-output --dir "{{.BIN_DIR}}"
+      - task: go:build
+        vars: {GOOS: darwin, DEV: '{{.DEV}}'}
+
+  build:windows:
+    deps: [frontend]
+    cmds:
+      # Icon, version info and manifest for the .exe.
+      - wails3 generate syso -arch {{.GOARCH}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_{{.GOARCH}}.syso
+      - defer: '{{if eq OS "windows"}}powershell Remove-Item wails_windows_*.syso{{else}}rm -f wails_windows_*.syso{{end}}'
+      - task: go:build
+        vars: {GOOS: windows, DEV: '{{.DEV}}'}
+
+  build:linux:
+    deps: [frontend]
+    cmds:
+      - task: go:build
+        vars: {GOOS: linux, DEV: '{{.DEV}}'}
+
+  go:build:
+    internal: true
+    cmds:
+      - go build {{.FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}{{if eq .GOOS "windows"}}.exe{{end}}"
+    vars:
+      # Wails v3 uses GTK4 on Linux by default; most distros still ship
+      # WebKit2GTK 4.1 (GTK3), which the gtk3 tag selects.
+      TAGS: >-
+        {{$t := list}}{{if ne .DEV "true"}}{{$t = append $t "production"}}{{end}}{{if eq .GOOS "linux"}}{{$t = append $t "gtk3"}}{{end}}{{if .EXTRA_TAGS}}{{$t = append $t .EXTRA_TAGS}}{{end}}{{join "," $t}}
+      FLAGS: >-
+        {{if .TAGS}}-tags {{.TAGS}}{{end}} -buildvcs=false
+        {{if eq .DEV "true"}}-gcflags=all="-l"{{else}}-trimpath -ldflags="-w -s{{if eq .GOOS "windows"}} -H windowsgui{{end}}"{{end}}
+      MACOS_MIN: '{{if eq .GOOS "darwin"}}-mmacosx-version-min=12.0{{end}}'
+    env:
+      GOOS: '{{.GOOS}}'
+      GOARCH: '{{.GOARCH}}'
+      CGO_ENABLED: '{{if eq .GOOS "windows"}}0{{else}}1{{end}}'
+      CGO_CFLAGS: '{{.MACOS_MIN}}'
+      CGO_LDFLAGS: '{{.MACOS_MIN}}'
+      MACOSX_DEPLOYMENT_TARGET: '{{if eq .GOOS "darwin"}}12.0{{end}}'
+
+  build:server:
+    summary: Browser-only build (no window) for UI checks at http://localhost:8080
+    deps: [frontend]
+    cmds:
+      - go build -tags server -buildvcs=false -o "{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"
+    env:
+      CGO_ENABLED: 0
+
+  # ------------------------------------------------------------ package / run
+
+  package:
+    summary: Release build; on macOS also wraps it in Tablume.app
+    cmds:
+      - task: build
+      - task: '{{if eq .GOOS "darwin"}}bundle{{else}}noop{{end}}'
+        vars: {PLIST: Info.plist, APP: '{{.APP_NAME}}.app'}
+
+  bundle:
+    internal: true
+    cmds:
+      - rm -rf "{{.BIN_DIR}}/{{.APP}}"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP}}/Contents/MacOS" "{{.BIN_DIR}}/{{.APP}}/Contents/Resources"
+      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP}}/Contents/Resources/"
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP}}/Contents/MacOS/"
+      - cp "build/darwin/{{.PLIST}}" "{{.BIN_DIR}}/{{.APP}}/Contents/Info.plist"
+      - cmd: codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP}}"
+        platforms: [darwin]
+
+  noop:
+    internal: true
+    cmds: []
+
+  run:
+    summary: Runs the last build (dev mode starts this)
+    cmds:
+      - task: '{{if eq .GOOS "darwin"}}run:darwin{{else}}run:other{{end}}'
+
+  run:darwin:
+    internal: true
+    cmds:
+      # Run from a bundle so macOS picks up the Korean locale and the icon.
+      - task: bundle
+        vars: {PLIST: Info.dev.plist, APP: '{{.APP_NAME}}.dev.app'}
+      - '"{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
+
+  run:other:
+    internal: true
+    cmds:
+      - '"{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}}"'
+
+  dev:
+    summary: Live development (Vite + rebuild on Go changes)
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  icons:
+    summary: Regenerates the macOS / Windows icons from build/appicon.png
+    dir: build
+    cmds:
+      - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico

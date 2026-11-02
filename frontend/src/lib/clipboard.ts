@@ -1,11 +1,12 @@
-import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
+import { Clipboard } from '@wailsio/runtime'
 
 export const isMac = navigator.platform.toUpperCase().includes('MAC')
 export const modKey = isMac ? '⌘' : 'Ctrl+'
 
 export async function copyText(text: string) {
   try {
-    if (await ClipboardSetText(text)) return
+    await Clipboard.SetText(text)
+    return
   } catch {
     /* not running inside Wails (e.g. browser dev) */
   }

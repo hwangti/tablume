@@ -1,71 +1,62 @@
 package main
 
 import (
-	"context"
 	"embed"
+	"log"
 	"path/filepath"
 	goruntime "runtime"
 
 	"tablume/internal/store"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/menu"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// Shown in the macOS "Tablume에 관하여" panel (Wails' default otherwise).
+// Shown in the macOS "Tablume에 관하여" panel.
 //
 //go:embed build/appicon.png
 var appIcon []byte
 
 func main() {
-	app := NewApp()
-
-	var appMenu *menu.Menu
-	if goruntime.GOOS == "darwin" {
-		// Without an Edit menu, Cmd+C / Cmd+V don't reach the webview on macOS.
-		appMenu = menu.NewMenu()
-		appMenu.Append(menu.AppMenu())
-		appMenu.Append(menu.EditMenu())
-		appMenu.Append(menu.WindowMenu())
-	}
+	svc := NewApp()
 
 	// Keep WebView2's cache next to our own config (%APPDATA%\Tablume\webview)
-	// instead of Wails' default %APPDATA%\Tablume.exe.
+	// instead of the default next to the executable's name.
 	webviewDir := ""
 	if dir, err := store.Dir(); err == nil {
 		webviewDir = filepath.Join(dir, "webview")
 	}
 
-	err := wails.Run(&options.App{
+	app := application.New(application.Options{
+		Name:        "Tablume",
+		Description: "가벼운 데이터베이스 클라이언트",
+		Icon:        appIcon,
+		Services:    []application.Service{application.NewService(svc)},
+		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
+		},
+		Windows: application.WindowsOptions{WebviewUserDataPath: webviewDir},
+	})
+
+	if goruntime.GOOS == "darwin" {
+		app.Menu.Set(macMenu())
+	}
+
+	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "main",
 		Title:            "Tablume",
 		Width:            1360,
 		Height:           860,
 		MinWidth:         800,
 		MinHeight:        500,
-		AssetServer:      &assetserver.Options{Assets: assets},
-		BackgroundColour: &options.RGBA{R: 30, G: 31, B: 34, A: 1},
-		Menu:             appMenu,
-		OnStartup:        app.startup,
-		// The macOS menu is built by then; give it Korean titles.
-		OnDomReady: func(context.Context) { localizeMenu() },
-		OnShutdown: app.shutdown,
-		Bind:       []interface{}{app},
-		Mac: &mac.Options{
-			About: &mac.AboutInfo{Title: "Tablume", Message: "가벼운 데이터베이스 클라이언트", Icon: appIcon},
-		},
-		Windows: &windows.Options{
-			Theme:               windows.SystemDefault,
-			WebviewUserDataPath: webviewDir,
-		},
+		BackgroundColour: application.NewRGB(30, 31, 34),
+		URL:              "/",
 	})
-	if err != nil {
-		println("Error:", err.Error())
+
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
 	}
 }
