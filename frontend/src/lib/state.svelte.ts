@@ -1,5 +1,6 @@
-import { api, errText } from './api'
+import { api, errText, loginExpired } from './api'
 import { Events, Window } from '@wailsio/runtime'
+import { isWeb } from './platform'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import { DRIVERS } from './types'
@@ -117,7 +118,9 @@ export const app = $state({
   // What the schema tree shows next to each table / column.
   treeView: { comment: true, tableCount: true, rows: false, size: false },
   tableOpen: { pkDesc: false },
-  zoom: 1, // whole window
+  zoom: 1, // whole window (desktop app; the browser zooms the web page itself)
+  sidebarHidden: false, // the connection tree folded away (Ctrl/⌘+B)
+  wide: false, // 넓게 보기: only the active tab, no tree or tab strip (not saved)
   orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
   ddlMode: 'table' as 'sql' | 'table', // structure tab: columns and indexes, or the DDL text
@@ -334,6 +337,7 @@ export const ZOOM_MAX = 2
 const ZOOM_STEPS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2]
 
 function applyZoom() {
+  if (isWeb) return
   const z = app.zoom
   Window.SetZoom(z).catch(() => {
     // No native window (server build in a browser): CSS zoom instead.
@@ -1087,6 +1091,7 @@ export function saveWorkspaceSoon() {
       gridColNumbers: app.gridColNumbers,
       ddlView: app.ddlMode,
       theme: app.theme,
+      sidebarHidden: app.sidebarHidden,
       tabs: app.tabs.map(savedTab),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
@@ -1112,18 +1117,27 @@ export async function loadWorkspace(tabs = true) {
     if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     else if (data.ddlView === 'index') app.ddlMode = 'table' // was a view of its own
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
+    if (typeof data.sidebarHidden === 'boolean') app.sidebarHidden = data.sidebarHidden
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
     // (the old per-tab gridZoom is ignored)
-    if (typeof data.zoom === 'number' && data.zoom > ZOOM_MIN && data.zoom <= ZOOM_MAX) {
+    if (!isWeb && typeof data.zoom === 'number' && data.zoom > ZOOM_MIN && data.zoom <= ZOOM_MAX) {
       app.zoom = data.zoom
       applyZoom()
     }
     if (!tabs) return
+    let active = data.activeTab
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
+      // In the browser build every page gets tab ids (and so DB sessions) of
+      // its own: two devices open at once mustn't share a session.
+      if (isWeb) {
+        const id = newId()
+        if (t.id === active) active = id
+        t.id = id
+      }
       app.tabs.push(tabFromSaved(t))
     }
-    app.activeTab = app.tabs.find((t) => t.id === data.activeTab)?.id ?? app.tabs[0]?.id ?? ''
+    app.activeTab = app.tabs.find((t) => t.id === active)?.id ?? app.tabs[0]?.id ?? ''
   } catch {
     /* ignore a broken workspace file */
   }
@@ -1267,4 +1281,24 @@ export async function closeTabWindow() {
   api.CloseSession(t.id)
   await Events.Emit('tab:close', { id: t.id }).catch(() => {})
   api.CloseTabWindow(t.id)
+}
+
+// ---------------------------------------------------------------- browser build
+
+export function toggleSidebar() {
+  app.sidebarHidden = !app.sidebarHidden
+  saveWorkspaceSoon()
+}
+
+// A page's DB sessions stay open while it is: it touches them every few
+// minutes, and the server closes ones nobody touched for half an hour.
+// Closing the page releases them right away.
+export function initWebSessions() {
+  const ids = () => app.tabs.map((t) => t.id)
+  setInterval(() => {
+    api.TouchSessions(ids()).catch((e) => loginExpired(e))
+  }, 5 * 60_000)
+  addEventListener('pagehide', () => {
+    navigator.sendBeacon('/web/release', JSON.stringify(ids()))
+  })
 }

@@ -2,7 +2,7 @@
 
 A lightweight cross-platform multi-database SQL client written in Go.
 
-DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입니다. macOS와 Windows에서 동작합니다.
+DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입니다. macOS와 Windows에서 동작하고, 서버에 띄워 브라우저로 쓰는 [웹 버전](#웹-버전)도 있습니다.
 
 ![Tablume](docs/screenshot-oracle.png)
 
@@ -92,6 +92,8 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 - 결과만 크게 보기: 결과 탭 줄의 확대 버튼을 누르거나 구분선을 더블클릭하면 에디터를 숨기고 그리드만 크게 봅니다. 테이블 데이터 탭은 이 모드로 열립니다.
 - 팝업 창은 제목 줄을 드래그해서 옮길 수 있습니다. 제목 줄을 더블클릭하면 가운데로 돌아옵니다.
 - 테마: 보기 옵션에서 자동(OS 설정 따름) / 다크 / 라이트를 고를 수 있습니다.
+- 연결 목록 접기: 탭 줄 왼쪽 버튼이나 `Ctrl/⌘+B`로 왼쪽 연결 목록을 잠시 숨깁니다(펼친 트리와 필터는 그대로 남음).
+- 넓게 보기: 탭 줄 오른쪽 버튼이나 탭 우클릭 → "넓게 보기"로 지금 탭만 창 가득 봅니다(연결 목록과 탭 줄을 숨김). 위쪽 막대의 "넓게 보기 끝"이나 `Ctrl/⌘+B`로 돌아옵니다.
 
 ## 단축키
 
@@ -100,6 +102,7 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 | `Ctrl/⌘ + Enter` | 현재 문장(또는 선택 영역) 실행 |
 | `Ctrl/⌘ + Shift + Enter` | 전체 실행 |
 | `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | 새 콘솔 / 탭 닫기 |
+| `Ctrl/⌘ + B` | 연결 목록 숨기기 / 보이기 (넓게 보기에서는 원래 화면으로) |
 | `Ctrl/⌘ + 1…9` | 탭 이동 (탭 우클릭: 닫기 · 다른/왼쪽/오른쪽/같은 연결/모든 탭 닫기 · 복제 · 이름 바꾸기) |
 | `Ctrl + Tab` / `Ctrl + Shift + Tab` | 다음 / 이전 탭 (`Ctrl + PageDown/PageUp`, macOS는 `⌘ + Shift + ]/[`도 됨) |
 | `Ctrl/⌘ + /` | 주석 토글 |
@@ -121,6 +124,118 @@ DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입�
 - **MySQL/MariaDB TLS**: 추가 옵션에 `tls=true`를 넣으면 서버 인증서를 OS가 확인합니다. 회사나 서버가 직접 만든 인증서라서 확인에 실패하면(macOS는 "표준을 준수하지 않음"으로 더 엄격하게 거부합니다) `tls-ca=/경로/ca.pem`으로 그 CA를 지정하세요. 이때는 Go가 그 CA로 직접 확인합니다. 확인 없이 암호화만 하려면 `tls=skip-verify`를 씁니다(DataGrip의 기본 SSL 동작과 같습니다). SSH 터널을 거칠 때도 인증서는 DB 호스트 이름으로 확인합니다.
 - **추가 옵션** 칸에 드라이버 옵션을 `key=value&key2=value2` 형식으로 넣을 수 있습니다. 예: `tls=true`, `sslmode=require`, `encrypt=true`
 - 트랜잭션: 기본은 autocommit입니다. 탭마다 연결이 하나로 고정되어 있어서 `BEGIN`/`START TRANSACTION` … `COMMIT`/`ROLLBACK`을 직접 실행해도 같은 세션에서 처리됩니다.
+
+## 웹 버전
+
+같은 앱을 서버에 띄워 브라우저로 씁니다(dbgate 웹 버전 같은 용도). 로그인은 패스키로 합니다. Mac/iPhone은 Touch ID·Face ID, Windows는 Windows Hello(PIN·지문·얼굴)를 씁니다.
+
+- 계정은 하나입니다. 어느 기기에서 로그인해도 같은 연결 목록과 작업 공간(열린 탭, SQL)이 보입니다.
+- DB 접속은 서버가 합니다. 서버에서 닿는 DB만 쓸 수 있습니다.
+
+### 실행
+
+Docker:
+
+```bash
+docker build -t tablume .
+```
+
+```bash
+docker run -d --name tablume --restart unless-stopped -p 127.0.0.1:8080:8080 -v tablume:/data -e TABLUME_URL=https://db.example.com tablume
+```
+
+실행 파일로 직접 띄울 수도 있습니다. `build/bin/Tablume-server`가 만들어집니다.
+
+```bash
+wails3 task build:server
+```
+
+```bash
+./build/bin/Tablume-server -url https://db.example.com
+```
+
+| 옵션 | 환경 변수 | 기본값 | 설명 |
+|---|---|---|---|
+| `-url` | `TABLUME_URL` | (localhost면 생략 가능) | 브라우저에 치는 주소. 패스키가 이 도메인에 묶입니다. HTTPS여야 합니다(localhost만 예외). |
+| `-listen` | `TABLUME_LISTEN` | `127.0.0.1:8080` (Docker는 `:8080`) | 서버가 받을 주소 |
+| `-data` | `TABLUME_DATA` | OS 설정 폴더 (Docker는 `/data`) | 연결 목록, 작업 공간, 패스키, 암호화 키 |
+| `-files` | `TABLUME_FILES` | `<data>/files` | SQLite 파일과 SSH 키를 읽을 수 있는 유일한 폴더 |
+| `-reset-passkeys` | | | 패스키를 모두 지우고 모든 기기를 로그아웃시킨 뒤 새 등록 링크를 출력 |
+
+### 첫 로그인
+
+1. 처음 띄우면 등록된 패스키가 없어서 서버 로그에 등록 주소가 나옵니다(`docker logs tablume`). 주소는 `https://…/login?token=…` 형태이고, 서버를 다시 시작하면 바뀝니다.
+2. 그 주소를 열고 "이 기기에 패스키 등록"을 누릅니다.
+3. 다른 기기는 이렇게 로그인합니다.
+   - Apple 기기끼리는 iCloud 키체인으로 패스키가 동기화되어 바로 로그인됩니다.
+   - Windows PC에서는 로그인 화면에서 휴대폰으로 QR 코드를 찍어 휴대폰의 패스키로 로그인할 수 있습니다.
+   - 그 PC 자체에 패스키(Windows Hello)를 만들려면, 로그인된 기기의 보기 옵션 → 계정 → "패스키 관리" → "등록 링크 만들기"로 일회용 링크(15분)를 만들어 그 PC에서 엽니다.
+4. "패스키 관리"에서 패스키 이름 바꾸기와 지우기를 합니다. 지운 패스키로 로그인한 기기는 로그아웃됩니다. 마지막 하나는 지울 수 없습니다.
+5. 로그인은 마지막 사용부터 30일 동안 유지됩니다.
+
+### 리버스 프록시
+
+HTTPS는 앞단의 리버스 프록시(nginx, Caddy 등)가 맡습니다. 두 가지를 꼭 설정하세요.
+
+- 이벤트용 WebSocket(`/wails/events`)이 통과해야 합니다.
+- 긴 쿼리는 응답이 늦게 오므로 읽기 타임아웃을 넉넉하게 둡니다(nginx 기본 60초).
+
+Caddy는 따로 설정할 것이 없습니다.
+
+```
+db.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+nginx:
+
+```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    server_name db.example.com;
+    # listen 443 ssl; ssl_certificate …
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        client_max_body_size 50m;
+    }
+}
+```
+
+### 데스크톱 앱과 다른 점
+
+- **파일**
+  - SQLite 파일과 SSH 키는 서버의 파일 폴더(`-files`) 안에서만 고릅니다. "찾기…"를 누르면 그 폴더를 탐색하는 창이 열립니다. 그 밖의 경로는 연결할 때 거부됩니다.
+  - SQLite는 없는 파일 이름을 적으면 새 데이터베이스를 만듭니다.
+  - SSH 키 파일은 비워 둘 수 없습니다. 데스크톱 앱처럼 `~/.ssh`를 쓰면 서버의 키를 쓰게 되기 때문입니다.
+  - `.sql` 저장과 결과 내보내기는 다운로드로, `.sql` 열기는 업로드로 합니다.
+- **화면**
+  - 탭을 새 창으로 여는 기능 대신 "넓게 보기"를 씁니다.
+  - 화면 배율은 브라우저 확대/축소(`Ctrl/⌘ + +/-`)를 씁니다.
+  - 브라우저가 먼저 가져가는 단축키(`Ctrl/⌘+T`, `Ctrl/⌘+W`, `Ctrl/⌘+1…9`, `Ctrl+Tab` 등)는 메뉴와 안내에 표시하지 않습니다.
+- **비밀번호**
+  - 저장한 DB·SSH 비밀번호는 OS 키체인 대신 데이터 폴더의 `connections.json`에 AES-GCM으로 암호화해 저장합니다. 키는 같은 폴더의 `secret.key`에 있습니다.
+  - 따라서 데이터 폴더 전체를 가진 사람은 비밀번호를 풀 수 있습니다. 데이터 폴더를 백업할 때 주의하세요.
+- **DB 세션**
+  - 브라우저 탭(기기)마다 DB 세션이 따로 잡힙니다. 휴대폰과 PC를 동시에 열어도 서로의 트랜잭션이 섞이지 않습니다.
+  - 페이지를 닫으면 그 페이지의 DB 세션을 바로 닫습니다(열린 트랜잭션은 롤백). 닫혔다는 신호가 오지 않아도 30분 동안 소식이 없으면 서버가 정리합니다.
+  - 작업 공간(열린 탭, SQL)은 마지막에 저장한 기기 기준으로 남습니다.
+- **로그인 만료**
+  - 로그인이 만료되면 다음 동작 때 로그인 화면으로 돌아갑니다.
+
+### 보안 구조
+
+- 앱 본체는 `127.0.0.1`의 임의 포트에서 돕니다. 바깥으로 열린 포트는 로그인을 확인하는 앞단 하나뿐입니다.
+- 앱 본체는 앞단이 붙이는 비밀 헤더가 없는 요청을 거부합니다.
+- 다른 사이트에서 오는 요청(Origin이 다른 POST, WebSocket)은 쿠키가 있어도 막습니다.
+- 다만 같은 서버의 다른 프로그램은 앱 본체의 이벤트 WebSocket(연결 상태 알림 등)을 엿볼 수 있습니다. Wails가 그 경로에는 검사를 걸 수 없게 되어 있기 때문입니다. Docker 컨테이너로 띄우면(`--network host` 제외) 해당하지 않습니다.
 
 ## 개발
 
@@ -154,7 +269,7 @@ wails3 package
 wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
 ```
 
-- `wails3 task build:server`는 창 없이 HTTP 서버로만 뜨는 빌드를 만듭니다. 브라우저로 http://localhost:8080 을 열어 화면을 확인할 수 있습니다(창 배율 같은 네이티브 기능은 빠집니다).
+- `wails3 task build:server`는 [웹 버전](#웹-버전)을 만듭니다. 로컬에서 확인할 때는 그냥 실행한 뒤 로그에 나온 `http://localhost:8080/login?token=…` 주소로 패스키를 등록하면 됩니다. Playwright로 테스트할 때는 Chromium의 가상 인증기(CDP `WebAuthn.addVirtualAuthenticator`)를 씁니다.
 - macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 한국어로 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
 - macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
 
@@ -202,6 +317,9 @@ TABLUME_IT=1 go test ./internal/dbx/ -v
 
 ```
 main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API (App 서비스)
+platform_desktop.go        데스크톱 앱 전용 설정
+platform_web.go            웹 버전(-tags server): 옵션, 앞단 서버 시작, 세션 정리
+files.go                   웹 버전의 서버 파일 탐색과 경로 제한
 menu.go                    macOS 메뉴 막대
 Taskfile.yml               빌드 단계 (wails3 build / package / dev)
 internal/dbx/              DB 계층
@@ -209,7 +327,8 @@ internal/dbx/              DB 계층
   dialect_<db>.go          DB별 접속 문자열, 메타데이터, DDL, 컬럼·인덱스 변경 (빌드 태그 no_<db>로 뺄 수 있음)
   manager.go               연결 풀, 탭별 세션, 실행/취소/커서
   split.go                 SQL 스크립트를 문장 단위로 나누기 (DB별 규칙)
-internal/store/            연결 목록(JSON)과 키체인 연동
+internal/store/            연결 목록(JSON)과 키체인 연동 (키체인이 없으면 암호화해 파일에)
+internal/web/              웹 버전 앞단: 패스키 로그인(WebAuthn), 세션, 앱으로 프록시
 frontend/                  Svelte 5 + CodeMirror 6 UI
 ```
 
@@ -217,6 +336,7 @@ frontend/                  Svelte 5 + CodeMirror 6 UI
 
 - macOS: `~/Library/Application Support/Tablume/`
 - Windows: `%AppData%\Tablume\`
+- 웹 버전: `-data`로 지정한 폴더
 
 ## 다음에 하면 좋을 것
 

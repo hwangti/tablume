@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatBytes } from '../lib/format'
+  import { isWeb } from '../lib/platform'
   import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import Icon from './Icon.svelte'
   import {
@@ -47,16 +49,11 @@
 
 
 
-  function fmtSize(b: number | undefined): string {
-    if (b === undefined || b < 0) return ''
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
-    let i = 0
-    let v = b
-    while (v >= 1024 && i < units.length - 1) {
-      v /= 1024
-      i++
-    }
-    return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + units[i]
+  const fmtSize = formatBytes
+
+  async function logout() {
+    await fetch('/auth/logout', { method: 'POST' }).catch(() => {})
+    location.replace('/login')
   }
 
   function tableMeta(t: TableNode): string {
@@ -599,7 +596,9 @@
             {/each}
           </div>
           <!-- Typed value and ±5%, not a slider: the whole window (the slider
-               too) rescales on every change, so a drag can't be followed. -->
+               too) rescales on every change, so a drag can't be followed.
+               (The browser build leaves zoom to the browser.) -->
+          {#if !isWeb}
           <div class="vm-title sep">화면 배율 (%)</div>
           <div class="zoom-row">
             <div class="zoom-box">
@@ -625,6 +624,7 @@
             </div>
             <button class="zoom-reset" title="100%로 ({isMac ? '⌘0' : 'Ctrl+0'})" disabled={app.zoom === 1} onclick={() => setZoomLevel(1)}>100%</button>
           </div>
+          {/if}
           <div class="vm-title sep">트리에 표시</div>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
           <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
@@ -641,6 +641,11 @@
           <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> 컬럼 번호 표시</label>
           <div class="vm-title sep">테이블 열 때</div>
           <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> 기본 정렬: PK 내림차순</label>
+          {#if isWeb}
+            <div class="vm-title sep">계정</div>
+            <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> 패스키 관리</a>
+            <button class="vm-item" onclick={logout}><Icon name="logout" size={14} /> 로그아웃</button>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1165,6 +1170,27 @@
     gap: 6px;
     white-space: nowrap;
     cursor: pointer;
+  }
+  .vm-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 -6px;
+    padding: 3px 6px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .vm-item:hover {
+    background: var(--bg-hover);
+  }
+  .vm-item :global(svg) {
+    color: var(--text-dim);
   }
   .conn .label {
     font-weight: 500;

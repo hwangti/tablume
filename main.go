@@ -29,7 +29,7 @@ func main() {
 		webviewDir = filepath.Join(dir, "webview")
 	}
 
-	app := application.New(application.Options{
+	opts := application.Options{
 		Name:        "Tablume",
 		Description: "가벼운 데이터베이스 클라이언트",
 		Icon:        appIcon,
@@ -39,7 +39,9 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		Windows: application.WindowsOptions{WebviewUserDataPath: webviewDir},
-	})
+	}
+	start := setupPlatform(svc, &opts)
+	app := application.New(opts)
 
 	if goruntime.GOOS == "darwin" {
 		app.Menu.Set(macMenu())
@@ -56,6 +58,7 @@ func main() {
 		URL:              "/",
 	})
 	svc.quitWithMain(svc.window)
+	start()
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

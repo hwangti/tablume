@@ -31,6 +31,14 @@ export function ApplyIndexes(req: dbx$0.IndexRequest): $CancellablePromise<dbx$0
     return $Call.ByID(3256930453, req);
 }
 
+/**
+ * BrowseFiles lists a folder inside the files folder ("" for the folder
+ * itself; a file path lists the folder it is in).
+ */
+export function BrowseFiles(dir: string): $CancellablePromise<$models.FileList> {
+    return $Call.ByID(1346284390, dir);
+}
+
 export function Cancel(tabID: string): $CancellablePromise<void> {
     return $Call.ByID(2191755235, tabID);
 }
@@ -158,6 +166,14 @@ export function PickSQLiteFile(): $CancellablePromise<string> {
     return $Call.ByID(3101147370);
 }
 
+/**
+ * Platform tells the frontend which build it runs in: "desktop" (a native
+ * window) or "web" (the browser build, -tags server).
+ */
+export function Platform(): $CancellablePromise<string> {
+    return $Call.ByID(515534666);
+}
+
 export function PreviewAlter(req: dbx$0.AlterRequest): $CancellablePromise<string[] | null> {
     return $Call.ByID(1624168437, req);
 }
@@ -259,4 +275,12 @@ export function TableStats(id: string, schema: string): $CancellablePromise<dbx$
  */
 export function TestConnection(c: dbx$0.ConnConfig): $CancellablePromise<$models.TestResult> {
     return $Call.ByID(1257240193, c);
+}
+
+/**
+ * TouchSessions keeps the DB sessions of a browser page's tabs open (the
+ * page calls it every few minutes; sessions nobody touches are closed).
+ */
+export function TouchSessions(tabIDs: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1537396445, tabIDs);
 }

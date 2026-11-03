@@ -1,7 +1,8 @@
 // Package store keeps saved connections in a JSON file in the user config
 // directory. Passwords go to the OS keychain (macOS Keychain, Windows
 // Credential Manager, Secret Service on Linux) and never into the file,
-// unless no keychain is available.
+// unless no keychain is available (or, in the browser build, isn't used):
+// then they are stored in the file encrypted with a key kept beside it.
 package store
 
 import (
@@ -35,7 +36,38 @@ type Store struct {
 	list []record
 }
 
+var (
+	// DirOverride replaces the config directory (browser build: -data).
+	DirOverride string
+	// NoKeyring keeps passwords out of the OS keychain (a server usually
+	// has none, and the data directory should be all there is to back up).
+	NoKeyring bool
+)
+
+func keyringGet(id string) (string, error) {
+	if NoKeyring {
+		return "", keyring.ErrNotFound
+	}
+	return keyring.Get(service, id)
+}
+
+func keyringSet(id, pw string) error {
+	if NoKeyring {
+		return keyring.ErrUnsupportedPlatform
+	}
+	return keyring.Set(service, id, pw)
+}
+
+func keyringDelete(id string) {
+	if !NoKeyring {
+		_ = keyring.Delete(service, id)
+	}
+}
+
 func Dir() (string, error) {
+	if DirOverride != "" {
+		return DirOverride, nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -98,17 +130,17 @@ func (s *Store) Get(id string) (dbx.ConnConfig, bool) {
 		if r.ID == id {
 			c := r.ConnConfig
 			if c.SavePassword {
-				if pw, err := keyring.Get(service, id); err == nil {
+				if pw, err := keyringGet(id); err == nil {
 					c.Password = pw
 				} else {
-					c.Password = r.FallbackPassword
+					c.Password = s.reveal(r.FallbackPassword)
 				}
 			}
 			if c.SSH {
-				if pw, err := keyring.Get(service, sshKey(id)); err == nil {
+				if pw, err := keyringGet(sshKey(id)); err == nil {
 					c.SSHPassword = pw
 				} else {
-					c.SSHPassword = r.FallbackSSHPassword
+					c.SSHPassword = s.reveal(r.FallbackSSHPassword)
 				}
 			}
 			return c, true
@@ -140,22 +172,26 @@ func (s *Store) Save(c dbx.ConnConfig) (dbx.ConnConfig, error) {
 	}
 	switch {
 	case !c.SSH:
-		_ = keyring.Delete(service, sshKey(c.ID))
+		keyringDelete(sshKey(c.ID))
 		rec.FallbackSSHPassword = ""
 	case c.SSHPassword != "":
-		if err := keyring.Set(service, sshKey(c.ID), c.SSHPassword); err != nil {
-			rec.FallbackSSHPassword = c.SSHPassword
+		if err := keyringSet(sshKey(c.ID), c.SSHPassword); err != nil {
+			if rec.FallbackSSHPassword, err = s.seal(c.SSHPassword); err != nil {
+				return dbx.ConnConfig{}, err
+			}
 		} else {
 			rec.FallbackSSHPassword = ""
 		}
 	}
 	switch {
 	case !c.SavePassword:
-		_ = keyring.Delete(service, c.ID)
+		keyringDelete(c.ID)
 		rec.FallbackPassword = ""
 	case c.Password != "":
-		if err := keyring.Set(service, c.ID, c.Password); err != nil {
-			rec.FallbackPassword = c.Password
+		if err := keyringSet(c.ID, c.Password); err != nil {
+			if rec.FallbackPassword, err = s.seal(c.Password); err != nil {
+				return dbx.ConnConfig{}, err
+			}
 		} else {
 			rec.FallbackPassword = ""
 		}
@@ -178,8 +214,8 @@ func (s *Store) Delete(id string) error {
 	for i, r := range s.list {
 		if r.ID == id {
 			s.list = append(s.list[:i], s.list[i+1:]...)
-			_ = keyring.Delete(service, id)
-			_ = keyring.Delete(service, sshKey(id))
+			keyringDelete(id)
+			keyringDelete(sshKey(id))
 			return s.save()
 		}
 	}

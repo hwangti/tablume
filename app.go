@@ -15,10 +15,13 @@ import (
 // App is the service bound to the frontend; every exported method becomes a
 // JS function in frontend/bindings.
 type App struct {
-	window  *application.WebviewWindow // the main window
-	store   *store.Store
-	db      *dbx.Manager
-	tabWins tabWindows
+	window *application.WebviewWindow // the main window
+	// fileRoot is the only folder the browser build reads files from
+	// ("" in the desktop app).
+	fileRoot string
+	store    *store.Store
+	db       *dbx.Manager
+	tabWins  tabWindows
 }
 
 func NewApp() *App {
@@ -85,6 +88,9 @@ func (a *App) TestConnection(c dbx.ConnConfig) (TestResult, error) {
 			}
 		}
 	}
+	if err := a.checkFiles(&c); err != nil {
+		return TestResult{}, err
+	}
 	v, fp, err := dbx.Test(c)
 	return TestResult{Version: v, SSHHostKey: fp}, err
 }
@@ -107,6 +113,9 @@ func (a *App) Connect(id, password string) (string, error) {
 	}
 	if password != "" {
 		c.Password = password
+	}
+	if err := a.checkFiles(&c); err != nil {
+		return "", err
 	}
 	v, err := a.db.Connect(c)
 	if err == nil && c.SSH && c.SSHHostKey == "" {

@@ -2,6 +2,7 @@ import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
 import { initTheme } from './lib/theme'
+import { initPlatform } from './lib/platform'
 
 initTheme()
 
@@ -19,4 +20,5 @@ const dropButtonFocus = () => {
 addEventListener('focus', (e) => e.target === window && setTimeout(dropButtonFocus))
 addEventListener('load', () => setTimeout(dropButtonFocus, 300))
 
-export default mount(App, { target: document.getElementById('app')! })
+// The build (desktop / browser) decides parts of the UI, so it is known first.
+initPlatform().finally(() => mount(App, { target: document.getElementById('app')! }))

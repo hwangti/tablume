@@ -41,3 +41,16 @@ export function formatEditor(view: EditorView, driver?: string): boolean {
   })
   return true
 }
+
+// 1536 → "1.5 KB"; "" for unknown sizes
+export function formatBytes(b: number | undefined): string {
+  if (b === undefined || b < 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let v = b
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + units[i]
+}

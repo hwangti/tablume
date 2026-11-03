@@ -93,7 +93,7 @@ tasks:
       MACOSX_DEPLOYMENT_TARGET: '{{if eq .GOOS "darwin"}}12.0{{end}}'
 
   build:server:
-    summary: Browser-only build (no window) for UI checks at http://localhost:8080
+    summary: Browser build (no window, passkey sign-in) at http://localhost:8080; see README
     deps: [frontend]
     cmds:
       - go build -tags server -buildvcs=false -o "{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { fitMenu, closeMenus, onCloseMenus } from './lib/fit'
   import { modKey } from './lib/clipboard'
+  import { isWeb } from './lib/platform'
+  import { filePick } from './lib/webfiles.svelte'
+  import FileBrowser from './components/FileBrowser.svelte'
   import { onMount } from 'svelte'
   import { installTooltips } from './lib/tooltip'
   import Sidebar from './components/Sidebar.svelte'
@@ -28,6 +31,8 @@
     detachTab,
     backToMain,
     closeTabWindow,
+    toggleSidebar,
+    initWebSessions,
   } from './lib/state.svelte'
   import { Window } from '@wailsio/runtime'
   import { driverLabel } from './lib/types'
@@ -46,6 +51,7 @@
       await loadConnections()
       await loadWorkspace()
       initMainWindowEvents()
+      if (isWeb) initWebSessions()
     }
     ready = true
   })
@@ -65,7 +71,10 @@
     const mod = e.metaKey || e.ctrlKey
     if (!mod || app.editing || app.prompt || tabWindowId) return
     const k = e.key.toLowerCase()
-    if (k === 't') {
+    if (k === 'b' && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      sideToggle()
+    } else if (k === 't') {
       e.preventDefault()
       const connId = activeTab()?.connId ?? app.connections[0]?.id
       if (connId) openConsole(connId)
@@ -81,10 +90,19 @@
     }
   }
 
+  // The sidebar button and Ctrl/⌘+B; in 넓게 보기 they bring everything back.
+  function sideToggle() {
+    if (app.wide) {
+      app.wide = false
+      if (app.sidebarHidden) toggleSidebar()
+    } else toggleSidebar()
+  }
+
   // Window zoom: Ctrl/Cmd + = / - / 0 (numpad too) and Ctrl/Cmd + wheel,
-  // anywhere in the window (caught before the editor sees the key).
+  // anywhere in the window (caught before the editor sees the key). The
+  // browser build leaves zoom to the browser.
   function zoomKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    if (isWeb || !(e.ctrlKey || e.metaKey) || e.altKey) return
     const c = e.code
     const step =
       e.key === '0' || c === 'Numpad0'
@@ -103,7 +121,7 @@
   // A trackpad sends a stream of small deltas; one step per 120 ms at most.
   let lastWheelZoom = 0
   function zoomWheel(e: WheelEvent) {
-    if (!(e.ctrlKey || e.metaKey) || Math.abs(e.deltaY) < 1) return
+    if (isWeb || !(e.ctrlKey || e.metaKey) || Math.abs(e.deltaY) < 1) return
     e.preventDefault()
     if (e.timeStamp - lastWheelZoom < 120) return
     lastWheelZoom = e.timeStamp
@@ -208,13 +226,17 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '닫기', icon: 'close', run: () => closeTab(id), kbd: modKey + 'W' },
+        // (no shortcut shown in the browser, which keeps ⌘W / ⌘T for its own tabs)
+        { label: '닫기', icon: 'close', run: () => closeTab(id), kbd: isWeb ? undefined : modKey + 'W' },
         { label: '다른 탭 닫기', run: () => closeTabs(others), disabled: !others.length },
         { label: '왼쪽 탭 닫기', run: () => closeTabs(left), disabled: !left.length },
         { label: '오른쪽 탭 닫기', run: () => closeTabs(right), disabled: !right.length },
         { label: `같은 연결 탭 닫기${c ? ` (${c.name})` : ''}`, icon: 'db', run: () => closeTabs(sameConn) },
         { label: '모든 탭 닫기', run: () => closeTabs(ids.filter(here)), danger: true },
-        { label: '새 창으로 열기', icon: 'detach', run: () => detachTab(id), sep: true },
+        app.wide && app.activeTab === id
+          ? { label: '넓게 보기 끝', icon: 'unwide', run: () => (app.wide = false), sep: true }
+          : { label: '넓게 보기', icon: 'wide', run: () => ((app.activeTab = id), (app.wide = true)), sep: true },
+        ...(isWeb ? [] : [{ label: '새 창으로 열기', icon: 'detach', run: () => detachTab(id) }]),
         { label: '탭 복제', icon: 'copy', run: () => duplicateTab(id) },
         ...(t.preview ? [{ label: '탭 고정', icon: 'lock', run: () => pinTab(t) }] : []),
         { label: '이름 바꾸기', icon: 'edit', run: () => (renaming = id) },
@@ -264,6 +286,15 @@
 
   let renaming = $state<string | null>(null)
 
+  // The browser tab is titled after the active tab.
+  $effect(() => {
+    if (!isWeb || tabWindowId) return
+    const t = activeTab()
+    document.title = t ? `${t.title} — Tablume` : 'Tablume'
+  })
+
+  const sideGone = $derived(app.sidebarHidden || app.wide)
+
   // A tab window is titled after its tab.
   $effect(() => {
     if (!tabWindowId) return
@@ -301,12 +332,36 @@
     </div>
   </div>
 {:else}
-<div class="layout" style:grid-template-columns="{sideW}px 1px 1fr">
-  <Sidebar />
+<div class="layout" style:grid-template-columns={sideGone ? '1fr' : `${sideW}px 1px 1fr`}>
+  <!-- hidden, not removed: the tree keeps what is expanded, the filter, … -->
+  <div class="side" class:gone={sideGone}><Sidebar /></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="vdivider" onmousedown={startDrag}></div>
+  <div class="vdivider" class:gone={sideGone} onmousedown={startDrag}></div>
 
   <main>
+    {#if app.wide}
+      {@const t = activeTab()}
+      {@const c = t ? connById(t.connId) : undefined}
+      <div class="tw-bar" style:--conn-color={c?.color || 'transparent'}>
+        {#if t}
+          <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
+          <span class="tw-title">{t.title}</span>
+          {#if c}<span class="tw-conn">{c.name}</span>{/if}
+        {/if}
+        <span class="tw-fill"></span>
+        <button class="btn mini" title="연결 목록과 탭 줄을 다시 보입니다 ({modKey}B)" onclick={() => (app.wide = false)}>
+          <Icon name="unwide" size={14} /> 넓게 보기 끝
+        </button>
+      </div>
+    {:else}
+    <div class="strip">
+    <button
+      class="icon-btn strip-btn"
+      title="{app.sidebarHidden ? '연결 목록 보이기' : '연결 목록 숨기기'} ({modKey}B)"
+      onclick={sideToggle}
+    >
+      <Icon name={app.sidebarHidden ? 'sidebarOff' : 'sidebar'} />
+    </button>
     <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
     <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel} onscroll={tabsEdges}>
       {#each app.tabs.filter((x) => !x.detached) as t (t.id)}
@@ -343,7 +398,7 @@
       {#if app.connections.length}
         <button
           class="icon-btn newtab"
-          title="새 콘솔 (Ctrl/⌘+T)"
+          title={isWeb ? '새 콘솔' : '새 콘솔 (Ctrl/⌘+T)'}
           onclick={() => openConsole(activeTab()?.connId ?? app.connections[0].id)}
         >
           <Icon name="plus" size={14} />
@@ -351,6 +406,13 @@
       {/if}
     </div>
     </div>
+    {#if activeTab()}
+      <button class="icon-btn strip-btn" title="넓게 보기 — 이 탭만 창 가득 보입니다" onclick={() => (app.wide = true)}>
+        <Icon name="wide" />
+      </button>
+    {/if}
+    </div>
+    {/if}
 
     <div class="content">
       {#each app.tabs as t (t.id)}
@@ -368,7 +430,7 @@
             <p>왼쪽의 <b>+</b> 버튼으로 첫 연결을 추가하세요.</p>
           {:else}
             <p>연결을 클릭해 접속하고, 테이블을 클릭하면 데이터를 볼 수 있습니다.</p>
-            <p class="dim">콘솔 아이콘이나 Ctrl/⌘+T로 새 SQL 콘솔을 엽니다.</p>
+            <p class="dim">콘솔 아이콘{isWeb ? '으' : '이나 Ctrl/⌘+T'}로 새 SQL 콘솔을 엽니다.</p>
           {/if}
         </div>
       {/if}
@@ -390,6 +452,10 @@
 
 {#if app.editing}
   <ConnectionDialog initial={app.editing} />
+{/if}
+
+{#if filePick.req}
+  {#key filePick.req}<FileBrowser req={filePick.req} />{/key}
 {/if}
 
 {#if app.prompt}
@@ -471,6 +537,31 @@
     align-items: center;
     gap: 4px;
   }
+  .side {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .gone {
+    display: none;
+  }
+  .strip {
+    display: flex;
+    align-items: stretch;
+    height: 34px;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .strip-btn {
+    align-self: center;
+    flex-shrink: 0;
+    margin: 0 4px;
+  }
+  .strip .tabs-wrap {
+    flex: 1;
+    min-width: 0;
+  }
   .vdivider {
     background: var(--border);
     cursor: col-resize;
@@ -549,7 +640,7 @@
     content: '';
     position: absolute;
     top: 0;
-    bottom: 1px;
+    bottom: 0;
     z-index: 2;
     width: 18px;
     pointer-events: none;
@@ -571,10 +662,9 @@
   .tabs {
     display: flex;
     align-items: stretch;
-    height: 34px;
+    height: 33px;
     flex-shrink: 0;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
+    border-left: 1px solid var(--border);
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;

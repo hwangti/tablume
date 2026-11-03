@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { isWeb } from '../lib/platform'
+  import { pickServerFile } from '../lib/webfiles.svelte'
   import { api, errText } from '../lib/api'
   import { app, loadConnections, disconnect, connect, toast, confirmBox } from '../lib/state.svelte'
   import { DRIVERS, type ConnConfig, type Driver } from '../lib/types'
@@ -55,12 +57,12 @@
   )
 
   async function pickKey() {
-    const p = await api.PickKeyFile()
+    const p = isWeb ? await pickServerFile('SSH 개인 키 파일', c.sshKeyFile) : await api.PickKeyFile()
     if (p) c.sshKeyFile = p
   }
 
   async function pickFile() {
-    const p = await api.PickSQLiteFile()
+    const p = isWeb ? await pickServerFile('SQLite 데이터베이스 파일', c.database, true) : await api.PickSQLiteFile()
     if (p) {
       c.database = p
       if (!c.name) c.name = p.split(/[\\/]/).pop() ?? ''
@@ -147,7 +149,7 @@
     {#if c.driver === 'sqlite'}
       <label for="f-file">파일</label>
       <div class="row">
-        <input id="f-file" bind:value={c.database} placeholder="/path/to/database.db" />
+        <input id="f-file" bind:value={c.database} placeholder={isWeb ? '파일 폴더 안의 경로 (예: app.db)' : '/path/to/database.db'} />
         <button class="btn" onclick={pickFile}>찾기…</button>
       </div>
     {:else}
@@ -206,7 +208,7 @@
         {#if c.sshAuth === 'key'}
           <label for="f-sshkey">키 파일</label>
           <div class="row">
-            <input id="f-sshkey" bind:value={c.sshKeyFile} placeholder="(비우면 ~/.ssh/id_ed25519, id_ecdsa, id_rsa)" />
+            <input id="f-sshkey" bind:value={c.sshKeyFile} placeholder={isWeb ? '파일 폴더 안의 키 파일' : '(비우면 ~/.ssh/id_ed25519, id_ecdsa, id_rsa)'} />
             <button class="btn" onclick={pickKey}>찾기…</button>
           </div>
         {/if}

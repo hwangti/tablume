@@ -44,6 +44,9 @@ type session struct {
 	cur    *cursor
 	// expired is the id of a cursor closed for being idle.
 	expired string
+	// used is when the tab last ran something or said it is still open
+	// (browser build: see CloseIdleSessions).
+	used time.Time
 
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
@@ -396,8 +399,42 @@ func (m *Manager) session(tabID, connID string) (*session, *pool, error) {
 		s = &session{connID: connID}
 		m.sessions[tabID] = s
 	}
+	s.used = time.Now()
 	m.mu.Unlock()
 	return s, p, nil
+}
+
+// TouchSessions marks tabs' sessions as still wanted.
+func (m *Manager) TouchSessions(tabIDs []string) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range tabIDs {
+		if s := m.sessions[id]; s != nil {
+			s.used = now
+		}
+	}
+}
+
+// CloseIdleSessions closes sessions no tab has used or touched for maxIdle.
+// In the browser build a page that goes away without saying so (a crashed
+// browser, a phone that put it to sleep) would otherwise keep its
+// connections, and any open transaction, forever. Returns how many closed.
+func (m *Manager) CloseIdleSessions(maxIdle time.Duration) int {
+	cutoff := time.Now().Add(-maxIdle)
+	var idle []*session
+	m.mu.Lock()
+	for id, s := range m.sessions {
+		if s.used.Before(cutoff) {
+			idle = append(idle, s)
+			delete(m.sessions, id)
+		}
+	}
+	m.mu.Unlock()
+	for _, s := range idle {
+		go s.close()
+	}
+	return len(idle)
 }
 
 func (s *session) close() {
@@ -406,6 +443,10 @@ func (s *session) close() {
 	defer s.mu.Unlock()
 	s.closeCursor()
 	if s.conn != nil {
+		// Discarded, not returned to the pool: it carries the tab's session
+		// state (USE, temp tables, an open transaction), which closing the
+		// network connection ends on the server (a transaction rolls back).
+		s.conn.Raw(func(any) error { return driver.ErrBadConn })
 		s.conn.Close()
 		s.conn = nil
 	}

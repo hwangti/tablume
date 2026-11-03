@@ -1,4 +1,6 @@
 import * as App from '../../bindings/tablume/app'
+import { isWeb } from './platform'
+import { downloadText, uploadText } from './webfiles.svelte'
 import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex } from './types'
 
 export interface AlterResult {
@@ -82,6 +84,14 @@ interface Api {
   TabWindowState(tabId: string): Promise<string>
   CloseTabWindow(tabId: string): Promise<void>
   FocusTabWindow(tabId: string): Promise<boolean>
+  BrowseFiles(dir: string): Promise<FileList>
+  TouchSessions(tabIds: string[]): Promise<void>
+}
+
+export interface FileList {
+  root: string
+  dir: string
+  entries: { name: string; dir: boolean; size: number; modified: string }[]
 }
 
 export interface ApplyRequest {
@@ -91,9 +101,30 @@ export interface ApplyRequest {
   changes: RowChange[]
 }
 
-export const api = App as unknown as Api
+const native = App as unknown as Api
+
+// In the browser build, saving downloads the file and opening uploads one.
+export const api: Api = {
+  ...native,
+  SaveTextFile: (name, content) => (isWeb ? Promise.resolve(downloadText(name, content)) : native.SaveTextFile(name, content)),
+  OpenSQLFile: () => (isWeb ? uploadText('.sql,.txt,text/plain') : native.OpenSQLFile()),
+}
+
+// The browser build's server answers this once the sign-in has expired.
+const LOGIN_REQUIRED = 'tablume: login required'
+let reloading = false
+
+export function loginExpired(e: unknown): boolean {
+  if (!isWeb || !String(e instanceof Error ? e.message : e).includes(LOGIN_REQUIRED)) return false
+  if (!reloading) {
+    reloading = true
+    location.reload() // the server sends the page to the sign-in page
+  }
+  return true
+}
 
 export function errText(e: unknown): string {
+  if (loginExpired(e)) return '로그인이 만료되었습니다. 다시 로그인하세요.'
   if (e instanceof Error) return e.message
   return String(e)
 }

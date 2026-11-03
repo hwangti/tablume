@@ -7,6 +7,8 @@ export {
 };
 
 export type {
+    FileEntry,
+    FileList,
     OpenedFile,
     TestResult
 } from "./models.js";
