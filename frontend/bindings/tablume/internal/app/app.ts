@@ -13,22 +13,22 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as dbx$0 from "./internal/dbx/models.js";
+import * as dbx$0 from "../dbx/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 export function ApplyAlter(req: dbx$0.AlterRequest): $CancellablePromise<dbx$0.AlterResult> {
-    return $Call.ByID(2667481881, req);
+    return $Call.ByID(1683883096, req);
 }
 
 export function ApplyChanges(req: dbx$0.ApplyRequest): $CancellablePromise<number> {
-    return $Call.ByID(2359809804, req);
+    return $Call.ByID(1334103025, req);
 }
 
 export function ApplyIndexes(req: dbx$0.IndexRequest): $CancellablePromise<dbx$0.AlterResult> {
-    return $Call.ByID(3256930453, req);
+    return $Call.ByID(3589477944, req);
 }
 
 /**
@@ -36,115 +36,115 @@ export function ApplyIndexes(req: dbx$0.IndexRequest): $CancellablePromise<dbx$0
  * itself; a file path lists the folder it is in).
  */
 export function BrowseFiles(dir: string): $CancellablePromise<$models.FileList> {
-    return $Call.ByID(1346284390, dir);
+    return $Call.ByID(1468150881, dir);
 }
 
 export function Cancel(tabID: string): $CancellablePromise<void> {
-    return $Call.ByID(2191755235, tabID);
+    return $Call.ByID(890863278, tabID);
 }
 
 export function CloseSession(tabID: string): $CancellablePromise<void> {
-    return $Call.ByID(1620748453, tabID);
+    return $Call.ByID(110887068, tabID);
 }
 
 /**
  * CloseTabWindow closes the tab's window without asking it to put the tab back.
  */
 export function CloseTabWindow(tabID: string): $CancellablePromise<void> {
-    return $Call.ByID(941203086, tabID);
+    return $Call.ByID(373728623, tabID);
 }
 
 export function CompletionColumns(id: string, schema: string): $CancellablePromise<{ [_ in string]?: string[] | null } | null> {
-    return $Call.ByID(3929217770, id, schema);
+    return $Call.ByID(3727799065, id, schema);
 }
 
 export function Connect(id: string, password: string): $CancellablePromise<string> {
-    return $Call.ByID(164877153, id, password);
+    return $Call.ByID(1155515042, id, password);
 }
 
 export function CountResult(tabID: string, connID: string, sql: string): $CancellablePromise<number> {
-    return $Call.ByID(711859093, tabID, connID, sql);
+    return $Call.ByID(2565079802, tabID, connID, sql);
 }
 
 export function CountRows(id: string, schema: string, t: dbx$0.Table, where: string): $CancellablePromise<number> {
-    return $Call.ByID(2783411521, id, schema, t, where);
+    return $Call.ByID(832531678, id, schema, t, where);
 }
 
 export function DeleteConnection(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3428926502, id);
+    return $Call.ByID(4088564671, id);
 }
 
 export function Disconnect(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3864343059, id);
+    return $Call.ByID(3032320614, id);
 }
 
 export function EditInfo(id: string, schema: string, source: string[] | null, columns: string[] | null): $CancellablePromise<dbx$0.EditInfo> {
-    return $Call.ByID(477543025, id, schema, source, columns);
+    return $Call.ByID(1638538596, id, schema, source, columns);
 }
 
 export function Execute(req: dbx$0.ExecRequest): $CancellablePromise<dbx$0.ExecResponse> {
-    return $Call.ByID(2159374336, req);
+    return $Call.ByID(1929144907, req);
 }
 
 export function FetchMore(tabID: string, cursorID: string, n: number): $CancellablePromise<dbx$0.FetchResponse> {
-    return $Call.ByID(219709342, tabID, cursorID, n);
+    return $Call.ByID(3630158061, tabID, cursorID, n);
 }
 
 /**
  * FetchPage reads the next rows of a paged result (see StmtResult.Paged).
  */
 export function FetchPage(tabID: string, connID: string, sql: string, offset: number, n: number): $CancellablePromise<dbx$0.FetchResponse> {
-    return $Call.ByID(3504235488, tabID, connID, sql, offset, n);
+    return $Call.ByID(2113484799, tabID, connID, sql, offset, n);
 }
 
 /**
  * FocusTabWindow brings the tab's window to the front; false if it has none.
  */
 export function FocusTabWindow(tabID: string): $CancellablePromise<boolean> {
-    return $Call.ByID(1274109006, tabID);
+    return $Call.ByID(3997823323, tabID);
 }
 
 export function IsConnected(id: string): $CancellablePromise<boolean> {
-    return $Call.ByID(236330520, id);
+    return $Call.ByID(744249355, id);
 }
 
 export function ListColumns(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<dbx$0.Column[] | null> {
-    return $Call.ByID(1374733344, id, schema, t);
+    return $Call.ByID(773134479, id, schema, t);
 }
 
 export function ListConnections(): $CancellablePromise<dbx$0.ConnConfig[] | null> {
-    return $Call.ByID(786053378);
+    return $Call.ByID(2249392661);
 }
 
 export function ListIndexes(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<dbx$0.Index[] | null> {
-    return $Call.ByID(3383199879, id, schema, t);
+    return $Call.ByID(1177775444, id, schema, t);
 }
 
 export function ListRoutines(id: string, schema: string): $CancellablePromise<dbx$0.Routine[] | null> {
-    return $Call.ByID(520382220, id, schema);
+    return $Call.ByID(1001802773, id, schema);
 }
 
 export function ListSchemas(id: string): $CancellablePromise<dbx$0.SchemaList> {
-    return $Call.ByID(3091363483, id);
+    return $Call.ByID(2113925044, id);
 }
 
 export function ListTables(id: string, schema: string): $CancellablePromise<dbx$0.Table[] | null> {
-    return $Call.ByID(364749488, id, schema);
+    return $Call.ByID(386345857, id, schema);
 }
 
 export function LoadWorkspace(): $CancellablePromise<string> {
-    return $Call.ByID(3689398994);
+    return $Call.ByID(2887940845);
 }
 
 /**
  * NeedsPassword reports whether Connect must be given a password.
  */
 export function NeedsPassword(id: string): $CancellablePromise<boolean> {
-    return $Call.ByID(1659861135, id);
+    return $Call.ByID(241666948, id);
 }
 
 export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {
-    return $Call.ByID(1825067061);
+    return $Call.ByID(2984993726);
 }
 
 /**
@@ -152,18 +152,18 @@ export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {
  * saved form (JSON), read back by the window with TabWindowState.
  */
 export function OpenTabWindow(tabID: string, title: string, state: string): $CancellablePromise<void> {
-    return $Call.ByID(4108511252, tabID, title, state);
+    return $Call.ByID(58602739, tabID, title, state);
 }
 
 /**
  * PickKeyFile picks an SSH private key, starting in ~/.ssh.
  */
 export function PickKeyFile(): $CancellablePromise<string> {
-    return $Call.ByID(3480447249);
+    return $Call.ByID(3730453754);
 }
 
 export function PickSQLiteFile(): $CancellablePromise<string> {
-    return $Call.ByID(3101147370);
+    return $Call.ByID(3001293347);
 }
 
 /**
@@ -171,64 +171,64 @@ export function PickSQLiteFile(): $CancellablePromise<string> {
  * window) or "web" (the browser build, -tags server).
  */
 export function Platform(): $CancellablePromise<string> {
-    return $Call.ByID(515534666);
+    return $Call.ByID(2813635599);
 }
 
 export function PreviewAlter(req: dbx$0.AlterRequest): $CancellablePromise<string[] | null> {
-    return $Call.ByID(1624168437, req);
+    return $Call.ByID(2288574624, req);
 }
 
 export function PreviewChanges(req: dbx$0.ApplyRequest): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2333735256, req);
+    return $Call.ByID(4133903849, req);
 }
 
 export function PreviewIndexes(req: dbx$0.IndexRequest): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2242878793, req);
+    return $Call.ByID(505729856, req);
 }
 
 export function QualifiedName(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {
-    return $Call.ByID(2985624138, id, schema, t);
+    return $Call.ByID(179063041, id, schema, t);
 }
 
 export function QuoteIdent(id: string, name: string): $CancellablePromise<string> {
-    return $Call.ByID(653378351, id, name);
+    return $Call.ByID(1389903658, id, name);
 }
 
 /**
  * RenameTable renames a table or view; returns the statement it ran.
  */
 export function RenameTable(id: string, schema: string, t: dbx$0.Table, name: string): $CancellablePromise<string> {
-    return $Call.ByID(1939863997, id, schema, t, name);
+    return $Call.ByID(4051667682, id, schema, t, name);
 }
 
 /**
  * ReorderConnections saves the order of the connection list.
  */
 export function ReorderConnections(ids: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(4141282785, ids);
+    return $Call.ByID(3713400428, ids);
 }
 
 export function RoutineSource(id: string, schema: string, r: dbx$0.Routine): $CancellablePromise<string> {
-    return $Call.ByID(418622606, id, schema, r);
+    return $Call.ByID(3642303177, id, schema, r);
 }
 
 export function SaveConnection(c: dbx$0.ConnConfig): $CancellablePromise<dbx$0.ConnConfig> {
-    return $Call.ByID(865625064, c);
+    return $Call.ByID(1290154309, c);
 }
 
 /**
  * SaveTextFile asks for a path and writes content. Returns "" if cancelled.
  */
 export function SaveTextFile(defaultName: string, content: string): $CancellablePromise<string> {
-    return $Call.ByID(523683609, defaultName, content);
+    return $Call.ByID(3993992940, defaultName, content);
 }
 
 export function SaveWorkspace(data: string): $CancellablePromise<void> {
-    return $Call.ByID(647454285, data);
+    return $Call.ByID(3275430298, data);
 }
 
 export function SelectSQL(id: string, schema: string, t: dbx$0.Table, where: string, orderBy: string, limit: number, offset: number): $CancellablePromise<string> {
-    return $Call.ByID(3719998655, id, schema, t, where, orderBy, limit, offset);
+    return $Call.ByID(4088572336, id, schema, t, where, orderBy, limit, offset);
 }
 
 /**
@@ -236,7 +236,7 @@ export function SelectSQL(id: string, schema: string, t: dbx$0.Table, where: str
  * to the app theme.
  */
 export function SetDarkTitleBar(dark: boolean): $CancellablePromise<void> {
-    return $Call.ByID(2559726692, dark);
+    return $Call.ByID(3320535831, dark);
 }
 
 /**
@@ -244,14 +244,14 @@ export function SetDarkTitleBar(dark: boolean): $CancellablePromise<void> {
  * the backend's messages follow it.
  */
 export function SetLanguage(lang: string): $CancellablePromise<void> {
-    return $Call.ByID(3105553901, lang);
+    return $Call.ByID(1986370702, lang);
 }
 
 /**
  * SetSchemaFilter stores which schemas the tree shows for a connection.
  */
 export function SetSchemaFilter(id: string, f: dbx$0.SchemaFilter | null): $CancellablePromise<void> {
-    return $Call.ByID(3143414702, id, f);
+    return $Call.ByID(2582772281, id, f);
 }
 
 /**
@@ -259,22 +259,22 @@ export function SetSchemaFilter(id: string, f: dbx$0.SchemaFilter | null): $Canc
  * build tags in internal/dbx).
  */
 export function SupportedDrivers(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(4082064496);
+    return $Call.ByID(846779501);
 }
 
 /**
  * TabWindowState is the tab a tab window shows (JSON, "" if unknown).
  */
 export function TabWindowState(tabID: string): $CancellablePromise<string> {
-    return $Call.ByID(758588733, tabID);
+    return $Call.ByID(362415620, tabID);
 }
 
 export function TableDDL(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {
-    return $Call.ByID(1330645617, id, schema, t);
+    return $Call.ByID(2431381340, id, schema, t);
 }
 
 export function TableStats(id: string, schema: string): $CancellablePromise<dbx$0.Table[] | null> {
-    return $Call.ByID(3230869834, id, schema);
+    return $Call.ByID(189184371, id, schema);
 }
 
 /**
@@ -282,7 +282,7 @@ export function TableStats(id: string, schema: string): $CancellablePromise<dbx$
  * existing connection falls back to the stored one.
  */
 export function TestConnection(c: dbx$0.ConnConfig): $CancellablePromise<$models.TestResult> {
-    return $Call.ByID(1257240193, c);
+    return $Call.ByID(1522372448, c);
 }
 
 /**
@@ -290,12 +290,12 @@ export function TestConnection(c: dbx$0.ConnConfig): $CancellablePromise<$models
  * page calls it every few minutes; sessions nobody touches are closed).
  */
 export function TouchSessions(tabIDs: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(1537396445, tabIDs);
+    return $Call.ByID(2156561546, tabIDs);
 }
 
 /**
  * Version is the app's release version (the VERSION file).
  */
 export function Version(): $CancellablePromise<string> {
-    return $Call.ByID(2431199839);
+    return $Call.ByID(468229056);
 }

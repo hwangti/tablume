@@ -1,4 +1,4 @@
-import * as App from '../../bindings/tablume/app'
+import * as App from '../../bindings/tablume/internal/app/app'
 import { t } from './i18n.svelte'
 import { isWeb } from './platform'
 import { downloadText, uploadText } from './webfiles.svelte'
