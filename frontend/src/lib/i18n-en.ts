@@ -415,4 +415,7 @@ export default {
   '관계(FK) 없는 테이블 {n}': 'Tables without relations (FK): {n}',
   '● 기본 키 · ◆ 외래 키\n선 끝: ○< 여럿 · ○| 하나 · || 필수 (○는 선택)\n자식 쪽 FK가 UNIQUE면 1:1, 아니면 1:N. 위쪽이 부모입니다.\n휠로 확대하고 끌어서 옮깁니다.': '● primary key · ◆ foreign key\nLine ends: ○< many · ○| one · || required (○ optional)\n1:1 when the child\'s FK is UNIQUE, otherwise 1:N. Parents are above.\nWheel to zoom, drag to move.',
   '테이블 {t} · 관계 {e}': '{t} {t|table|tables} · {e} {e|relation|relations}',
+  '이 상자만 원래대로': 'Put this box back',
+  '자동 정렬': 'Auto arrange',
+  '자동 정렬 — 옮기거나 넓힌 상자를 되돌립니다': 'Auto arrange: puts moved or widened boxes back',
 } as Record<string, string>

@@ -4,10 +4,11 @@
   import ZoomBox from './ZoomBox.svelte'
   import { t, num } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
-  import { app, connect, type Tab } from '../lib/state.svelte'
+  import { app, connect, openDDL, openTableData, type Tab } from '../lib/state.svelte'
+  import { copyText } from '../lib/clipboard'
   import { closeMenus, fitMenu, onCloseMenus } from '../lib/fit'
   import { layout, boxView, stack, edgePath, DEFAULT_OPTIONS, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
-  import type { ForeignKey } from '../lib/types'
+  import type { ForeignKey, Table } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
 
@@ -53,6 +54,8 @@
       hot = null
       hov = null
       fitted = false
+      manual = {}
+      viewCache.clear()
       L = layout(g, measure)
     } catch (e) {
       error = errText(e)
@@ -65,28 +68,68 @@
     if (connected && !L && !error) untrack(load)
   })
 
+  // Boxes moved or widened by hand: the offset from the layout and the
+  // width. "Auto arrange" empties it.
+  let manual = $state<Record<string, { dx: number; dy: number; w?: number }>>({})
+
+  // A widened box is drawn again; the others keep their view until an option changes.
+  let viewCache = new Map<string, { w: number; v: BoxView }>()
+  let cacheOpt = ''
   let views = $derived.by(() => {
+    const key = JSON.stringify(opt)
+    if (key !== cacheOpt) (viewCache = new Map()), (cacheOpt = key)
     const m = new Map<string, BoxView>()
-    if (L) for (const b of L.nodes.values()) m.set(b.name, boxView(b, opt, measure, markW, false))
+    if (L)
+      for (const b of L.nodes.values()) {
+        const w = manual[b.name]?.w ?? b.w
+        let c = viewCache.get(b.name)
+        if (!c || c.w !== w) viewCache.set(b.name, (c = { w, v: boxView({ ...b, w }, opt, measure, markW, false) }))
+        m.set(b.name, c.v)
+      }
     return m
   })
   let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt) : null)
   let nodes = $derived(L ? [...L.nodes.values()] : [])
 
-  const anchor = (b: Node, v: BoxView, y0: number) => (col: string) => {
-    const r = v.rows.find((r) => r.line.name === col)
-    return r ? y0 + r.y - 4 : y0 + v.h / 2
-  }
-  let edges = $derived.by(() => {
-    if (!L || !pos) return []
-    const p = pos
-    const geo = (n: string) => {
-      const b = L!.nodes.get(n)!
-      const v = views.get(n)!
-      const y = p.y.get(n)!
-      return { x: b.x, y, w: b.w, h: v.h, anchor: anchor(b, v, y) }
+  // Where each shown box is now: the layout plus what was done by hand.
+  let geo = $derived.by(() => {
+    const m = new Map<string, { x: number; y: number; w: number; h: number }>()
+    if (!L || !pos) return m
+    for (const b of L.nodes.values()) {
+      const y = pos.y.get(b.name)
+      if (y === undefined) continue
+      const o = manual[b.name]
+      m.set(b.name, { x: b.x + (o?.dx ?? 0), y: y + (o?.dy ?? 0), w: o?.w ?? b.w, h: views.get(b.name)!.h })
     }
-    return L.edges.map((e, i) => ({ ...e, i, d: edgePath(geo(e.a), geo(e.b), e.ac, e.bc, e.a === e.b) }))
+    return m
+  })
+  // The picture's extent, boxes moved out of it included.
+  let bounds = $derived.by(() => {
+    if (!pos) return null
+    let [x0, y0, x1, y1] = [K.PAD, K.PAD, pos.w - K.PAD, pos.h - K.PAD]
+    for (const g of geo.values()) {
+      x0 = Math.min(x0, g.x)
+      y0 = Math.min(y0, g.y)
+      x1 = Math.max(x1, g.x + g.w)
+      y1 = Math.max(y1, g.y + g.h)
+    }
+    return { x: x0 - K.PAD, y: y0 - K.PAD, w: x1 - x0 + 2 * K.PAD, h: y1 - y0 + 2 * K.PAD }
+  })
+
+  let edges = $derived.by(() => {
+    if (!L) return []
+    const at = (n: string) => {
+      const g = geo.get(n)!
+      const v = views.get(n)!
+      return {
+        ...g,
+        anchor: (col: string) => {
+          const r = v.rows.find((r) => r.line.name === col)
+          return r ? g.y + r.y - 4 : g.y + v.h / 2
+        },
+      }
+    }
+    return L.edges.map((e, i) => ({ ...e, i, d: edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
   })
 
   // ------------------------------------------------------------ highlight
@@ -109,14 +152,15 @@
 
   // The box under the pointer is drawn again on top, uncut.
   let hov = $state<string | null>(null)
-  let hovView = $derived(hov && L ? boxView(L.nodes.get(hov)!, opt, measure, markW, true) : null)
+  let hovView = $derived(hov && L && geo.has(hov) ? boxView({ ...L.nodes.get(hov)!, w: geo.get(hov)!.w }, opt, measure, markW, true) : null)
   let vr: DOMRect | null = null
   let cur: number | null | undefined // -1 header, else the row's index
 
   function aim(n: string, e: PointerEvent) {
     const v = views.get(n)
-    if (!v || !vr || !pos) return
-    const sy = (e.clientY - vr.top - py) / z - pos.y.get(n)!
+    const g = geo.get(n)
+    if (!v || !g || !vr) return
+    const sy = (e.clientY - vr.top - py) / z - g.y
     let hit: number | null = null
     if (sy < v.headH) hit = -1
     else hit = v.rows.findIndex((r) => sy >= r.y - 12 && sy < r.y - 12 + r.h)
@@ -132,7 +176,7 @@
     } else hot = null
   }
   function boxEnter(n: string, e: PointerEvent) {
-    if (pan) return
+    if (pan || drag) return
     hov = n
     vr = viewEl.getBoundingClientRect()
     cur = undefined
@@ -161,13 +205,14 @@
   let fitted = false
 
   function fit() {
-    if (!pos || !viewEl.clientWidth) return
+    const b = bounds
+    if (!b || !viewEl.clientWidth) return
     const vw = viewEl.clientWidth
     const vh = viewEl.clientHeight
     // not past 160%: a small picture only gets blurry
-    z = Math.min(vw / pos.w, vh / pos.h, 1.6)
-    px = (vw - pos.w * z) / 2
-    py = Math.max(16, (vh - pos.h * z) / 2)
+    z = Math.min(vw / b.w, vh / b.h, 1.6)
+    px = (vw - b.w * z) / 2 - b.x * z
+    py = Math.max(16, (vh - b.h * z) / 2) - b.y * z
     fitted = true
   }
   // The pane may be hidden when the layout is done: fit once it has a size.
@@ -193,24 +238,86 @@
     const r = viewEl.getBoundingClientRect()
     zoomAt(z * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX - r.left, e.clientY - r.top)
   }
+  // Dragging the background pans; a box moves it; its corner grip widens it.
   let pan = $state<{ x: number; y: number; px: number; py: number } | null>(null)
+  let drag = $state<{ n: string; size: boolean; x: number; y: number; dx: number; dy: number; w: number } | null>(null)
+  const MIN_W = 130
+  const MAX_W = 900
+
   function down(e: PointerEvent) {
+    // not with the right button: the box would follow the menu
     if (e.button !== 0) return
     e.preventDefault()
     closeMenus()
-    boxLeave()
-    pan = { x: e.clientX, y: e.clientY, px, py }
+    const el = e.target as Element
+    const n = el.closest('[data-t]')?.getAttribute('data-t')
+    const b = n ? L?.nodes.get(n) : undefined
+    if (n && b) {
+      const o = manual[n]
+      drag = { n, size: !!el.closest('.grip'), x: e.clientX, y: e.clientY, dx: o?.dx ?? 0, dy: o?.dy ?? 0, w: o?.w ?? b.w }
+      hot = null
+    } else {
+      boxLeave()
+      pan = { x: e.clientX, y: e.clientY, px, py }
+    }
     viewEl.setPointerCapture(e.pointerId)
   }
   function move(e: PointerEvent) {
-    if (!pan) return
-    px = pan.px + e.clientX - pan.x
-    py = pan.py + e.clientY - pan.y
+    if (drag) {
+      // divided by the zoom, so the box stays under the pointer
+      const ddx = (e.clientX - drag.x) / z
+      const ddy = (e.clientY - drag.y) / z
+      const w = manual[drag.n]?.w
+      manual[drag.n] = drag.size
+        ? { dx: drag.dx, dy: drag.dy, w: Math.max(MIN_W, Math.min(MAX_W, drag.w + ddx)) }
+        : { dx: drag.dx + ddx, dy: drag.dy + ddy, w }
+    } else if (pan) {
+      px = pan.px + e.clientX - pan.x
+      py = pan.py + e.clientY - pan.y
+    }
   }
+  // A pointer that's cancelled sends no pointerup: without this the cursor stays grabbing.
+  function up() {
+    drag = null
+    pan = null
+  }
+
+  function arrange() {
+    manual = {}
+    fit()
+  }
+  let anyManual = $derived(Object.keys(manual).length > 0)
+
+  // ------------------------------------------------------------ context menu
+  // On a box: about that table; on the background: about the picture.
+  let cmenu = $state<{ x: number; y: number; n: string | null } | null>(null)
+  function openCtx(e: MouseEvent) {
+    e.preventDefault()
+    closeMenus()
+    const n = (e.target as Element).closest('[data-t]')?.getAttribute('data-t') ?? null
+    cmenu = { x: e.clientX, y: e.clientY, n }
+  }
+  const tableOf = (n: string): Table => ({ schema: tab.schema, name: n, type: 'TABLE', comment: L?.nodes.get(n)?.comment })
+  type CtxItem = { label: string; icon?: string; run: () => void; sep?: boolean; disabled?: boolean }
+  let ctxItems = $derived.by<CtxItem[]>(() => {
+    if (!cmenu) return []
+    const n = cmenu.n
+    if (n)
+      return [
+        { label: t('데이터 보기'), icon: 'table', run: () => openTableData(tab.connId, tab.schema, tableOf(n)) },
+        { label: t('DDL 보기'), icon: 'ddl', run: () => openDDL(tab.connId, tab.schema, tableOf(n)) },
+        { label: t('이름 복사'), icon: 'copy', run: () => copyText(n) },
+        ...(manual[n] ? [{ label: t('이 상자만 원래대로'), icon: 'undo', run: () => delete manual[n], sep: true }] : []),
+      ]
+    return [
+      { label: t('화면 맞춤'), run: fit },
+      { label: t('자동 정렬'), icon: 'undo', run: arrange, disabled: !anyManual },
+    ]
+  })
 
   // ------------------------------------------------------------ options
   let menu = $state<{ right: number; top: number } | null>(null)
-  $effect(() => onCloseMenus(() => (menu = null)))
+  $effect(() => onCloseMenus(() => ((menu = null), (cmenu = null))))
   function toggleMenu(e: MouseEvent) {
     e.stopPropagation()
     if (menu) return void (menu = null)
@@ -257,22 +364,28 @@
   })
 </script>
 
-<svelte:window onclick={() => (menu = null)} />
+<svelte:window
+  onclick={() => ((menu = null), (cmenu = null))}
+  onblur={() => (cmenu = null)}
+  onkeydown={(e) => e.key === 'Escape' && ((menu = null), (cmenu = null))}
+/>
 
-{#snippet box(b: Node, v: BoxView)}
-  <rect class="frame" width={b.w} height={v.h} rx="7" />
-  <path class="hd" d="M1,{v.headH} V7 A6,6 0 0 1 7,1 H{b.w - 7} A6,6 0 0 1 {b.w - 1},7 V{v.headH} Z" />
+{#snippet box(b: Node, w: number, v: BoxView)}
+  <rect class="frame" width={w} height={v.h} rx="7" />
+  <path class="hd" d="M1,{v.headH} V7 A6,6 0 0 1 7,1 H{w - 7} A6,6 0 0 1 {w - 1},7 V{v.headH} Z" />
   <text class="title" x="10" y="18">{b.name}</text>
   {#if v.comment}<text class="tcmt" x="10" y={K.HEAD_H + 6}>{v.comment}</text>{/if}
   {#each v.rows as r (r.line.name)}
     <g class="ln {r.line.kind}" class:aud={r.line.audit} class:hi={hot?.cols.has(ck(b.name, r.line.name))}>
       {#if r.line.kind}<text class="mk" x="10" y={r.y}>{r.line.kind === 'pk' ? '●' : '◆'}</text>{/if}
       <text class="nm" x={10 + (r.line.kind ? markW : 0)} y={r.y}>{r.name}</text>
-      <text class="tail" x={b.w - 10} y={r.y} text-anchor="end">{#each r.tail as p, i}<tspan class={p.cls}>{(i ? ' ' : '') + p.text}</tspan>{/each}</text>
+      <text class="tail" x={w - 10} y={r.y} text-anchor="end">{#each r.tail as p, i}<tspan class={p.cls}>{(i ? ' ' : '') + p.text}</tspan>{/each}</text>
       {#if r.comment}<text class="cm" x="21" y={r.y + K.CMT_LINE}>{r.comment}</text>{/if}
     </g>
   {/each}
   {#if v.more}<text class="more" x="10" y={v.moreY}>{t('…외 {n}개', { n: v.more })}</text>{/if}
+  <!-- the corner grip widens the box: a crescent on the same centre as the rounded corner -->
+  <path class="grip" d="M{w},{v.h - 7} A7,7 0 0 1 {w - 7},{v.h} L{w - 7},{v.h - 3.6} A3.4,3.4 0 0 0 {w - 3.6},{v.h - 7} Z" />
 {/snippet}
 
 <div class="erd">
@@ -306,6 +419,7 @@
         </div>
       {/if}
     </div>
+    <button class="icon-btn" onclick={arrange} disabled={!anyManual} title={t('자동 정렬 — 옮기거나 넓힌 상자를 되돌립니다')}><Icon name="undo" size={14} /></button>
     <span class="sep"></span>
     <button class="icon-btn" onclick={() => ((L = null), (error = ''), connected && load())} disabled={loading || !connected} title={t('스키마를 다시 읽습니다')}
       ><Icon name="refresh" size={14} /></button
@@ -323,7 +437,7 @@
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="view" class:panning={!!pan} bind:this={viewEl} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={() => (pan = null)} onpointercancel={() => (pan = null)} onpointerleave={boxLeave}>
+  <div class="view" class:panning={!!pan} bind:this={viewEl} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onpointerleave={() => !drag && boxLeave()} oncontextmenu={openCtx}>
     {#if !connected}
       <div class="msg">
         {t('연결되어 있지 않습니다')}
@@ -379,30 +493,45 @@
           {/if}
           <g class="boxes">
             {#each nodes as b (b.name)}
-              {#if pos.y.has(b.name)}
+              {@const g = geo.get(b.name)}
+              {#if g}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <g
                   class="bx"
+                  data-t={b.name}
                   class:dim={hot && !hot.tables.has(b.name)}
-                  transform="translate({b.x} {pos.y.get(b.name)})"
+                  class:moved={!!manual[b.name]}
+                  class:grab={drag?.n === b.name}
+                  transform="translate({g.x} {g.y})"
                   onpointerenter={(e) => boxEnter(b.name, e)}
-                  onpointermove={(e) => !pan && aim(b.name, e)}
-                  onpointerleave={boxLeave}
+                  onpointermove={(e) => !pan && !drag && aim(b.name, e)}
+                  onpointerleave={() => !drag && boxLeave()}
                 >
                   {#if b.comment}<title>{b.name} — {b.comment}</title>{/if}
-                  {@render box(b, views.get(b.name)!)}
+                  {@render box(b, g.w, views.get(b.name)!)}
                 </g>
               {/if}
             {/each}
-            {#if hov && hovView && pos.y.has(hov)}
-              {@const b = L.nodes.get(hov)!}
-              <g class="bx full" transform="translate({b.x} {pos.y.get(hov)})">{@render box(b, hovView)}</g>
+            {#if hov && hovView && geo.has(hov)}
+              {@const g = geo.get(hov)!}
+              <g class="bx full" class:moved={!!manual[hov]} class:grab={drag?.n === hov} transform="translate({g.x} {g.y})">{@render box(L.nodes.get(hov)!, g.w, hovView)}</g>
             {/if}
           </g>
         </g>
       </svg>
     {/if}
   </div>
+  {#if cmenu}
+    <div class="ctx" style:left="{cmenu.x}px" style:top="{cmenu.y}px" use:fitMenu={cmenu}>
+      {#if cmenu.n}<div class="ctx-ttl">{cmenu.n}</div>{/if}
+      {#each ctxItems as it (it.label)}
+        {#if it.sep}<hr />{/if}
+        <button disabled={it.disabled} onclick={() => ((cmenu = null), it.run())}>
+          <span class="mi">{#if it.icon}<Icon name={it.icon} size={14} />{/if}</span>{it.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -595,7 +724,73 @@
     fill: var(--text-faint);
   }
   .bx {
+    cursor: move;
+  }
+  .grip {
+    fill: transparent;
+    stroke: transparent;
+    stroke-width: 8; /* a wider target than the crescent */
+    cursor: ew-resize; /* only the width changes */
+  }
+  .bx.full .grip {
+    fill: var(--text-faint);
+  }
+  /* moved or widened by hand: what "auto arrange" puts back */
+  .bx.moved .frame {
+    stroke: color-mix(in srgb, var(--accent) 55%, var(--erd-frame));
+  }
+  .bx.grab .frame {
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+  .ctx {
+    position: fixed;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    padding: 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .ctx-ttl {
+    padding: 4px 10px 5px;
+    color: var(--text-faint);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .ctx button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 8px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ctx button:hover:not(:disabled) {
+    background: var(--bg-select);
+  }
+  .ctx button:disabled {
+    opacity: 0.4;
     cursor: default;
+  }
+  .ctx hr {
+    margin: 4px 2px;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+  .mi {
+    display: inline-flex;
+    width: 14px;
+    flex-shrink: 0;
+    color: var(--text-dim);
   }
   .bx.dim {
     opacity: 0.16;
