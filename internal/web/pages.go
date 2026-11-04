@@ -32,7 +32,9 @@ const pageHead = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<link rel="icon" href="/auth/logo.svg">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-96.png" sizes="96x96" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
   :root {
     --bg: #1e1f22; --panel: #2b2d30; --input: #1e1f22; --border: #393b40; --hover: #36383d;

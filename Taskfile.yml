@@ -96,15 +96,31 @@ tasks:
     summary: Browser build (no window, passkey sign-in) at http://localhost:8080; see README
     deps: [frontend]
     cmds:
+      - task: version:check
       - go build -tags server -buildvcs=false -o "{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"
     env:
       CGO_ENABLED: 0
+
+  # ------------------------------------------------------------ version
+
+  version:
+    summary: 'Sets the release version in VERSION and every file the OS reads it from: wails3 task version VERSION=0.9.1'
+    requires:
+      vars: [VERSION]
+    cmds:
+      - go run ./build/version {{.VERSION}}
+
+  version:check:
+    summary: Checks that Info.plist, the .exe info and package.json match VERSION
+    cmds:
+      - go run ./build/version -check
 
   # ------------------------------------------------------------ package / run
 
   package:
     summary: Release build; on macOS also wraps it in Tablume.app
     cmds:
+      - task: version:check
       - task: build
       - task: '{{if eq .GOOS "darwin"}}bundle{{else}}noop{{end}}'
         vars: {PLIST: Info.plist, APP: '{{.APP_NAME}}.app'}

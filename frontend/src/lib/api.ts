@@ -88,6 +88,7 @@ interface Api {
   BrowseFiles(dir: string): Promise<FileList>
   TouchSessions(tabIds: string[]): Promise<void>
   SetLanguage(lang: string): Promise<void>
+  Version(): Promise<string>
 }
 
 export interface FileList {

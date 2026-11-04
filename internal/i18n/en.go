@@ -102,9 +102,9 @@ var en = map[string]string{
 	"SSH 키 파일을 고르세요 (웹 버전은 파일 폴더 안의 키만 씁니다)":                    "Choose an SSH key file (the web version only uses keys in the files folder)",
 
 	// browser build: server
-	"패스키를 모두 지웠습니다.":                                     "All passkeys were removed.",
-	"Tablume 웹: %s (listening on %s, data %s, files %s)": "Tablume web: %s (listening on %s, data %s, files %s)",
-	"닫힌 페이지의 DB 세션 %d개를 정리했습니다":                          "Closed %d DB sessions of pages that went away",
+	"패스키를 모두 지웠습니다.":                                        "All passkeys were removed.",
+	"Tablume %s 웹: %s (listening on %s, data %s, files %s)": "Tablume %s web: %s (listening on %s, data %s, files %s)",
+	"닫힌 페이지의 DB 세션 %d개를 정리했습니다":                             "Closed %d DB sessions of pages that went away",
 	"-url (TABLUME_URL)을 지정하세요: 브라우저에서 여는 주소, 예) https://db.example.com — 패스키가 이 주소의 도메인에 묶입니다": "Set -url (TABLUME_URL): the address opened in the browser, e.g. https://db.example.com — passkeys are bound to its domain",
 	"-url %q: http(s)://호스트 형식이어야 합니다":              "-url %q: must be http(s)://host",
 	"-url %q: 패스키는 HTTPS(또는 localhost)에서만 쓸 수 있습니다": "-url %q: passkeys only work over HTTPS (or on localhost)",

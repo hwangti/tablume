@@ -49,7 +49,12 @@ func setupPlatform(svc *App, o *application.Options) func() {
 	dataDir := flag.String("data", env("TABLUME_DATA", ""), "data directory: connections, workspace, passkeys (env TABLUME_DATA; default the user config directory)")
 	files := flag.String("files", env("TABLUME_FILES", ""), "the only folder SQLite databases and SSH keys are read from (env TABLUME_FILES; default <data>/files)")
 	reset := flag.Bool("reset-passkeys", false, "forget every passkey and sign every device out, then print a new setup link")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("Tablume", appVersion())
+		os.Exit(0)
+	}
 
 	fail := func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, "tablume: "+format+"\n", args...)
@@ -143,7 +148,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		if err != nil {
 			fail("listen %s: %v", *listen, err)
 		}
-		log.Printf(i18n.T("Tablume 웹: %s (listening on %s, data %s, files %s)"), pub, *listen, dir, svc.fileRoot)
+		log.Printf(i18n.T("Tablume %s 웹: %s (listening on %s, data %s, files %s)"), appVersion(), pub, *listen, dir, svc.fileRoot)
 		srv := &http.Server{Handler: front.Handler(), ReadHeaderTimeout: 15 * time.Second}
 		go func() {
 			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

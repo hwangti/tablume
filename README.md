@@ -151,6 +151,7 @@ wails3 task build:server
 | `-data` | `TABLUME_DATA` | the OS config folder (Docker: `/data`) | Connection list, workspace, passkeys, encryption key |
 | `-files` | `TABLUME_FILES` | `<data>/files` | The only folder SQLite files and SSH keys are read from |
 | `-reset-passkeys` | | | Remove every passkey, sign every device out and print a new setup link |
+| `-version` | | | Print the version and exit |
 
 The executable is statically linked and needs nothing else installed. With systemd, a unit like this works:
 
@@ -280,9 +281,19 @@ wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
 - The macOS menu bar (Tablume / Edit / Window) is built in `menu.go` in the app's language and rebuilt when it changes. Items macOS adds itself (Services, Start Dictation, …) follow the OS language (`build/darwin/Info.plist` declares English and Korean).
 - The macOS app can only be built on macOS. If that's not at hand, use GitHub Actions below.
 
+### Version
+
+The version is in the `VERSION` file. The Go build embeds it: the app shows it at the bottom of the view options menu, and `Tablume-server -version` prints it. The macOS and Windows files keep their own copies (`Info.plist`, `build/windows/info.json` and the manifest, plus `package.json`), so change the version with this task, which updates all of them:
+
+```bash
+wails3 task version VERSION=0.9.1
+```
+
+`wails3 package`, `wails3 task build:server` and the tests stop if the copies don't match `VERSION`. For a one-off build, `-ldflags "-X main.version=0.9.1-rc1"` overrides the version the binary reports.
+
 ### Release builds with GitHub Actions
 
-`.github/workflows/build.yml` runs when a `v*` tag is pushed, or by hand from the Actions tab. It builds a macOS (Apple Silicon) `.app` zip and a Windows `.exe` and uploads them as artifacts.
+`.github/workflows/build.yml` runs when a `v*` tag is pushed, or by hand from the Actions tab. It builds a macOS (Apple Silicon) `.app` zip and a Windows `.exe` and uploads them as artifacts. A tag must match `VERSION` (`v0.9.0` for `0.9.0`).
 
 The macOS build isn't signed, so the first launch needs right-click → Open in Finder, or:
 
@@ -293,14 +304,14 @@ xattr -dr com.apple.quarantine Tablume.app
 ### Tests
 
 ```bash
-go test ./internal/...
+go test ./internal/... ./build/...
 ```
 
 ```bash
 CGO_ENABLED=0 go test -tags server .
 ```
 
-These are unit tests (statement splitting, SQLite, translations, the web front door, file restrictions). Integration tests against the five databases run like this. First start test databases with Docker:
+These are unit tests (statement splitting, SQLite, translations, the web front door, file restrictions, version copies). Integration tests against the five databases run like this. First start test databases with Docker:
 
 ```bash
 docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
@@ -332,6 +343,7 @@ platform_desktop.go        Desktop-only setup
 platform_web.go            Web version (-tags server): options, front door, session cleanup
 files.go                   Web version: server file browsing and path restrictions
 windowstate.go             Main window size, kept between runs
+version.go, VERSION        App version (build/version/ keeps the copies in step)
 menu.go                    macOS menu bar
 Taskfile.yml               Build steps (wails3 build / package / dev)
 internal/dbx/              Database layer

@@ -43,6 +43,8 @@
   let filter = $state('')
   let viewMenu = $state(false)
   let zoomList = $state(false) // the zoom presets under the zoom field
+  let version = $state('') // shown at the foot of the view menu
+  api.Version().then((v) => (version = v), () => {})
 
   // 1.2만 / 1.2K
   const compact = $derived(new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }))
@@ -672,6 +674,7 @@
             <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> {tr('패스키 관리')}</a>
             <button class="vm-item" onclick={logout}><Icon name="logout" size={14} /> {tr('로그아웃')}</button>
           {/if}
+          {#if version}<div class="vm-version">Tablume {version}</div>{/if}
         </div>
       {/if}
     </div>
@@ -1040,6 +1043,14 @@
   }
   .tip-line:last-child:not(:first-of-type) {
     color: var(--text-faint);
+  }
+  .vm-version {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 11px;
+    user-select: text;
   }
   .vm-title.sep {
     margin-top: 6px;

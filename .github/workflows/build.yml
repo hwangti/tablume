@@ -26,8 +26,12 @@ jobs:
           node-version: 22
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+      - name: Tag matches VERSION
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: test "${{ github.ref_name }}" = "v$(tr -d '[:space:]' < VERSION)" || { echo "tag ${{ github.ref_name }} but VERSION is $(cat VERSION)"; exit 1; }
       - name: Unit tests
-        run: go test ./internal/...
+        run: go test ./internal/... ./build/...
       - name: Build
         run: wails3 package
       - name: Zip macOS app

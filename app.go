@@ -314,6 +314,9 @@ func loadLanguage() {
 	}
 }
 
+// Version is the app's release version (the VERSION file).
+func (a *App) Version() string { return appVersion() }
+
 // SetLanguage is the interface language chosen in the app ("ko" or "en"):
 // the backend's messages follow it.
 func (a *App) SetLanguage(lang string) {

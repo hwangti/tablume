@@ -28,6 +28,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /web/release", s.authed(s.release))
 	mux.HandleFunc("GET /auth/logo.svg", serveLogo)
 	proxy := s.proxy()
+	// The app's icons, for the sign-in page and for a home-screen shortcut
+	// added before signing in.
+	for _, p := range publicFiles {
+		mux.Handle("GET "+p, proxy)
+	}
 	mux.HandleFunc("/", s.authed(func(w http.ResponseWriter, r *http.Request, _ *loginSession) { proxy.ServeHTTP(w, r) }))
 	return s.guard(mux)
 }
@@ -79,6 +84,9 @@ func (s *Server) authed(fn func(http.ResponseWriter, *http.Request, *loginSessio
 		fn(w, r, ls)
 	}
 }
+
+// Files of the app (frontend/public) anyone may fetch.
+var publicFiles = []string{"/favicon.svg", "/favicon-96.png", "/apple-touch-icon.png"}
 
 func (s *Server) proxy() *httputil.ReverseProxy {
 	target := s.cfg.Target

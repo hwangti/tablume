@@ -149,6 +149,7 @@ wails3 task build:server
 | `-data` | `TABLUME_DATA` | OS 설정 폴더 (Docker는 `/data`) | 연결 목록, 작업 공간, 패스키, 암호화 키 |
 | `-files` | `TABLUME_FILES` | `<data>/files` | SQLite 파일과 SSH 키를 읽을 수 있는 유일한 폴더 |
 | `-reset-passkeys` | | | 패스키를 모두 지우고 모든 기기를 로그아웃시킨 뒤 새 등록 링크를 출력 |
+| `-version` | | | 버전을 출력하고 종료 |
 
 실행 파일은 정적 링크라서 따로 설치할 것이 없습니다. systemd로 띄우려면 이런 유닛을 씁니다.
 
@@ -278,9 +279,19 @@ wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
 - macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 앱 언어로 만들고, 언어를 바꾸면 다시 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 OS 언어를 따릅니다(`build/darwin/Info.plist`에 영어·한국어 지역화).
 - macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
 
+### 버전
+
+버전은 `VERSION` 파일에 있고 Go 빌드에 그대로 들어갑니다. 앱에서는 보기 옵션 메뉴 맨 아래에 표시되고, `Tablume-server -version`으로도 확인할 수 있습니다. macOS·Windows용 파일(`Info.plist`, `build/windows/info.json`과 매니페스트, `package.json`)에도 버전이 따로 적혀 있으니, 버전은 아래 태스크로 한 번에 바꿉니다.
+
+```bash
+wails3 task version VERSION=0.9.1
+```
+
+이 파일들이 `VERSION`과 다르면 `wails3 package`, `wails3 task build:server`, 테스트가 멈춥니다. 한 번만 다른 버전으로 빌드하려면 `-ldflags "-X main.version=0.9.1-rc1"`로 바이너리가 알리는 버전을 덮어쓸 수 있습니다.
+
 ### GitHub Actions로 배포 파일 만들기
 
-`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(Apple Silicon) `.app` zip과 Windows `.exe`를 만들어 아티팩트로 올립니다.
+`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(Apple Silicon) `.app` zip과 Windows `.exe`를 만들어 아티팩트로 올립니다. 태그는 `VERSION`과 같아야 합니다(`0.9.0`이면 `v0.9.0`).
 
 macOS 빌드는 서명되지 않았기 때문에 처음 실행할 때 Finder에서 우클릭 → 열기를 하거나, 다음 명령을 실행해야 합니다.
 
@@ -291,14 +302,14 @@ xattr -dr com.apple.quarantine Tablume.app
 ### 테스트
 
 ```bash
-go test ./internal/...
+go test ./internal/... ./build/...
 ```
 
 ```bash
 CGO_ENABLED=0 go test -tags server .
 ```
 
-단위 테스트입니다(문장 분리, SQLite, 번역, 웹 앞단, 파일 제한). 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
+단위 테스트입니다(문장 분리, SQLite, 번역, 웹 앞단, 파일 제한, 버전 사본). 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
 
 ```bash
 docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
@@ -330,6 +341,7 @@ platform_desktop.go        데스크톱 앱 전용 설정
 platform_web.go            웹 버전(-tags server): 옵션, 앞단 서버 시작, 세션 정리
 files.go                   웹 버전의 서버 파일 탐색과 경로 제한
 windowstate.go             메인 창 크기 기억
+version.go, VERSION        앱 버전 (build/version/이 사본들을 맞춤)
 menu.go                    macOS 메뉴 막대
 Taskfile.yml               빌드 단계 (wails3 build / package / dev)
 internal/dbx/              DB 계층

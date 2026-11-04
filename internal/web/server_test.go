@@ -52,6 +52,20 @@ func TestSignedOutRequestsStopAtTheDoor(t *testing.T) {
 	}
 }
 
+// The icons load on the sign-in page; nothing else passes.
+func TestIconsArePublic(t *testing.T) {
+	var got []string
+	s, _ := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = append(got, r.URL.Path) }))
+	h := s.Handler()
+	for _, p := range append(publicFiles, "/favicon.svg/../index.html", "/favicon.svgx") {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "https://db.example.com"+p, nil))
+	}
+	if strings.Join(got, " ") != strings.Join(publicFiles, " ") {
+		t.Fatalf("reached the app: %v", got)
+	}
+}
+
 func TestSignedInRequestsAreProxied(t *testing.T) {
 	var got *http.Request
 	s, _ := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

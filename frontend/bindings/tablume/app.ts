@@ -292,3 +292,10 @@ export function TestConnection(c: dbx$0.ConnConfig): $CancellablePromise<$models
 export function TouchSessions(tabIDs: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(1537396445, tabIDs);
 }
+
+/**
+ * Version is the app's release version (the VERSION file).
+ */
+export function Version(): $CancellablePromise<string> {
+    return $Call.ByID(2431199839);
+}
