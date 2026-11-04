@@ -589,7 +589,7 @@
       </button>
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="viewmenu" onclick={(e) => (e.stopPropagation(), (e.target as Element).closest('.zoom-mid') || (zoomList = false))}>
+        <div class="viewmenu" use:fitMenu={app.sidebarHidden} onclick={(e) => (e.stopPropagation(), (e.target as Element).closest('.zoom-mid') || (zoomList = false))}>
           <div class="vm-title">{tr('언어')}{i18n.lang === 'ko' ? ' · Language' : ''}</div>
           <div class="theme-seg" role="group">
             {#each LANGS as l (l.id)}
@@ -621,6 +621,7 @@
             <div class="zoom-mid">
               <input
                 class="zoom-in"
+                size="1"
                 inputmode="numeric"
                 value={Math.round(app.zoom * 100) + '%'}
                 title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
@@ -1194,7 +1195,8 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-width: 220px;
+    /* fixed: inputs (the zoom field) would otherwise set it */
+    width: 240px;
     padding: 10px 12px;
     background: var(--bg-elev);
     border: 1px solid var(--border);
