@@ -2,7 +2,7 @@ import * as App from '../../bindings/tablume/internal/app/app'
 import { t } from './i18n.svelte'
 import { isWeb } from './platform'
 import { downloadText, uploadText } from './webfiles.svelte'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex } from './types'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, SchemaGraph } from './types'
 
 export interface AlterResult {
   applied: number
@@ -58,6 +58,7 @@ interface Api {
   QuoteIdent(id: string, name: string): Promise<string>
   QualifiedName(id: string, schema: string, t: Table): Promise<string>
   TableDDL(id: string, schema: string, t: Table): Promise<string>
+  SchemaGraph(id: string, schema: string): Promise<SchemaGraph>
   EditInfo(id: string, schema: string, source: string[], columns: string[]): Promise<EditInfo>
   PreviewChanges(req: ApplyRequest): Promise<string[]>
   ApplyChanges(req: ApplyRequest): Promise<number>

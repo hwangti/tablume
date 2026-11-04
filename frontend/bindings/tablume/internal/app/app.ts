@@ -227,6 +227,13 @@ export function SaveWorkspace(data: string): $CancellablePromise<void> {
     return $Call.ByID(3275430298, data);
 }
 
+/**
+ * SchemaGraph returns a schema's tables, columns and foreign keys for the ERD.
+ */
+export function SchemaGraph(id: string, schema: string): $CancellablePromise<dbx$0.SchemaGraph> {
+    return $Call.ByID(1928834133, id, schema);
+}
+
 export function SelectSQL(id: string, schema: string, t: dbx$0.Table, where: string, orderBy: string, limit: number, offset: number): $CancellablePromise<string> {
     return $Call.ByID(4088572336, id, schema, t, where, orderBy, limit, offset);
 }

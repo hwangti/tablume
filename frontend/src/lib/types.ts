@@ -52,6 +52,33 @@ export interface Column {
   extra?: string // auto increment / identity / generated
 }
 
+// ERD data: a schema's tables and the foreign keys between them.
+export interface GraphTable {
+  name: string
+  view: boolean
+  comment: string
+  columns: Column[]
+}
+
+export interface ForeignKey {
+  name: string
+  table: string
+  columns: string[]
+  refSchema: string // '' = the same schema
+  refTable: string
+  refColumns: string[]
+  onUpdate: string
+  onDelete: string
+  one: boolean // child FK columns unique: 1:1
+  required: boolean // FK columns NOT NULL: the parent must exist
+  looseRef: boolean // referenced columns not unique: in effect N:M
+}
+
+export interface SchemaGraph {
+  tables: GraphTable[]
+  fks: ForeignKey[]
+}
+
 export interface Index {
   name: string
   schema: string // the index's own schema when it differs (Oracle)

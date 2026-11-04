@@ -12,6 +12,8 @@ export type {
     ExecRequest,
     ExecResponse,
     FetchResponse,
+    ForeignKey,
+    GraphTable,
     Index,
     IndexColumn,
     IndexRequest,
@@ -20,6 +22,7 @@ export type {
     Routine,
     RowChange,
     SchemaFilter,
+    SchemaGraph,
     SchemaList,
     StmtResult,
     Table

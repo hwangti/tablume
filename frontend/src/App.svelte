@@ -9,6 +9,7 @@
   import { installTooltips } from './lib/tooltip'
   import Sidebar from './components/Sidebar.svelte'
   import QueryTab from './components/QueryTab.svelte'
+  import ErdView from './components/ErdView.svelte'
   import ConnectionDialog from './components/ConnectionDialog.svelte'
   import Modal from './components/Modal.svelte'
   import Icon from './components/Icon.svelte'
@@ -314,7 +315,7 @@
   <div class="tw">
     <div class="tw-bar" style:--conn-color={c?.color || 'transparent'}>
       {#if t}
-        <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
+        <Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={14} />
         <span class="tw-title">{t.title}</span>
         {#if c}<span class="tw-conn">{c.name}</span>{/if}
       {/if}
@@ -326,7 +327,7 @@
     </div>
     <div class="content">
       {#if t}
-        <div class="pane"><QueryTab tab={t} /></div>
+        <div class="pane">{#if t.erd}<ErdView tab={t} />{:else}<QueryTab tab={t} />{/if}</div>
       {:else if ready}
         <div class="welcome"><p>{tr('이 탭은 더 이상 없습니다.')}</p></div>
       {/if}
@@ -345,7 +346,7 @@
       {@const c = t ? connById(t.connId) : undefined}
       <div class="tw-bar wide" style:--conn-color={c?.color || 'transparent'}>
         {#if t}
-          <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
+          <Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={14} />
           <span class="tw-title">{t.title}</span>
           {#if c}<span class="tw-conn">{c.name}</span>{/if}
         {/if}
@@ -380,7 +381,7 @@
           oncontextmenu={(e) => openTabMenu(e, t.id)}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
         >
-          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
+          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={13} />{/if}
           {#if renaming === t.id}
             <!-- svelte-ignore a11y_autofocus -->
             <input
@@ -419,7 +420,7 @@
       {#each app.tabs as t (t.id)}
         {#if !t.detached}
           <div class="pane" class:hidden={t.id !== app.activeTab}>
-            <QueryTab tab={t} />
+            {#if t.erd}<ErdView tab={t} />{:else}<QueryTab tab={t} />{/if}
           </div>
         {/if}
       {/each}

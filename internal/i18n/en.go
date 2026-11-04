@@ -80,6 +80,7 @@ var en = map[string]string{
 	"%s의 DDL을 찾을 수 없습니다":              "DDL of %s not found",
 	"%s %s이(가) 컴파일 오류와 함께 생성되었습니다:%s": "%s %s was created with compilation errors:%s",
 	"이 DB에서는 인덱스 목록을 볼 수 없습니다":        "Indexes cannot be listed in this DB",
+	"이 DB에서는 ERD를 볼 수 없습니다": "An ERD cannot be shown for this DB",
 	"(식)": "(expression)",
 	"이 DB에서는 인덱스를 바꿀 수 없습니다":                                  "Indexes cannot be changed in this DB",
 	"뷰에는 인덱스를 만들 수 없습니다":                                      "A view cannot have indexes",

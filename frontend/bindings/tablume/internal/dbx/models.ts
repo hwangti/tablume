@@ -187,6 +187,49 @@ export interface FetchResponse {
     "hasMore": boolean;
 }
 
+export interface ForeignKey {
+    "name": string;
+    "table": string;
+    "columns": string[] | null;
+
+    /**
+     * "" = this schema
+     */
+    "refSchema": string;
+    "refTable": string;
+    "refColumns": string[] | null;
+    "onUpdate": string;
+    "onDelete": string;
+
+    /**
+     * One: the child's FK columns are unique, so a parent has at most one
+     * child (1:1); otherwise 1:N.
+     */
+    "one": boolean;
+
+    /**
+     * Required: every FK column is NOT NULL, so each child has a parent.
+     */
+    "required": boolean;
+
+    /**
+     * LooseRef: the referenced columns aren't unique (InnoDB allows that),
+     * so a child can match several parents: in effect N:M.
+     */
+    "looseRef": boolean;
+}
+
+export interface GraphTable {
+    "name": string;
+    "view": boolean;
+    "comment": string;
+
+    /**
+     * Name, Type, Nullable, PK, Comment, Extra
+     */
+    "columns": Column[] | null;
+}
+
 export interface Index {
     "name": string;
 
@@ -314,6 +357,11 @@ export interface SchemaFilter {
      * globs with * and ?, case-insensitive
      */
     "patterns": string[] | null;
+}
+
+export interface SchemaGraph {
+    "tables": GraphTable[] | null;
+    "fks": ForeignKey[] | null;
 }
 
 export interface SchemaList {

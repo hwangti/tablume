@@ -166,6 +166,11 @@ func (a *App) PreviewAlter(req dbx.AlterRequest) ([]string, error) { return a.db
 
 func (a *App) ApplyAlter(req dbx.AlterRequest) (dbx.AlterResult, error) { return a.db.ApplyAlter(req) }
 
+// SchemaGraph returns a schema's tables, columns and foreign keys for the ERD.
+func (a *App) SchemaGraph(id, schema string) (dbx.SchemaGraph, error) {
+	return a.db.SchemaGraph(id, schema)
+}
+
 func (a *App) ListIndexes(id, schema string, t dbx.Table) ([]dbx.Index, error) {
 	return a.db.ListIndexes(id, schema, t)
 }

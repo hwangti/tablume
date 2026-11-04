@@ -73,6 +73,8 @@ export interface Tab {
   // Set for table data tabs: the SELECT is rebuilt from these when the
   // filter bar or a column header changes. Dropped if the SQL is edited.
   tableRef?: TableRef
+  // An ERD of the tab's schema instead of a console.
+  erd?: boolean
   // Shown in a window of its own (main window only; not saved, so after a
   // restart the tab is back in the main window).
   detached?: boolean
@@ -572,6 +574,7 @@ export async function duplicateTab(id: string) {
   const tab = openConsole(src.connId, { schema: src.schema, sql: src.sql, title: src.title + tr(' 복사본') })
   tab.layout = src.layout
   if (src.tableRef) tab.tableRef = $state.snapshot(src.tableRef)
+  tab.erd = src.erd
   // place it right after the original
   const from = app.tabs.findIndex((t) => t.id === tab.id)
   const [moved] = app.tabs.splice(from, 1)
@@ -975,6 +978,17 @@ export async function openDDL(connId: string, schema: string, t: Table) {
   }
 }
 
+// ERD tabs: one per connection and schema; opening it again shows it.
+export const ERD_DRIVERS = ['mysql', 'mariadb']
+
+export function openErd(connId: string, schema: string) {
+  const t = app.tabs.find((x) => x.erd && x.connId === connId && x.schema === schema)
+  if (t?.detached) api.FocusTabWindow(t.id)
+  else if (t) app.activeTab = t.id
+  else openConsole(connId, { schema, title: `ERD: ${schema}` }).erd = true
+  saveWorkspaceSoon()
+}
+
 /**
  * Cmd/Alt+click on a foreign key cell: opens the referenced table filtered
  * to the row the value points at. The tab it came from is pinned so the
@@ -1085,7 +1099,7 @@ export function pinTab(tab: Tab | undefined) {
 // ---------------------------------------------------------------- workspace
 
 // The saved form of a tab (workspace file, and what a tab window gets).
-export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef'>
+export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef' | 'erd'>
 
 function savedTab(t: Tab): SavedTab {
   return $state.snapshot({
@@ -1098,6 +1112,7 @@ function savedTab(t: Tab): SavedTab {
     preview: t.preview,
     layout: t.layout,
     tableRef: t.tableRef,
+    erd: t.erd,
   })
 }
 
@@ -1208,6 +1223,7 @@ function applySaved(t: Tab, s: SavedTab) {
   t.preview = s.preview
   t.layout = s.layout
   t.tableRef = s.tableRef
+  t.erd = s.erd
 }
 
 // Main window: move a tab into its own window.
