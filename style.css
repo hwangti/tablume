@@ -160,6 +160,17 @@ header.top nav a:hover {
   color: var(--muted);
   font-size: 14px;
 }
+.unsigned {
+  max-width: 40em;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.unsigned code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--paper-2);
+}
 
 /* ------------------------------------------------------------ screenshot */
 

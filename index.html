@@ -35,10 +35,11 @@
   <h1>A small SQL client for six databases.</h1>
   <p class="lede">MySQL, MariaDB, PostgreSQL, Oracle, SQL Server and SQLite in one 35&nbsp;MB app. It draws its window with the web view your OS already has, so there’s no JVM to start and no Oracle Instant Client to install.</p>
   <div class="get">
-    <a class="btn" href="https://github.com/hwangti/tablume/releases">Download for macOS</a>
-    <a class="btn ghost" href="https://github.com/hwangti/tablume/releases">Download for Windows</a>
+    <a class="btn" href="https://github.com/hwangti/tablume/releases/latest">Download 0.9.0</a>
+    <a class="btn ghost" href="https://github.com/hwangti/tablume">View source</a>
     <span class="note">or <a href="#web">run it on a server</a></span>
   </div>
+  <p class="unsigned">macOS (Apple Silicon) and Windows builds. They aren’t code-signed yet: on Windows choose “More info → Run anyway”; on macOS run <code>xattr -dr com.apple.quarantine Tablume.app</code> once.</p>
 </div>
 
 <div class="shot">
@@ -143,7 +144,7 @@ docker logs tablume   <span class="c"># the link for the first passkey</span></p
   <div class="body">
     <ul>
       <li>ER diagrams. They’re being built now.</li>
-      <li>The macOS app isn’t notarized, so the first launch needs right-click → Open.</li>
+      <li>Code signing. Neither the Windows nor the macOS build is signed, so both warn on first launch.</li>
       <li>No Linux desktop package. The web version runs on Linux.</li>
     </ul>
     <p>Found a bug or missing something you use every day? <a href="https://github.com/hwangti/tablume/issues">Open an issue.</a></p>

@@ -35,10 +35,11 @@
   <h1>DB 여섯 가지를 다루는<br>가벼운 SQL 클라이언트</h1>
   <p class="lede">MySQL, MariaDB, PostgreSQL, Oracle, SQL Server, SQLite를 35MB짜리 앱 하나로 씁니다. 화면은 OS에 이미 들어 있는 웹뷰로 그려서, 띄울 JVM도 따로 설치할 Oracle Instant Client도 없습니다.</p>
   <div class="get">
-    <a class="btn" href="https://github.com/hwangti/tablume/releases">macOS용 받기</a>
-    <a class="btn ghost" href="https://github.com/hwangti/tablume/releases">Windows용 받기</a>
+    <a class="btn" href="https://github.com/hwangti/tablume/releases/latest">0.9.0 받기</a>
+    <a class="btn ghost" href="https://github.com/hwangti/tablume">소스 보기</a>
     <span class="note"><a href="#web">서버에 올려 쓰기</a>도 됩니다</span>
   </div>
+  <p class="unsigned">macOS(Apple Silicon)·Windows용입니다. 아직 코드 서명이 없어서 Windows에서는 “추가 정보 → 실행”을 누르고, macOS에서는 처음 한 번 <code>xattr -dr com.apple.quarantine Tablume.app</code>을 실행해야 합니다.</p>
 </div>
 
 <div class="shot">
@@ -143,7 +144,7 @@ docker logs tablume   <span class="c"># 첫 패스키 등록 링크</span></pre>
   <div class="body">
     <ul>
       <li>ERD. 지금 만들고 있습니다.</li>
-      <li>macOS 앱은 공증을 받지 않아서 처음 실행할 때 우클릭 → 열기가 필요합니다.</li>
+      <li>코드 서명. Windows·macOS 빌드 모두 서명이 없어서 처음 실행할 때 경고가 뜹니다.</li>
       <li>Linux 데스크톱 패키지는 없습니다. 웹 버전은 Linux에서 돌아갑니다.</li>
     </ul>
     <p>버그를 찾았거나 매일 쓰는 기능이 빠져 있다면 <a href="https://github.com/hwangti/tablume/issues">이슈로 알려 주세요.</a></p>
