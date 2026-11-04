@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablume — a small SQL client</title>
+<meta name="description" content="Tablume is a SQL client for MySQL, MariaDB, PostgreSQL, Oracle, SQL Server and SQLite. One 35 MB app for macOS and Windows, or a web version on your own server.">
+<link rel="alternate" hreflang="ko" href="https://tablu.me/ko/">
+<link rel="alternate" hreflang="en" href="https://tablu.me/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:title" content="Tablume">
+<meta property="og:description" content="A small SQL client for six databases.">
+<meta property="og:image" content="https://tablu.me/img/app-dark.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="top wrap">
+  <a class="brand" href="/"><img src="/favicon.svg" alt="">Tablume</a>
+  <nav>
+    <a class="wide" href="#console">Features</a>
+    <a class="wide" href="#web">Web version</a>
+    <a href="https://github.com/hwangti/tablume">GitHub</a>
+    <a href="/ko/" hreflang="ko" lang="ko">한국어</a>
+  </nav>
+</header>
+
+<main>
+<div class="hero wrap">
+  <p class="meta mono">v0.9.0 · macOS · Windows · web · MIT</p>
+  <h1>A small SQL client for six databases.</h1>
+  <p class="lede">MySQL, MariaDB, PostgreSQL, Oracle, SQL Server and SQLite in one 35&nbsp;MB app. It draws its window with the web view your OS already has, so there’s no JVM to start and no Oracle Instant Client to install.</p>
+  <div class="get">
+    <a class="btn" href="https://github.com/hwangti/tablume/releases">Download for macOS</a>
+    <a class="btn ghost" href="https://github.com/hwangti/tablume/releases">Download for Windows</a>
+    <span class="note">or <a href="#web">run it on a server</a></span>
+  </div>
+</div>
+
+<div class="shot">
+  <picture>
+    <source srcset="/img/app-dark.webp" media="(prefers-color-scheme: dark)">
+    <img src="/img/app-light.webp" width="2720" height="1720" alt="Tablume with a MariaDB connection open: the schema tree on the left, a table tab filtered by WHERE and ORDER BY on the right.">
+  </picture>
+</div>
+
+<div class="wrap">
+
+<section class="part" id="console">
+  <h2>Console <span>Writing and running SQL</span></h2>
+  <div class="body">
+    <p>Every tab has its own connection and session, so a transaction in one tab doesn’t leak into another. Tabs and their SQL are still there after a restart, and <code>.sql</code> files open and save like files.</p>
+    <p>Run the statement under the cursor with <code>⌘/Ctrl + Enter</code>, or the whole script, which stops at the first error. Scripts are split the way each database expects:</p>
+<pre><span class="c">-- Oracle: a PL/SQL block runs up to the slash</span>
+<span class="k">CREATE OR REPLACE PROCEDURE</span> touch_order(p_id NUMBER) <span class="k">AS</span>
+<span class="k">BEGIN</span>
+  <span class="k">UPDATE</span> orders <span class="k">SET</span> updated_at = SYSDATE <span class="k">WHERE</span> id = p_id;
+<span class="k">END</span>;
+/
+
+<span class="c">-- SQL Server: batches end at GO</span>
+<span class="c">-- MySQL: DELIMITER and BEGIN … END bodies</span>
+<span class="c">-- PostgreSQL: $$-quoted function bodies stay whole</span></pre>
+    <p>Completion knows the tables and columns of the schema you’re in. A query that hangs can be cancelled; if the server ignores the cancel, the tab’s connection is reopened.</p>
+  </div>
+</section>
+
+<section class="part" id="results">
+  <h2>Results <span>Reading what came back</span></h2>
+  <div class="body">
+    <p>Rows arrive 500 at a time. Plain SELECTs are paged with <code>LIMIT/OFFSET</code> (or <code>OFFSET … FETCH</code>), so no cursor sits open holding locks while you read. Scroll and the next page loads.</p>
+    <ul>
+      <li>Select cells or ranges and copy them as TSV, with headers, or as an <code>IN (…)</code> list.</li>
+      <li>Resize, reorder and hide columns. JSON values open in a viewer that folds and formats.</li>
+      <li><code>⌘</code>-click a foreign key to open the row it points to.</li>
+      <li>Export CSV, TSV, JSON or INSERT statements.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="part" id="tables">
+  <h2>Tables <span>Filtering and editing</span></h2>
+  <div class="body">
+    <p>A table opens in its own tab with <code>WHERE</code> and <code>ORDER BY</code> fields above the grid. Type a condition, press Enter, and the database does the filtering and sorting.</p>
+    <figure>
+      <img src="/img/filter.webp" width="2180" height="420" loading="lazy" alt="The WHERE and ORDER BY fields above a table’s rows.">
+    </figure>
+    <p>Edits, new rows and deletions wait on screen, highlighted, until you apply them. Then they run in one transaction. If any UPDATE or DELETE touches anything other than exactly one row, the whole lot is rolled back. Results without a full primary key say “Read-only” and why.</p>
+    <p>The Structure view changes column types, defaults, comments and indexes in place. You see the <code>ALTER</code> statements before anything runs, and a warning when the database can’t roll DDL back (MySQL, Oracle).</p>
+  </div>
+</section>
+
+<section class="part" id="tree">
+  <h2>Schema tree <span>Finding things</span></h2>
+  <div class="body split">
+    <div>
+      <p>Connection, schema, tables, columns. Keys are marked, comments sit next to names, and row counts and sizes come from the database’s statistics — fetched only if you turn them on.</p>
+      <p>On a server with two hundred schemas, pick the few you work in. Choices are kept per connection and patterns like <code>HR_*</code> work.</p>
+      <p>Procedures and functions open as source you can run again as is, <code>DELIMITER</code>, <code>GO</code> and <code>/</code> included.</p>
+      <h3>Connections</h3>
+      <p>SSH tunnels with a password or a key. The server’s host key is saved on the first connection and a changed one is refused. Passwords live in the macOS Keychain or the Windows Credential Manager, not in a config file.</p>
+    </div>
+    <figure>
+      <img src="/img/tree.webp" width="540" height="1100" loading="lazy" alt="The schema tree: a MariaDB connection expanded to the columns of the orders table, with PostgreSQL, Oracle, SQL Server and SQLite connections below.">
+    </figure>
+  </div>
+</section>
+
+<section class="part" id="web">
+  <h2>Web version <span>Same app, on a server</span></h2>
+  <div class="body">
+    <p>Build it with <code>-tags server</code> or use the Dockerfile, put it behind your reverse proxy, and open it from any browser. The server makes the database connections, so it reaches whatever that machine can reach — handy for databases that only exist inside a private network.</p>
+    <p>Sign-in is a passkey: Touch ID, Face ID or Windows Hello. There is no password to guess or leak. SQLite files and SSH keys are read from one folder you choose, and SQL can’t reach outside it.</p>
+<pre>docker build -t tablume .
+docker run -d -p 127.0.0.1:8080:8080 -v tablume:/data \
+  -e TABLUME_URL=https://db.example.com tablume
+docker logs tablume   <span class="c"># the link for the first passkey</span></pre>
+  </div>
+</section>
+
+<section class="part" id="spec">
+  <h2>At a glance</h2>
+  <div class="body">
+    <dl class="spec">
+      <dt>Version</dt><dd>0.9.0</dd>
+      <dt>Databases</dt><dd>MySQL, MariaDB, PostgreSQL, Oracle (11g and later), SQL Server, SQLite</dd>
+      <dt>Desktop</dt><dd>macOS 12 or later on Apple Silicon, Windows 10 and 11</dd>
+      <dt>Web</dt><dd>Any server that runs Docker or a static Linux binary</dd>
+      <dt>Size</dt><dd>About 35&nbsp;MB, one file</dd>
+      <dt>Languages</dt><dd>English, 한국어</dd>
+      <dt>Built with</dt><dd>Go, Wails, Svelte, CodeMirror. Pure Go drivers.</dd>
+      <dt>License</dt><dd>MIT. <a href="https://github.com/hwangti/tablume">Source on GitHub</a></dd>
+    </dl>
+  </div>
+</section>
+
+<section class="part" id="not-yet">
+  <h2>Not there yet</h2>
+  <div class="body">
+    <ul>
+      <li>ER diagrams. They’re being built now.</li>
+      <li>The macOS app isn’t notarized, so the first launch needs right-click → Open.</li>
+      <li>No Linux desktop package. The web version runs on Linux.</li>
+    </ul>
+    <p>Found a bug or missing something you use every day? <a href="https://github.com/hwangti/tablume/issues">Open an issue.</a></p>
+  </div>
+</section>
+
+</div>
+</main>
+
+<footer class="wrap">
+  <div class="row">
+    <span>© 2026 TAEROK HWANG</span>
+    <a href="https://github.com/hwangti/tablume/blob/main/LICENSE">MIT License</a>
+    <a href="/ko/" hreflang="ko" lang="ko">한국어로 보기</a>
+  </div>
+</footer>
+
+</body>
+</html>

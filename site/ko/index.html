@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablume — 가벼운 SQL 클라이언트</title>
+<meta name="description" content="Tablume은 MySQL, MariaDB, PostgreSQL, Oracle, SQL Server, SQLite를 다루는 SQL 클라이언트입니다. macOS·Windows용 35MB 앱, 또는 직접 운영하는 서버의 웹 버전으로 씁니다.">
+<link rel="alternate" hreflang="en" href="https://tablu.me/">
+<link rel="alternate" hreflang="ko" href="https://tablu.me/ko/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:title" content="Tablume">
+<meta property="og:description" content="DB 여섯 가지를 다루는 가벼운 SQL 클라이언트">
+<meta property="og:image" content="https://tablu.me/img/app-dark.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="top wrap">
+  <a class="brand" href="/ko/"><img src="/favicon.svg" alt="">Tablume</a>
+  <nav>
+    <a class="wide" href="#console">기능</a>
+    <a class="wide" href="#web">웹 버전</a>
+    <a href="https://github.com/hwangti/tablume">GitHub</a>
+    <a href="/" hreflang="en" lang="en">English</a>
+  </nav>
+</header>
+
+<main>
+<div class="hero wrap">
+  <p class="meta mono">v0.9.0 · macOS · Windows · 웹 · MIT</p>
+  <h1>DB 여섯 가지를 다루는<br>가벼운 SQL 클라이언트</h1>
+  <p class="lede">MySQL, MariaDB, PostgreSQL, Oracle, SQL Server, SQLite를 35MB짜리 앱 하나로 씁니다. 화면은 OS에 이미 들어 있는 웹뷰로 그려서, 띄울 JVM도 따로 설치할 Oracle Instant Client도 없습니다.</p>
+  <div class="get">
+    <a class="btn" href="https://github.com/hwangti/tablume/releases">macOS용 받기</a>
+    <a class="btn ghost" href="https://github.com/hwangti/tablume/releases">Windows용 받기</a>
+    <span class="note"><a href="#web">서버에 올려 쓰기</a>도 됩니다</span>
+  </div>
+</div>
+
+<div class="shot">
+  <picture>
+    <source srcset="/img/app-dark.webp" media="(prefers-color-scheme: dark)">
+    <img src="/img/app-light.webp" width="2720" height="1720" alt="MariaDB 연결을 연 Tablume 화면. 왼쪽은 스키마 트리, 오른쪽은 WHERE와 ORDER BY로 거른 테이블 탭.">
+  </picture>
+</div>
+
+<div class="wrap">
+
+<section class="part" id="console">
+  <h2>콘솔 <span>SQL 쓰고 실행하기</span></h2>
+  <div class="body">
+    <p>탭마다 연결과 세션이 따로라서 한 탭에서 연 트랜잭션이 다른 탭에 섞이지 않습니다. 앱을 다시 켜도 탭과 SQL이 그대로 있고, <code>.sql</code> 파일은 그냥 파일처럼 열고 저장합니다.</p>
+    <p><code>⌘/Ctrl + Enter</code>로 커서가 있는 문장을, 또는 스크립트 전체를 실행합니다. 전체 실행은 오류가 난 곳에서 멈춥니다. 스크립트는 DB마다 원래 쓰는 규칙대로 나눕니다.</p>
+<pre><span class="c">-- Oracle: PL/SQL 블록은 슬래시까지</span>
+<span class="k">CREATE OR REPLACE PROCEDURE</span> touch_order(p_id NUMBER) <span class="k">AS</span>
+<span class="k">BEGIN</span>
+  <span class="k">UPDATE</span> orders <span class="k">SET</span> updated_at = SYSDATE <span class="k">WHERE</span> id = p_id;
+<span class="k">END</span>;
+/
+
+<span class="c">-- SQL Server: GO에서 배치가 끝남</span>
+<span class="c">-- MySQL: DELIMITER, BEGIN … END 본문</span>
+<span class="c">-- PostgreSQL: $$로 감싼 함수 본문은 통째로</span></pre>
+    <p>자동완성은 지금 스키마의 테이블과 컬럼을 압니다. 오래 걸리는 쿼리는 취소할 수 있고, 서버가 취소를 무시하면 그 탭의 연결을 새로 엽니다.</p>
+  </div>
+</section>
+
+<section class="part" id="results">
+  <h2>결과 <span>돌아온 데이터 보기</span></h2>
+  <div class="body">
+    <p>결과는 500행씩 가져옵니다. 단순 SELECT는 <code>LIMIT/OFFSET</code>(또는 <code>OFFSET … FETCH</code>)으로 나눠 받기 때문에, 보는 동안 커서가 열린 채로 락을 잡고 있지 않습니다. 스크롤하면 다음 페이지가 이어집니다.</p>
+    <ul>
+      <li>셀이나 범위를 골라 TSV로, 헤더와 함께, 또는 <code>IN (…)</code> 목록으로 복사합니다.</li>
+      <li>컬럼 너비·순서·숨김을 바꿀 수 있고, JSON 값은 접고 정렬해 주는 뷰어로 엽니다.</li>
+      <li>FK 셀을 <code>⌘</code>-클릭하면 가리키는 행이 열립니다.</li>
+      <li>CSV, TSV, JSON, INSERT 문으로 내보냅니다.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="part" id="tables">
+  <h2>테이블 <span>거르고 고치기</span></h2>
+  <div class="body">
+    <p>테이블은 자기 탭으로 열리고, 그리드 위에 <code>WHERE</code>와 <code>ORDER BY</code> 입력칸이 있습니다. 조건을 쓰고 Enter를 누르면 거르기와 정렬은 DB가 합니다.</p>
+    <figure>
+      <img src="/img/filter.webp" width="2180" height="420" loading="lazy" alt="테이블 행 위의 WHERE, ORDER BY 입력칸">
+    </figure>
+    <p>고친 셀, 추가하거나 지운 행은 적용하기 전까지 화면에 표시만 해 두고, 적용하면 트랜잭션 하나로 실행합니다. UPDATE나 DELETE 중 하나라도 딱 한 행이 아닌 행을 건드리면 전부 롤백합니다. PK가 다 들어 있지 않은 결과는 “읽기 전용”과 그 이유를 보여 줍니다.</p>
+    <p>구조 탭에서는 컬럼 타입, 기본값, 코멘트, 인덱스를 그 자리에서 바꿉니다. 실행 전에 <code>ALTER</code> 문을 먼저 보여 주고, DDL을 롤백할 수 없는 DB(MySQL, Oracle)라면 그 점도 알려 줍니다.</p>
+  </div>
+</section>
+
+<section class="part" id="tree">
+  <h2>스키마 트리 <span>찾기</span></h2>
+  <div class="body split">
+    <div>
+      <p>연결, 스키마, 테이블, 컬럼 순서입니다. 키 표시와 코멘트가 이름 옆에 붙고, 행 수와 크기는 DB 통계에서 가져옵니다. 옵션을 켰을 때만 가져옵니다.</p>
+      <p>스키마가 이백 개 있는 서버라면 실제로 쓰는 몇 개만 골라 둘 수 있습니다. 연결마다 따로 저장되고 <code>HR_*</code> 같은 패턴도 됩니다.</p>
+      <p>프로시저와 함수는 그대로 다시 실행할 수 있는 소스로 열립니다. <code>DELIMITER</code>, <code>GO</code>, <code>/</code>까지 붙여서요.</p>
+      <h3>연결</h3>
+      <p>SSH 터널은 비밀번호나 키 파일로 연결합니다. 서버 호스트 키는 처음 연결할 때 저장하고, 바뀐 키는 거부합니다. 비밀번호는 설정 파일이 아니라 macOS 키체인이나 Windows 자격 증명 관리자에 들어갑니다.</p>
+    </div>
+    <figure>
+      <img src="/img/tree.webp" width="540" height="1100" loading="lazy" alt="스키마 트리. MariaDB 연결을 orders 테이블의 컬럼까지 펼쳤고, 아래에 PostgreSQL, Oracle, SQL Server, SQLite 연결이 있음">
+    </figure>
+  </div>
+</section>
+
+<section class="part" id="web">
+  <h2>웹 버전 <span>같은 앱을 서버에서</span></h2>
+  <div class="body">
+    <p><code>-tags server</code>로 빌드하거나 Dockerfile로 이미지를 만들어 리버스 프록시 뒤에 두면, 어느 브라우저에서든 열 수 있습니다. DB 연결은 서버가 맺기 때문에 그 서버가 닿는 DB라면 다 쓸 수 있습니다. 사내망 안에만 있는 DB에 붙을 때 편합니다.</p>
+    <p>로그인은 패스키(Touch ID, Face ID, Windows Hello)로 합니다. 추측하거나 유출될 비밀번호가 없습니다. SQLite 파일과 SSH 키는 지정한 폴더 하나에서만 읽고, SQL로도 그 밖에는 손댈 수 없습니다.</p>
+<pre>docker build -t tablume .
+docker run -d -p 127.0.0.1:8080:8080 -v tablume:/data \
+  -e TABLUME_URL=https://db.example.com tablume
+docker logs tablume   <span class="c"># 첫 패스키 등록 링크</span></pre>
+  </div>
+</section>
+
+<section class="part" id="spec">
+  <h2>한눈에</h2>
+  <div class="body">
+    <dl class="spec">
+      <dt>버전</dt><dd>0.9.0</dd>
+      <dt>DB</dt><dd>MySQL, MariaDB, PostgreSQL, Oracle(11g 이상), SQL Server, SQLite</dd>
+      <dt>데스크톱</dt><dd>macOS 12 이상(Apple Silicon), Windows 10·11</dd>
+      <dt>웹</dt><dd>Docker나 정적 Linux 바이너리를 돌릴 수 있는 서버</dd>
+      <dt>크기</dt><dd>약 35MB, 파일 하나</dd>
+      <dt>언어</dt><dd>English, 한국어</dd>
+      <dt>만든 것</dt><dd>Go, Wails, Svelte, CodeMirror. 드라이버도 전부 Go</dd>
+      <dt>라이선스</dt><dd>MIT. <a href="https://github.com/hwangti/tablume">GitHub에서 소스 보기</a></dd>
+    </dl>
+  </div>
+</section>
+
+<section class="part" id="not-yet">
+  <h2>아직 없는 것</h2>
+  <div class="body">
+    <ul>
+      <li>ERD. 지금 만들고 있습니다.</li>
+      <li>macOS 앱은 공증을 받지 않아서 처음 실행할 때 우클릭 → 열기가 필요합니다.</li>
+      <li>Linux 데스크톱 패키지는 없습니다. 웹 버전은 Linux에서 돌아갑니다.</li>
+    </ul>
+    <p>버그를 찾았거나 매일 쓰는 기능이 빠져 있다면 <a href="https://github.com/hwangti/tablume/issues">이슈로 알려 주세요.</a></p>
+  </div>
+</section>
+
+</div>
+</main>
+
+<footer class="wrap">
+  <div class="row">
+    <span>© 2026 TAEROK HWANG</span>
+    <a href="https://github.com/hwangti/tablume/blob/main/LICENSE">MIT 라이선스</a>
+    <a href="/" hreflang="en" lang="en">View in English</a>
+  </div>
+</footer>
+
+</body>
+</html>
