@@ -47,7 +47,7 @@ func main() {
 		app.Menu.Set(macMenu())
 	}
 
-	svc.window = app.Window.NewWithOptions(application.WebviewWindowOptions{
+	mainOpts := application.WebviewWindowOptions{
 		Name:             "main",
 		Title:            "Tablume",
 		Width:            1360,
@@ -56,7 +56,14 @@ func main() {
 		MinHeight:        500,
 		BackgroundColour: application.NewRGB(30, 31, 34),
 		URL:              "/",
-	})
+	}
+	if platform == "desktop" {
+		loadWindowState(&mainOpts)
+	}
+	svc.window = app.Window.NewWithOptions(mainOpts)
+	if platform == "desktop" {
+		keepWindowState(svc.window)
+	}
 	svc.quitWithMain(svc.window)
 	start()
 

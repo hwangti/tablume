@@ -912,8 +912,14 @@
     flex-shrink: 0;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
+    /* scrolls sideways when narrow (a phone), without a bar that would
+       take height from the 30px row */
     overflow-x: auto;
     overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .rtabs::-webkit-scrollbar {
+    display: none;
   }
   .rtab {
     display: flex;
