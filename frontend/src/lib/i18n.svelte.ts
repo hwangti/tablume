@@ -13,8 +13,8 @@ import en from './i18n-en'
 
 export type Lang = 'ko' | 'en'
 export const LANGS: { id: Lang; label: string }[] = [
-  { id: 'ko', label: '한국어' },
   { id: 'en', label: 'English' },
+  { id: 'ko', label: '한국어' },
 ]
 
 function detect(): Lang {

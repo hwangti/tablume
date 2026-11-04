@@ -235,7 +235,7 @@
         { label: tr('같은 연결 탭 닫기') + (c ? ` (${c.name})` : ''), icon: 'db', run: () => closeTabs(sameConn) },
         { label: tr('모든 탭 닫기'), run: () => closeTabs(ids.filter(here)), danger: true },
         app.wide && app.activeTab === id
-          ? { label: tr('넓게 보기 끝'), icon: 'unwide', run: () => (app.wide = false), sep: true }
+          ? { label: tr('넓게 보기 종료'), icon: 'unwide', run: () => (app.wide = false), sep: true }
           : { label: tr('넓게 보기'), icon: 'wide', run: () => ((app.activeTab = id), (app.wide = true)), sep: true },
         ...(isWeb ? [] : [{ label: tr('새 창으로 열기'), icon: 'detach', run: () => detachTab(id) }]),
         { label: tr('탭 복제'), icon: 'copy', run: () => duplicateTab(id) },
@@ -350,7 +350,7 @@
           {#if c}<span class="tw-conn">{c.name}</span>{/if}
         {/if}
         <span class="tw-fill"></span>
-        <button class="icon-btn strip-btn" title="{tr('넓게 보기 끝 — 연결 목록과 탭 줄을 다시 보입니다')} ({modKey}B)" onclick={() => (app.wide = false)}>
+        <button class="icon-btn strip-btn" title="{tr('넓게 보기 종료 — 연결 목록과 탭 줄을 다시 보입니다')} ({modKey}B)" onclick={() => (app.wide = false)}>
           <Icon name="unwide" />
         </button>
       </div>
