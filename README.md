@@ -14,94 +14,76 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 
 ## Features
 
-- Connections: a color per connection, connection test, passwords kept in the OS keychain (macOS Keychain, Windows Credential Manager)
-- SSH tunnels: password or key file (passphrase-protected keys included). The host key of an SSH server is saved on the first connection, and a server whose key has changed is refused. A dropped tunnel reconnects on the next query.
-- Schema tree: schema/database → tables/views → columns (PK, type, NOT NULL)
-  - Schemas to show: click `3/98` (shown/total) next to a connection to choose which schemas the tree shows. All schemas (system schemas excluded), the default schema (login user / default database), individual checks and patterns like `HR_*` can be combined; saved per connection.
-  - Connection order: drag a connection, or right-click → Move to Top / Up / Down / to Bottom.
-  - The name of the connection you are in stays pinned at the top of the tree while scrolling.
-- Procedures and functions: expand "Procedures · Functions" under a schema for the list (packages included on Oracle; not for SQLite). Clicking one opens its source (the CREATE statement) in a console preview tab, wrapped so it runs as is: `DELIMITER` on MySQL, `GO` on SQL Server, `/` on Oracle.
-  - Table filter
-  - Double-click to view data
-  - Context menu: generate SELECT, copy names, …
-- SQL console (any number of tabs, each with its own connection and session)
-  - `Ctrl/⌘+Enter`: run the statement at the cursor, or the selection if there is one
-  - `Ctrl/⌘+Shift+Enter`: run the whole script in order, stopping at an error
-  - Cancel a running query. If the server doesn't respond to the cancel, the tab's connection is reopened after 3 seconds.
-  - Syntax highlighting per database, table/column completion
-  - Statements are split by each database's rules:
-    - Oracle: a PL/SQL block runs up to the `/` line.
-    - SQL Server: batches are split at `GO`.
-    - MySQL: `DELIMITER` is supported, and `BEGIN … END` blocks run as written.
-    - PostgreSQL: `$$` quoting is recognized.
-  - On Oracle, PL/SQL created with compilation errors shows the errors (like SQL\*Plus's "created with compilation errors").
-  - Tabs and their SQL come back when the app restarts. `.sql` files can be opened and saved.
-  - Closing a console with SQL you typed (not as opened or last saved to a file) asks first.
-- Result grid
-  - Virtual scrolling: tens of thousands of rows stay light.
-  - Fetches the first 500 rows (configurable) and more as you scroll.
-  - Cell and range selection; copy as TSV, with headers, or as an `IN (…)` list
-  - Column sorting and resizing
-  - Value viewer/editor: values that look like JSON (starting with `{` or `[`) are highlighted, with folding and bracket matching. A Format JSON button; `Ctrl`/`⌘`+`Enter` applies.
-  - Follow foreign keys: `⌘`+click (Mac) or `Alt`/`Ctrl`+click (Windows) on an FK cell opens the referenced table filtered by `WHERE column = value`. Holding the key shows FK cells as links; the cell menu's "Open Referenced Row" does the same. The original tab is kept.
-  - Export to CSV/JSON
-- Editing in the result grid (DataGrip style)
-  - A result can be edited when it comes from a single-table SELECT and includes the whole primary key. Otherwise it is marked "Read-only" with the reason.
-  - Tables without a primary key still take new rows; only changing or deleting existing rows is blocked.
-  - Cell edits, Set to NULL, added and deleted rows are collected on screen and run in one transaction with "Apply" (`⌘`/`Ctrl`/`Alt`+`Enter`, `⌘`/`Ctrl`+`S`). The statements and their results are logged in the tab's log as highlighted SQL (so are column and index changes in the Structure tab, and table renames).
-  - "Revert Selected Cells" in the cell menu (`⌘`/`Ctrl`+`Z`) undoes only the edited cells. Cells of a new row go back to `<generated>`/`<default>`.
-  - While editing, `Tab`/`Shift+Tab` opens the next cell for editing too (from the last column, the next row).
-  - In a new row, columns left empty show `<generated>` (AUTO_INCREMENT, IDENTITY, sequences, computed columns) or `<default>` (a default value) and are left out of the INSERT. Opening a cell and leaving it without typing keeps NULL as NULL; typing and then clearing it gives an empty string (`''`; Oracle stores that as NULL).
-  - If a change affects a different number of rows than expected (one), everything is rolled back.
-- Structure tab: a table tab's "Structure" switches between `Columns · Indexes | DDL`. Columns · Indexes is one page with the column table followed by the index table. Right-click a table → "View DDL" opens its CREATE statement in a new console tab.
-  - Columns: key, type, NULL, default, FK and comment in a table.
-  - Double-click type, default or comment, or click the NULL checkbox, then "Apply": the `ALTER` statements are shown before they run. PostgreSQL and SQL Server run them in one transaction, so a failure rolls everything back; MySQL/MariaDB and Oracle can't roll back DDL, so statements before a failure stay applied (the preview says so). On MySQL, `MODIFY` rewrites the whole column definition, keeping its character set, collation, AUTO_INCREMENT and ON UPDATE. SQLite tables and views can't be edited.
-  - Indexes: name, columns (order, DESC), unique, kind, condition (partial indexes) and INCLUDE. "Add Index" builds one from columns picked in order (named `idx_table_column` by default); the pencil button or a double-click changes one by dropping and creating it again; the trash button drops it. "Apply" shows the SQL first. "Open in Console" in the preview puts that SQL in a new console tab without running it (column changes too). The primary key can't be dropped or changed, and an index belonging to a UNIQUE constraint is dropped with `DROP CONSTRAINT` (not on SQLite). Indexes with expressions, prefix lengths, conditions or INCLUDE can only be dropped.
-  - Where the DDL comes from:
-  - MySQL: `SHOW CREATE TABLE`
-  - Oracle: `DBMS_METADATA`
-  - PostgreSQL, SQL Server: assembled from the system catalogs (constraints and indexes included)
-  - SQLite: `sqlite_master`
-- Tree view options: table and column comments, row counts and sizes can be shown in the tree. Row counts and sizes are estimates from the database's statistics, not `COUNT(*)`, fetched separately from the table list and only while the option is on (they can be slow with many tables). Oracle sizes are blocks × block size from the statistics (table data only). When a table tab counts all rows without WHERE, or loads every row, the tree's count is updated to that number.
-- Running DDL such as `CREATE`/`ALTER`/`DROP`/`RENAME` in a console reloads the table list of the schemas involved and the columns of expanded tables. `CREATE DATABASE`/`SCHEMA` reloads the schema list too.
-- Rename a table: right-click it in the tree → "Rename", or press `F2`. Tabs showing the table follow the new name.
-- Tree
-  - Clicking a table opens it in a preview tab (the next click reuses it); double-clicking keeps the tab. Enter opens it too. A table that is already open switches to its tab.
-  - Connections and schemas expand with the ▸ button or a double-click (a click only selects).
-  - ↑↓ to move, → to expand, ← to collapse.
-  - Open tables are highlighted in the tree. The ⌖ button above the tree expands to and scrolls to the open table.
-  - Hovering a table or column shows its full comment, row count and size.
-  - "Default order: PK descending" in the view options opens tables sorted by primary key, descending.
-- Tabs can be reordered by dragging.
-- Table data tabs: double-clicking a table in the tree opens a tab with results only, no editor. Switch with `Data | Structure | Log` at the top; the console icon opens the same SELECT in an SQL console.
-  - Consoles and table tabs both fetch results page by page. A plain SELECT gets `LIMIT/OFFSET` (`OFFSET … FETCH` on SQL Server and Oracle 12c+) and each page runs on its own, so no cursor stays open holding table locks. Queries that already have `LIMIT`/`TOP`/`FOR UPDATE` and the like, and Oracle 11g, read on from a cursor, which is closed after 30 seconds without reading.
-  - Scrolling down appends the next page; rows above are added with "Load previous rows" at the top. To save memory at most 10,000 rows (twice the page size if that is larger) are held at once.
-  - Result bar: ⏮ first · ◀ ▶ one page at a time (buttons load that page instead of appending) · `1–1,000 ▾` (click to pick a page size from 100 to 10,000) · `1,001+` (click to count all rows with `COUNT(*)`) · ⏭ last.
-- Result columns
-  - Drag a header to reorder columns; hide or show them from the header menu or the button in the grid's top-left corner. Table tabs keep the order and hidden columns when reloaded.
-  - "Show column numbers" in the view options numbers the headers.
-  - Selecting a cell highlights cells with the same value in that column in yellow. While editing a text cell, the `…` button at the right of the input continues in a large editor.
-- Grid display
-  - Numbers, dates and booleans are colored. FLOAT/DOUBLE values are shown as they are, without exponent notation (`2.6e+25`).
-  - Columns in headers and the tree get PK (🔑), UNIQUE (☆) and FK (🔗) icons; an FK's target is shown in a tooltip.
-- Export: CSV, TSV, JSON, INSERT statements (.sql)
-- Typing in the table filter shows only schemas with matching tables, expanded. It searches schemas whose tables were already loaded; schemas never expanded aren't queried.
-- Table data filter (DataGrip style)
-  - Type a condition in the `WHERE` / `ORDER BY` fields above a table data tab and press Enter to query the database again. Both fields complete column names and keywords (`Ctrl+Space` opens the list).
-  - No row limit: scrolling keeps loading to the end.
-  - Clicking a column header sorts in the database with `ORDER BY`: ascending → descending → off.
-  - In a plain query result, clicking a header sorts the loaded rows on screen.
-- Results only: the maximize button in the result tab row, or a double-click on the divider, hides the editor and shows only the grid. Table data tabs open this way.
-- Dialogs can be moved by dragging their title bar; double-clicking it centers them again.
-- Language: English / 한국어 in the view options. The first time, the OS (browser) language is used. Error messages from the database server stay in the server's language.
-- Theme: Auto (follows the OS) / Dark / Light in the view options.
+### Connections
+
+- A color per connection and a connection test. Passwords are kept in the OS keychain (macOS Keychain, Windows Credential Manager).
+- SSH tunnels with a password or a key file (passphrase-protected keys too). The server's host key is saved on the first connection and a changed key is refused. A dropped tunnel reconnects on the next query.
+- Reorder connections by dragging, or right-click → Move to Top / Up / Down / to Bottom.
+
+### Schema tree
+
+- Connection → schema/database → tables/views → columns, with PK (🔑), UNIQUE (☆) and FK (🔗) icons.
+- `3/98` (shown/total) next to a connection chooses the schemas to show: all (system schemas excluded), the default one, individual schemas and patterns like `HR_*`, saved per connection.
+- Clicking a table opens it in a preview tab that the next click reuses; double-click keeps it. A table that is already open switches to its tab, and ⌖ above the tree finds the open table.
+- Connections and schemas expand with ▸ or a double-click; the keyboard works too (↑↓ move, → expand, ← collapse). The current connection's name stays pinned at the top while scrolling.
+- The table filter shows only schemas with matching tables, among the ones already loaded.
+- View options can add table and column comments, row counts and sizes. Counts and sizes are estimates from the database statistics, fetched only while the option is on; a full count in a table tab updates the tree.
+- Hovering a table or column shows its comment, row count and size.
+- "Procedures · Functions" under a schema lists routines (packages on Oracle; not SQLite). Clicking one opens its source in a console, wrapped to run as is (`DELIMITER`, `GO`, `/`).
+- Context menu: view data, view DDL, put a SELECT in the console, rename (`F2`; open tabs follow), copy names.
+- DDL run in a console (`CREATE`/`ALTER`/`DROP`/`RENAME`, `CREATE DATABASE`/`SCHEMA`) reloads the affected parts of the tree.
+
+### SQL console
+
+- Any number of tabs, each with its own connection and session. Tabs and their SQL come back after a restart; `.sql` files can be opened and saved.
+- Run the statement at the cursor (or the selection), or the whole script, stopping at an error. A running query can be cancelled; if the server ignores the cancel, the tab's connection is reopened after 3 seconds.
+- Syntax highlighting and table/column completion per database, and SQL formatting.
+- Statements are split by each database's rules: PL/SQL blocks up to `/` (Oracle), `GO` batches (SQL Server), `DELIMITER` and `BEGIN … END` (MySQL), `$$` quoting (PostgreSQL).
+- On Oracle, PL/SQL created with compilation errors shows the errors, like SQL\*Plus.
+- Closing a console whose SQL was edited (since it was opened or last saved to a file) asks first.
+
+### Results
+
+- Results are fetched a page at a time (500 rows by default, 100–10,000). Plain SELECTs get `LIMIT/OFFSET` (`OFFSET … FETCH` on SQL Server and Oracle 12c+), so no cursor stays open holding locks. Other queries and Oracle 11g read on from a cursor, closed after 30 seconds without reading.
+- Scrolling loads more; at most 10,000 rows are kept, and "Load previous rows" brings back earlier ones. The result bar pages through, changes the page size and counts all rows (`COUNT(*)`).
+- Virtual scrolling, cell and range selection, copy as TSV, with headers or as an `IN (…)` list. Selecting a cell highlights equal values in its column.
+- Columns can be resized, reordered by dragging and hidden; table tabs keep that layout. Clicking a header sorts.
+- Numbers, dates and booleans are colored; FLOAT/DOUBLE are shown without exponent notation.
+- The value viewer highlights JSON (folding, bracket matching) and can format it.
+- `⌘`+click (Mac) or `Alt`/`Ctrl`+click (Windows) on an FK cell opens the referenced row in a new tab; so does "Open Referenced Row" in the cell menu.
+- Export to CSV, TSV, JSON or INSERT statements.
+- The editor can be hidden to give the grid the whole tab (the maximize button, or double-click the divider).
+
+### Table tabs
+
+- A table opens as a grid-only tab with `Data | Structure | Log`; the console icon opens its SELECT in a console.
+- `WHERE` and `ORDER BY` fields above the grid (DataGrip style) query the database again on Enter, with completion of columns and keywords. Header clicks sort in the database too (ascending → descending → off); in a console result they sort the loaded rows.
+- "Default order: PK descending" in the view options opens tables newest first.
+
+### Editing data
+
+- Results of a single-table SELECT that include the whole primary key can be edited; otherwise the grid says "Read-only" and why. Without a primary key, rows can still be added.
+- Cell edits, NULL, added and deleted rows wait on screen and run in one transaction on "Apply". If a change hits a different number of rows than one, everything is rolled back. Applied statements are logged as highlighted SQL.
+- Edited cells can be reverted one by one. `Tab` moves to the next cell while editing, and long text continues in a large editor.
+- Empty columns of a new row show `<generated>` or `<default>` and are left out of the INSERT. A cell left without typing stays NULL; one typed in and cleared becomes `''` (Oracle stores that as NULL).
+
+### Structure
+
+- "Structure" shows the columns (key, type, NULL, default, FK, comment) and indexes of a table, or its DDL (`SHOW CREATE TABLE`, `DBMS_METADATA`, the system catalogs, `sqlite_master`).
+- Type, NULL, default and comment can be changed in place. "Apply" shows the `ALTER` statements first. PostgreSQL and SQL Server run them in one transaction; MySQL/MariaDB and Oracle can't roll back DDL, so the preview warns that a failure leaves earlier statements applied. On MySQL, `MODIFY` keeps the column's character set, collation, AUTO_INCREMENT and ON UPDATE. SQLite tables and views are read-only.
+- Indexes can be added (columns in order, `idx_table_column` suggested), changed (dropped and created again) and dropped. The primary key is left alone, constraint-backed indexes are dropped with `DROP CONSTRAINT`, and indexes with expressions, prefix lengths, conditions or INCLUDE can only be dropped.
+- Every preview can also be opened in a console instead of being run.
+
+### Interface
+
+- Language (English / 한국어; the OS language at first), theme (Auto / Dark / Light) and zoom (`[−][100 ▾][+]`, ±5% or presets 100–200%) in the view options.
 
   ![Light theme: a table tab with WHERE / ORDER BY](docs/screenshot-light.png)
 
-- Zoom: "Zoom (%)" `[−][100 ▾][+]` in the view options zooms the whole window by ±5%, a typed value, or a ▾ preset (100·110·125·150·175·200). `Ctrl/⌘`+`+`/`-`/`0` and `Ctrl/⌘`+wheel step through the presets (desktop app).
-- Hide the connection list: the button at the left of the tab strip or `Ctrl/⌘+B` hides it for a while (expanded nodes and the filter are kept).
-- Wide view: the button at the right of the tab strip, or right-click a tab → "Wide View", shows only the current tab across the window (no connection list or tab strip). "Exit Wide View" in the top bar or `Ctrl/⌘+B` goes back.
-- The desktop app reopens at the window size it was closed at (maximized if it was).
+- The connection list can be hidden (`Ctrl/⌘+B`), and "Wide View" shows only the current tab across the window.
+- Tabs can be reordered by dragging; the tab menu closes groups of tabs, duplicates, renames and (desktop app) opens a tab in a window of its own.
+- Dialogs can be dragged by their title bar.
+- The desktop app reopens at the window size it was closed at.
 
 ## Shortcuts
 
@@ -111,10 +93,10 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 | `Ctrl/⌘ + Shift + Enter` | Run all |
 | `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | New console / close tab |
 | `Ctrl/⌘ + B` | Hide / show the connection list (in wide view: back to the normal view) |
-| `Ctrl/⌘ + 1…9` | Go to tab (right-click a tab: close · close other/left/right/same-connection/all tabs · duplicate · rename) |
+| `Ctrl/⌘ + 1…9` | Go to tab |
 | `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / previous tab (also `Ctrl + PageDown/PageUp`, and `⌘ + Shift + ]/[` on macOS) |
 | `Ctrl/⌘ + /` | Toggle comment |
-| `Ctrl + Alt + L` / `⌘ + ⌥ + L` | Format SQL (selection or everything; one-line SQL becomes several lines) |
+| `Ctrl + Alt + L` / `⌘ + ⌥ + L` | Format SQL (selection or everything) |
 | `Ctrl/⌘ + F` | Find/replace in the editor |
 | `Enter` / `F2` / double-click in the grid | Edit the cell (view the value if it can't be edited) |
 | Typing in the grid | Start editing, replacing the cell's value |
@@ -129,7 +111,7 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 - **Oracle**: connect with a "Service name" (e.g. `ORCL`, `FREEPDB1`, `XEPDB1`), or check "Use SID". 11g is supported; table previews use `ROWNUM`. On 12c and later the schema list hides Oracle's internal accounts (SYS, XDB, …).
 - **SQL Server**: the tree's first level is databases. For a named instance, write the host as `host\SQLEXPRESS`. `TrustServerCertificate=true` is the default.
 - **MySQL/MariaDB**: affected row counts are rows matched, not rows actually changed (`clientFoundRows`).
-- **MySQL/MariaDB TLS**: `tls=true` in the extra options has the OS verify the server certificate. If that fails because the certificate was issued by your company or the server itself (macOS rejects such certificates more strictly, as "not standards compliant"), name that CA with `tls-ca=/path/ca.pem`; Go then verifies against it directly. To encrypt without verifying, use `tls=skip-verify` (DataGrip's default SSL behavior). Through an SSH tunnel, the certificate is still checked against the database host name.
+- **MySQL/MariaDB TLS**: `tls=true` in the extra options verifies the server certificate with the OS. For a certificate from your own CA (which macOS rejects more strictly), add `tls-ca=/path/ca.pem`; `tls=skip-verify` encrypts without verifying (DataGrip's default). Through an SSH tunnel the certificate is still checked against the database host name.
 - **Extra options** take driver options as `key=value&key2=value2`, e.g. `tls=true`, `sslmode=require`, `encrypt=true`.
 - Transactions: autocommit by default. Each tab keeps one connection, so `BEGIN`/`START TRANSACTION` … `COMMIT`/`ROLLBACK` typed by hand run in the same session.
 
@@ -250,14 +232,11 @@ server {
   - Zoom is the browser's zoom (`Ctrl/⌘ + +/-`).
   - Shortcuts the browser takes first (`Ctrl/⌘+T`, `Ctrl/⌘+W`, `Ctrl/⌘+1…9`, `Ctrl+Tab`, …) aren't shown in menus and hints.
 - **Passwords**
-  - Saved database and SSH passwords are stored AES-GCM encrypted in `connections.json` in the data folder instead of an OS keychain. The key is `secret.key` in the same folder.
-  - So whoever has the whole data folder can decrypt them. Take care with backups of it.
+  - Saved passwords are AES-GCM encrypted in `connections.json` instead of an OS keychain, with the key in `secret.key` next to it, so whoever has the whole data folder can read them. Take care with its backups.
 - **Database sessions**
-  - Each browser tab (device) gets its own database sessions. A phone and a PC open at once don't share transactions.
-  - Closing a page closes its database sessions right away (open transactions are rolled back). If no close signal arrives, the server cleans them up after 30 minutes without contact.
+  - Each browser page gets its own database sessions, so a phone and a PC open at once don't share transactions.
+  - Closing a page closes its sessions (rolling back open transactions); pages that vanish without a word are cleaned up after 30 minutes.
   - The workspace (open tabs, SQL) is the one last saved, from whichever device.
-- **Sign-in expiry**
-  - When the sign-in expires, the next action returns to the sign-in page.
 
 ### Security design
 
@@ -287,9 +266,7 @@ wails3 build
 wails3 package
 ```
 
-- `wails3 dev`: development with hot reload. Go changes rebuild; Vite applies frontend changes immediately.
-- `wails3 build`: builds for the current OS into `build/bin/`. The build steps are in `Taskfile.yml`.
-- `wails3 package`: a release build. On macOS it also makes `build/bin/Tablume.app`.
+- `wails3 dev` runs with hot reload, `wails3 build` builds for the current OS into `build/bin/`, and `wails3 package` makes a release build (`Tablume.app` on macOS). The steps are in `Taskfile.yml`.
 - The Go functions the frontend calls (`frontend/bindings/`) are generated from `app.go` during the build. To generate them by hand, run `wails3 task bindings`.
 - Building on Linux needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev`. Wails v3 defaults to GTK4, so the Taskfile adds the `gtk3` tag.
 - A Windows `.exe` can be built on Linux or macOS too: `wails3 build GOOS=windows`.
