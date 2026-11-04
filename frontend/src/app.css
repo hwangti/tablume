@@ -1,0 +1,281 @@
+:root {
+  --bg: #1e1f22;
+  --bg-panel: #2b2d30;
+  --bg-elev: #313338;
+  --bg-input: #1e1f22;
+  --bg-hover: #36383d;
+  --bg-active: #2e436e;
+  --bg-select: #214283;
+  --border: #393b40;
+  --text: #dfe1e5;
+  --text-dim: #8c8f96;
+  --text-faint: #6f737a;
+  --accent: #3574f0;
+  --accent-text: #ffffff;
+  --danger: #f75464;
+  --ok: #5fb865;
+  --warn: #e0a84b;
+  --null: #7a7e85;
+  --grid-line: #2f3135;
+  --grid-alt: #232427;
+  --grid-cur-row: rgba(53, 116, 240, 0.13);
+  --cell-same: rgba(224, 168, 75, 0.12);
+
+  --syn-keyword: #cf8e6d;
+  --syn-string: #6aab73;
+  --syn-number: #2aacb8;
+  --syn-comment: #7a7e85;
+  --syn-type: #c77dbb;
+  --syn-fn: #56a8f5;
+  --syn-op: #bcbec4;
+  --syn-ident: #bcbec4;
+  --editor-sel: #214283;
+  --editor-line: rgba(255, 255, 255, 0.035);
+  --exec-mark: rgba(53, 116, 240, 0.14);
+  --cell-num: #6cb6ff;
+  --cell-date: #8fd18f;
+  --cell-bool: #e0a0d8;
+  --key-pk: #e0b44b;
+  --key-fk: #6ca8ff;
+  --key-uk: #b48ead;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+  --font-mono: 'JetBrains Mono', 'D2Coding', 'SF Mono', Menlo, Consolas, 'Malgun Gothic', monospace;
+  color-scheme: dark;
+}
+
+/* Light theme: set by lib/theme.ts (자동 / 다크 / 라이트). */
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-panel: #f7f8fa;
+  --bg-elev: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: #ebecf0;
+  --bg-active: #d4e2ff;
+  --bg-select: #c5d8fc;
+  --border: #dfe1e5;
+  --text: #1e1f22;
+  --text-dim: #6c707e;
+  --text-faint: #8c8f96;
+  --accent: #3574f0;
+  --danger: #d9343f;
+  --ok: #208a3c;
+  --warn: #b5730f;
+  --null: #a0a3a9;
+  --grid-line: #ebecf0;
+  --grid-alt: #fafafb;
+  --grid-cur-row: rgba(53, 116, 240, 0.08);
+  --cell-same: #fff8dc;
+
+  --syn-keyword: #0033b3;
+  --syn-string: #067d17;
+  --syn-number: #1750eb;
+  --syn-comment: #8c8c8c;
+  --syn-type: #871094;
+  --syn-fn: #00627a;
+  --syn-op: #1e1f22;
+  --syn-ident: #1e1f22;
+  --editor-sel: #a6d2ff;
+  --editor-line: rgba(53, 116, 240, 0.05);
+  --exec-mark: rgba(53, 116, 240, 0.1);
+  --cell-num: #1750eb;
+  --cell-date: #067d17;
+  --cell-bool: #871094;
+  --key-pk: #b5730f;
+  --key-fk: #2f6fdc;
+  --key-uk: #8a4fb0;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 7px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  background: var(--accent);
+}
+
+.btn.danger {
+  color: var(--danger);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-dim) 20%, transparent);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-dim) 55%, transparent);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--text-dim) 70%, transparent);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.mono,
+.cm-editor {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+/* Clear (×) button inside inputs: one size everywhere. */
+.x-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.x-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* tooltips for title attributes (lib/tooltip.ts) */
+.app-tip {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  max-width: 380px;
+  padding: 5px 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+/* see main.ts: rings only for keyboard navigation */
+:root:not(.kbd-nav) button:focus,
+:root:not(.kbd-nav) [tabindex]:focus {
+  outline: none;
+}

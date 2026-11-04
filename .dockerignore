@@ -1,0 +1,7 @@
+.git
+.task
+build/bin
+frontend/node_modules
+frontend/dist
+*.syso
+docs

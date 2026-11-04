@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <!-- English and Korean: AppKit localizes the menu items it adds itself
+             (Services, Start Dictation, Emoji & Symbols, window tiling …) in
+             the OS language when it is one of these. -->
+        <key>CFBundleDevelopmentRegion</key>
+        <string>en</string>
+        <key>CFBundleLocalizations</key>
+        <array>
+            <string>en</string>
+            <string>ko</string>
+        </array>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>CFBundleName</key>
+        <string>Tablume</string>
+        <key>CFBundleExecutable</key>
+        <string>Tablume</string>
+        <!-- Same as the Wails v2 builds, so WebKit keeps the stored data. -->
+        <key>CFBundleIdentifier</key>
+        <string>com.wails.Tablume</string>
+        <key>CFBundleVersion</key>
+        <string>0.9.0</string>
+        <key>CFBundleGetInfoString</key>
+        <string>A lightweight database client</string>
+        <key>CFBundleShortVersionString</key>
+        <string>0.9.0</string>
+        <key>CFBundleIconFile</key>
+        <string>icons</string>
+        <key>LSMinimumSystemVersion</key>
+        <string>12.0.0</string>
+        <key>NSHighResolutionCapable</key>
+        <string>true</string>
+        <key>NSHumanReadableCopyright</key>
+        <string>© 2026 TAEROK HWANG</string>
+    </dict>
+</plist>
