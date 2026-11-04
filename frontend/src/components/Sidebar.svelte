@@ -27,6 +27,7 @@
     setZoomLevel,
     ZOOM_MIN,
     ZOOM_MAX,
+    ZOOM_PRESETS,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -39,6 +40,7 @@
 
   let filter = $state('')
   let viewMenu = $state(false)
+  let zoomList = $state(false) // the zoom presets under the zoom field
 
   const compact = new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -91,6 +93,9 @@
   let menu = $state<null | { x: number; y: number; items: MenuItem[] }>(null)
   let picker = $state<null | { connId: string; x: number; y: number }>(null)
   $effect(() => onCloseMenus(() => ((menu = null), (picker = null), (viewMenu = false))))
+  $effect(() => {
+    if (!viewMenu) zoomList = false
+  })
 
   const blank = (): ConnConfig => ({
     id: '',
@@ -546,7 +551,8 @@
     return driver === 'mssql' && t.t.schema && t.t.schema !== 'dbo' ? `${t.t.schema}.${t.t.name}` : t.t.name
   }
 
-  // Zoom from the view options: typed percent (applied on Enter / blur) or ±5%.
+  // Zoom from the view options: typed percent (applied on Enter / blur), ±5%
+  // or a preset.
   function zoomStep(d: number) {
     setZoomLevel((Math.round(app.zoom * 100 / 5) * 5 + d) / 100)
   }
@@ -554,7 +560,7 @@
     const el = e.currentTarget as HTMLInputElement
     const v = parseFloat(el.value)
     if (isFinite(v)) setZoomLevel(Math.round(v) / 100)
-    el.value = String(Math.round(app.zoom * 100)) // shows the clamped value
+    el.value = Math.round(app.zoom * 100) + '%' // shows the clamped value
   }
 </script>
 
@@ -580,7 +586,7 @@
       </button>
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="viewmenu" onclick={(e) => e.stopPropagation()}>
+        <div class="viewmenu" onclick={(e) => (e.stopPropagation(), (e.target as Element).closest('.zoom-mid') || (zoomList = false))}>
           <div class="vm-title">테마</div>
           <div class="theme-seg" role="group">
             {#each [['auto', '자동'], ['dark', '다크'], ['light', '라이트']] as [m, label] (m)}
@@ -595,34 +601,46 @@
               >
             {/each}
           </div>
-          <!-- Typed value and ±5%, not a slider: the whole window (the slider
-               too) rescales on every change, so a drag can't be followed.
-               (The browser build leaves zoom to the browser.) -->
+          <!-- [−][150% ▾][+]: typed value, ±5% or a preset — not a slider:
+               the whole window (the slider too) rescales on every change, so
+               a drag can't be followed. (The browser build leaves zoom to
+               the browser.) -->
           {#if !isWeb}
-          <div class="vm-title sep">화면 배율 (%)</div>
-          <div class="zoom-row">
-            <div class="zoom-box">
-              <button title="5% 축소" disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
+          <div class="vm-title sep">화면 배율</div>
+          <div class="zoom-box">
+            <button title="5% 축소" disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
+            <div class="zoom-mid">
               <input
                 class="zoom-in"
-                type="number"
-                min={ZOOM_MIN * 100}
-                max={ZOOM_MAX * 100}
-                step="5"
-                value={Math.round(app.zoom * 100)}
-                title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}, Enter로 적용 · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}"
+                inputmode="numeric"
+                value={Math.round(app.zoom * 100) + '%'}
+                title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, Enter로 적용 · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}"
+                onfocus={(e) => e.currentTarget.select()}
                 onchange={zoomInput}
                 onkeydown={(e) => {
-                  if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                  if (e.key === 'Enter') e.currentTarget.blur()
                   if (e.key === 'Escape') {
-                    ;(e.currentTarget as HTMLInputElement).value = String(Math.round(app.zoom * 100))
-                    ;(e.currentTarget as HTMLInputElement).blur()
+                    e.currentTarget.value = Math.round(app.zoom * 100) + '%'
+                    e.currentTarget.blur()
                   }
+                  if (e.key === 'ArrowDown' && e.altKey) zoomList = true
                 }}
               />
-              <button title="5% 확대" disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
+              <button class="zoom-drop" class:on={zoomList} title="배율 고르기" onclick={() => (zoomList = !zoomList)}><Icon name="chevronDown" size={12} /></button>
+              {#if zoomList}
+                <div class="zoom-list" role="listbox">
+                  {#each ZOOM_PRESETS as z (z)}
+                    <button
+                      role="option"
+                      aria-selected={Math.round(app.zoom * 100) === z * 100}
+                      class:on={Math.round(app.zoom * 100) === Math.round(z * 100)}
+                      onclick={() => (setZoomLevel(z), (zoomList = false))}>{Math.round(z * 100)}%</button
+                    >
+                  {/each}
+                </div>
+              {/if}
             </div>
-            <button class="zoom-reset" title="100%로 ({isMac ? '⌘0' : 'Ctrl+0'})" disabled={app.zoom === 1} onclick={() => setZoomLevel(1)}>100%</button>
+            <button title="5% 확대" disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
           </div>
           {/if}
           <div class="vm-title sep">트리에 표시</div>
@@ -728,7 +746,7 @@
             {/if}
             <span class="drv">{driverLabel(r.c.driver)}</span>
             <button class="icon-btn small act" title="새 콘솔" onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
-              <Icon name="console" size={14} />
+              <Icon name="console" size={16} />
             </button>
           {:else if r.kind === 'schema'}
             <Icon name="schema" size={15} color="var(--warn)" />
@@ -874,22 +892,16 @@
   .info {
     cursor: default;
   }
-  /* [−][value][+]  [100%] — all 24px high */
-  .zoom-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 2px 8px 4px;
-  }
+  /* [−][150% ▾][+], 24px high */
   .zoom-box {
     display: flex;
-    flex: 1;
     height: 24px;
+    margin: 2px 8px 4px;
     border: 1px solid var(--border);
     border-radius: 4px;
-    overflow: hidden;
   }
-  .zoom-box button {
+  .zoom-box > button,
+  .zoom-drop {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -900,55 +912,79 @@
     color: var(--text-dim);
     cursor: pointer;
   }
-  .zoom-box button:hover:not(:disabled) {
+  .zoom-box > button:first-child {
+    border-radius: 3px 0 0 3px;
+  }
+  .zoom-box > button:last-child {
+    border-radius: 0 3px 3px 0;
+  }
+  .zoom-box > button:hover:not(:disabled),
+  .zoom-drop:hover,
+  .zoom-drop.on {
     background: var(--bg-hover);
     color: var(--text);
   }
-  .zoom-box button:disabled {
+  .zoom-box > button:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+  .zoom-mid {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    background: var(--bg);
   }
   .zoom-in {
     flex: 1;
     min-width: 0;
     height: 100%;
-    padding: 0 4px;
+    padding: 0 0 0 22px; /* centred over the field with the ▾ */
     border: none;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
     border-radius: 0;
-    background: var(--bg);
+    background: none;
     text-align: center;
     font-variant-numeric: tabular-nums;
-    -moz-appearance: textfield;
-    appearance: textfield;
   }
   .zoom-in:focus {
     outline: none;
     box-shadow: inset 0 0 0 1px var(--accent);
   }
-  .zoom-in::-webkit-inner-spin-button,
-  .zoom-in::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
+  .zoom-drop {
+    width: 22px;
   }
-  .zoom-reset {
-    height: 24px;
-    padding: 0 8px;
+  .zoom-list {
+    position: absolute;
+    top: calc(100% + 3px);
+    left: -1px;
+    right: -1px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 3px;
+    background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: 4px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+  .zoom-list button {
+    padding: 3px 8px;
+    border: none;
+    border-radius: 3px;
     background: none;
     color: var(--text);
     font: inherit;
     font-variant-numeric: tabular-nums;
+    text-align: center;
     cursor: pointer;
   }
-  .zoom-reset:hover:not(:disabled) {
+  .zoom-list button:hover {
     background: var(--bg-hover);
   }
-  .zoom-reset:disabled {
-    color: var(--text-faint);
-    cursor: default;
+  .zoom-list button.on {
+    background: var(--bg-select);
   }
   .theme-seg {
     display: flex;

@@ -334,7 +334,7 @@ export async function ensureStats() {
 // zoom), so every part scales the same. The native webviews stop at 100%.
 export const ZOOM_MIN = 1
 export const ZOOM_MAX = 2
-const ZOOM_STEPS = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.75, 2]
+export const ZOOM_PRESETS = [1, 1.1, 1.25, 1.5, 1.75, 2]
 
 function applyZoom() {
   if (isWeb) return
@@ -359,7 +359,7 @@ export function zoomBy(step: number): boolean {
   if (step === 0) return setZoomLevel(1)
   const z = app.zoom
   const next =
-    step > 0 ? (ZOOM_STEPS.find((s) => s > z + 0.001) ?? ZOOM_MAX) : ([...ZOOM_STEPS].reverse().find((s) => s < z - 0.001) ?? ZOOM_MIN)
+    step > 0 ? (ZOOM_PRESETS.find((s) => s > z + 0.001) ?? ZOOM_MAX) : ([...ZOOM_PRESETS].reverse().find((s) => s < z - 0.001) ?? ZOOM_MIN)
   return setZoomLevel(next)
 }
 

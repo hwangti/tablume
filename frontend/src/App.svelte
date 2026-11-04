@@ -349,8 +349,8 @@
           {#if c}<span class="tw-conn">{c.name}</span>{/if}
         {/if}
         <span class="tw-fill"></span>
-        <button class="btn mini" title="연결 목록과 탭 줄을 다시 보입니다 ({modKey}B)" onclick={() => (app.wide = false)}>
-          <Icon name="unwide" size={14} /> 넓게 보기 끝
+        <button class="icon-btn strip-btn" title="넓게 보기 끝 — 연결 목록과 탭 줄을 다시 보입니다 ({modKey}B)" onclick={() => (app.wide = false)}>
+          <Icon name="unwide" />
         </button>
       </div>
     {:else}
