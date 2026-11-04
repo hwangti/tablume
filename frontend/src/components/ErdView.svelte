@@ -209,14 +209,14 @@
   }
 
   // ------------------------------------------------------------ options
-  let menu = $state<{ left: number; top: number } | null>(null)
+  let menu = $state<{ right: number; top: number } | null>(null)
   $effect(() => onCloseMenus(() => (menu = null)))
   function toggleMenu(e: MouseEvent) {
     e.stopPropagation()
     if (menu) return void (menu = null)
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
     closeMenus()
-    menu = { left: r.left, top: r.bottom + 4 }
+    menu = { right: window.innerWidth - r.right, top: r.bottom + 4 }
   }
   type Opt = { key: keyof ViewOptions; label: string; title: string }
   let groups = $derived<{ title: string; items: Opt[] }[]>([
@@ -289,11 +289,15 @@
       <span class="warn" title={t('관계가 정말 없다기보다 제약을 걸지 않고\n애플리케이션 코드로만 관리하는 경우가 많습니다.')}>{t('FK 제약 없음')}</span>
     {/if}
     <ZoomBox value={z} min={0.08} max={3} presets={[0.25, 0.5, 0.75, 1, 1.5, 2]} onset={(v) => zoomCenter(v / z)} onstep={(d) => zoomCenter(d > 0 ? 1.2 : 1 / 1.2)} />
+    <span class="sep"></span>
+    <button class="icon-btn" onclick={fit} disabled={!pos} title={t('화면 맞춤')}><Icon name="fit" size={14} /></button>
     <div class="dropdown">
-      <button class:changed class:open={!!menu} onclick={toggleMenu}>{t('보기 옵션')} <Icon name="chevronDown" size={10} /></button>
+      <button class="icon-btn split" class:changed class:open={!!menu} onclick={toggleMenu} title={t('보기 옵션')}
+        ><Icon name="sliders" size={14} /><Icon name="chevronDown" size={10} /></button
+      >
       {#if menu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="menu" style:left="{menu.left}px" style:top="{menu.top}px" use:fitMenu={menu} onclick={(e) => e.stopPropagation()}>
+        <div class="menu" style:right="{menu.right}px" style:top="{menu.top}px" use:fitMenu={menu} onclick={(e) => e.stopPropagation()}>
           {#each groups as g (g.title)}
             <div class="ttl">{g.title}</div>
             {#each g.items as it (it.key)}
@@ -305,12 +309,10 @@
         </div>
       {/if}
     </div>
-    <span class="grp">
-      <button onclick={fit} disabled={!pos}>{t('화면 맞춤')}</button>
-      <button onclick={() => ((L = null), (error = ''), connected && load())} disabled={loading || !connected} title={t('스키마를 다시 읽습니다')}
-        ><Icon name="refresh" size={13} /></button
-      >
-    </span>
+    <span class="sep"></span>
+    <button class="icon-btn" onclick={() => ((L = null), (error = ''), connected && load())} disabled={loading || !connected} title={t('스키마를 다시 읽습니다')}
+      ><Icon name="refresh" size={14} /></button
+    >
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -410,9 +412,9 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 4px;
     white-space: nowrap;
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
     font-size: 12px;
@@ -433,6 +435,10 @@
   .legend b {
     margin-right: 2px;
   }
+  .legend,
+  .bar .warn {
+    margin-right: 8px;
+  }
   .stat {
     min-width: 0;
     overflow: hidden;
@@ -445,44 +451,24 @@
   .bar .warn {
     color: var(--warn);
   }
-  .bar button {
-    height: 24px;
-    padding: 0 9px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-elev);
-    color: var(--text);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+  .sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 2px;
+    background: var(--border);
   }
-  .bar button:hover:not(:disabled),
-  .bar button.open {
+  .icon-btn.split {
+    width: auto;
+    gap: 1px;
+    padding: 0 3px 0 5px;
+  }
+  .icon-btn.open {
     background: var(--bg-hover);
-  }
-  .bar button:disabled {
-    opacity: 0.45;
-    cursor: default;
+    color: var(--text);
   }
   /* options off their defaults */
-  .bar button.changed {
+  .icon-btn.changed {
     color: var(--accent);
-  }
-  .grp {
-    display: inline-flex;
-  }
-  .grp > button {
-    border-radius: 0;
-  }
-  .grp > button + button {
-    border-left: 0;
-  }
-  .grp > button:first-child {
-    border-radius: 4px 0 0 4px;
-  }
-  .grp > button:last-child {
-    border-radius: 0 4px 4px 0;
   }
   .dropdown .menu {
     position: fixed;
@@ -497,7 +483,7 @@
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
   }
   .menu .ttl {
-    padding: 6px 8px 3px 26px;
+    padding: 6px 8px 3px 22px;
     font-size: 11px;
     color: var(--text-faint);
   }
@@ -506,8 +492,12 @@
     border-top: 1px solid var(--border);
   }
   .menu button {
+    display: flex;
+    align-items: center;
     justify-content: flex-start;
     height: 26px;
+    color: var(--text);
+    cursor: pointer;
     border: 0;
     background: none;
     border-radius: 4px;
