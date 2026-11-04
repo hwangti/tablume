@@ -65,7 +65,6 @@ export default {
 
   // connection tree
   '연결': 'Connect',
-  '연결#목록': 'Connections',
   '연결#선택': 'Connection',
   '새 연결': 'New Connection',
   '열린 테이블을 트리에서 찾기': 'Find the open table in the tree',

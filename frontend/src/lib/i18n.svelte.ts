@@ -5,7 +5,7 @@
 //
 // Placeholders: t('{n}행', { n: 3 }); in English {n|row|rows} picks the
 // singular when n is 1. A key can end in #context when one Korean word needs
-// two English ones (t('연결#목록') shows 연결). t() reads the reactive language, so
+// two English ones (t('연결#선택') shows 연결). t() reads the reactive language, so
 // markup re-renders when it changes; text kept in variables must be made
 // again (or kept as the Korean key and passed through t() where shown).
 

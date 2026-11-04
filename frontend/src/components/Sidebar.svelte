@@ -578,7 +578,11 @@
 
 <aside>
   <div class="top">
-    <span class="title">{tr('연결#목록')}</span>
+    <div class="filter">
+      <Icon name="filter" size={14} />
+      <input bind:value={filter} placeholder={tr('테이블 필터')} spellcheck="false" />
+      {#if filter}<button class="x-btn" title={tr('필터 지우기')} onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
+    </div>
     <button class="icon-btn" title={tr('열린 테이블을 트리에서 찾기')} onclick={locate} disabled={!activeKey}><Icon name="locate" /></button>
     <div class="viewopt">
       <button
@@ -679,11 +683,6 @@
       {/if}
     </div>
     <button class="icon-btn" title={tr('새 연결')} onclick={() => (app.editing = blank())}><Icon name="plus" /></button>
-  </div>
-  <div class="filter">
-    <Icon name="filter" size={14} />
-    <input bind:value={filter} placeholder={tr('테이블 필터')} spellcheck="false" />
-    {#if filter}<button class="x-btn" title={tr('필터 지우기')} onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -827,19 +826,16 @@
   .top {
     display: flex;
     align-items: center;
-    padding: 8px 8px 4px 12px;
-  }
-  .title {
-    flex: 1;
-    font-weight: 600;
-    color: var(--text-dim);
-    font-size: 12px;
+    /* as tall as the tab bar beside it */
+    padding: 4px 8px;
   }
   .filter {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 6px;
-    margin: 4px 8px 6px;
+    margin-right: 4px;
     padding: 0 6px;
     border: 1px solid var(--border);
     border-radius: 4px;
