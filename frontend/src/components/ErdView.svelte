@@ -250,15 +250,17 @@
   let changed = $derived((Object.keys(DEFAULT_OPTIONS) as (keyof ViewOptions)[]).some((k) => opt[k] !== DEFAULT_OPTIONS[k]))
 
   let loose = $derived(L ? L.edges.filter((e) => e.fk.looseRef).length : 0)
-  let statText = $derived.by(() => {
+  let statText = $derived(L ? t('테이블 {t} · 관계 {e}', { t: num(L.stats.tables + L.stats.iso), e: num(L.stats.edges) }) : '')
+  let statTitle = $derived.by(() => {
     if (!L) return ''
     const s = L.stats
     return [
       s.tables ? t('테이블 {t} · 관계 {e} · {l}층 · 선 교차 {c}', { t: num(s.tables), e: num(s.edges), l: s.layers, c: s.cross }) : '',
       s.iso ? t('관계 없는 테이블 {n}', { n: num(s.iso) }) : '',
+      s.tables ? t('배치 전 교차 {n}개에서 줄인 결과입니다', { n: s.cross0 }) : '',
     ]
       .filter(Boolean)
-      .join(' · ')
+      .join('\n')
   })
 </script>
 
@@ -282,20 +284,17 @@
 
 <div class="erd">
   <div class="bar">
-    <span><b class="pk">●</b> {t('기본 키')}</span>
-    <span><b class="fk">◆</b> {t('외래 키')}</span>
-    <span title={t('자식 쪽 FK가 UNIQUE면 1:1, 아니면 1:N. FK가 NOT NULL이면 부모가 반드시 있습니다.\n위쪽이 부모입니다.')}>
-      {t('선 끝')} <b>○&lt;</b> {t('여럿')} · <b>○|</b> {t('하나')} · <b>||</b> {t('필수')}
-    </span>
+    <span class="legend" title={t('● 기본 키 · ◆ 외래 키\n선 끝: ○< 여럿 · ○| 하나 · || 필수 (○는 선택)\n자식 쪽 FK가 UNIQUE면 1:1, 아니면 1:N. 위쪽이 부모입니다.\n휠로 확대하고 끌어서 옮깁니다.')}
+      ><b class="pk">●</b>PK <b class="fk">◆</b>FK <b>○&lt;</b>N <b>○|</b>1</span
+    >
+    {#if L}<span class="stat" title={statTitle}>{statText}</span>{/if}
     {#if loose}
       <span class="warn" title={t('InnoDB는 참조 대상이 UNIQUE가 아니어도 FK를 허용합니다.\n부모가 여럿일 수 있어 사실상 N:M입니다.')}>⚠ {t('비유일 참조 {n}', { n: loose })}</span>
     {/if}
-    <span class="dim">{t('휠 확대 · 끌어서 이동')}</span>
     <span class="fill"></span>
     {#if L && L.nodes.size && !L.edges.length}
       <span class="warn" title={t('관계가 정말 없다기보다 제약을 걸지 않고\n애플리케이션 코드로만 관리하는 경우가 많습니다.')}>{t('FK 제약 없음')}</span>
     {/if}
-    {#if L}<span class="dim" title={t('배치 전 교차 {n}개에서 줄인 결과입니다', { n: L.stats.cross0 })}>{statText}</span>{/if}
     <span class="grp">
       <button onclick={() => zoomCenter(1 / 1.2)} title={t('축소')}>－</button>
       <span class="zoom"
@@ -424,9 +423,9 @@
   }
   .bar {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 6px 14px;
+    gap: 12px;
+    white-space: nowrap;
     padding: 6px 10px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
@@ -444,6 +443,15 @@
   }
   .bar .fill {
     flex: 1;
+  }
+  .legend b {
+    margin-right: 2px;
+  }
+  .stat {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-faint);
   }
   .bar .dim {
     color: var(--text-faint);
