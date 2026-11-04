@@ -2,7 +2,6 @@ package dbx
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"tablume/internal/i18n"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -72,7 +72,7 @@ func (t *tunnel) authMethods() ([]ssh.AuthMethod, error) {
 		b, err := os.ReadFile(expandHome(strings.TrimSpace(f)))
 		if err != nil {
 			if firstErr == nil && c.SSHKeyFile != "" {
-				firstErr = fmt.Errorf("SSH 키 파일을 읽을 수 없습니다: %w", err)
+				firstErr = i18n.Errorf("SSH 키 파일을 읽을 수 없습니다: %w", err)
 			}
 			continue
 		}
@@ -80,13 +80,13 @@ func (t *tunnel) authMethods() ([]ssh.AuthMethod, error) {
 		var missing *ssh.PassphraseMissingError
 		if errors.As(err, &missing) {
 			if c.SSHPassword == "" {
-				return nil, errors.New("SSH 키에 암호가 걸려 있습니다. 키 암호를 입력하세요")
+				return nil, i18n.Error("SSH 키에 암호가 걸려 있습니다. 키 암호를 입력하세요")
 			}
 			s, err = ssh.ParsePrivateKeyWithPassphrase(b, []byte(c.SSHPassword))
 		}
 		if err != nil {
 			if firstErr == nil {
-				firstErr = fmt.Errorf("SSH 키를 해석할 수 없습니다 (%s): %w", f, err)
+				firstErr = i18n.Errorf("SSH 키를 해석할 수 없습니다 (%s): %w", f, err)
 			}
 			continue
 		}
@@ -96,7 +96,7 @@ func (t *tunnel) authMethods() ([]ssh.AuthMethod, error) {
 		if firstErr != nil {
 			return nil, firstErr
 		}
-		return nil, errors.New("SSH 키 파일을 찾을 수 없습니다 (~/.ssh/id_ed25519, id_ecdsa, id_rsa)")
+		return nil, i18n.Error("SSH 키 파일을 찾을 수 없습니다 (~/.ssh/id_ed25519, id_ecdsa, id_rsa)")
 	}
 	return []ssh.AuthMethod{ssh.PublicKeys(signers...)}, nil
 }
@@ -122,8 +122,7 @@ func (t *tunnel) dial() (*ssh.Client, error) {
 				want = t.hostKey
 			}
 			if want != "" && want != fp {
-				return fmt.Errorf("SSH 서버의 호스트 키가 저장된 것과 다릅니다 (저장: %s, 현재: %s). "+
-					"서버를 바꾼 게 아니라면 중간자 공격일 수 있습니다. 맞다면 연결 편집에서 호스트 키를 초기화하세요", want, fp)
+				return i18n.Errorf("SSH 서버의 호스트 키가 저장된 것과 다릅니다 (저장: %s, 현재: %s). 서버를 바꾼 게 아니라면 중간자 공격일 수 있습니다. 맞다면 연결 편집에서 호스트 키를 초기화하세요", want, fp)
 			}
 			t.hostKey = fp
 			return nil
@@ -131,7 +130,7 @@ func (t *tunnel) dial() (*ssh.Client, error) {
 	}
 	cl, err := ssh.Dial("tcp", sshAddr(t.cfg), conf)
 	if err != nil {
-		return nil, fmt.Errorf("SSH 연결 실패 (%s): %w", sshAddr(t.cfg), err)
+		return nil, i18n.Errorf("SSH 연결 실패 (%s): %w", sshAddr(t.cfg), err)
 	}
 	go keepAlive(cl)
 	return cl, nil
@@ -178,7 +177,7 @@ func (t *tunnel) remote() (net.Conn, error) {
 
 func openTunnel(cfg ConnConfig) (*tunnel, error) {
 	if strings.TrimSpace(cfg.SSHHost) == "" {
-		return nil, errors.New("SSH 호스트를 입력하세요")
+		return nil, i18n.Error("SSH 호스트를 입력하세요")
 	}
 	host := cfg.Host
 	if strings.TrimSpace(host) == "" {
@@ -198,7 +197,7 @@ func openTunnel(cfg ConnConfig) (*tunnel, error) {
 	probe, err := cl.Dial("tcp", t.target)
 	if err != nil {
 		cl.Close()
-		return nil, fmt.Errorf("SSH 서버에서 DB(%s)에 연결할 수 없습니다: %w", t.target, err)
+		return nil, i18n.Errorf("SSH 서버에서 DB(%s)에 연결할 수 없습니다: %w", t.target, err)
 	}
 	probe.Close()
 	t.client = cl

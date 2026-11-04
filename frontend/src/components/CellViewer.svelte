@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t, num } from '../lib/i18n.svelte'
   import type { Cell } from '../lib/types'
   import { copyText } from '../lib/clipboard'
   import Modal from './Modal.svelte'
@@ -43,7 +44,7 @@
   }
 </script>
 
-<Modal title={column + (editable ? ' — 편집' : '')} {onclose} width={720} dismissible={!editable} onsubmit={editable ? save : undefined}>
+<Modal title={column + (editable ? ' — ' + t('편집') : '')} {onclose} width={720} dismissible={!editable} onsubmit={editable ? save : undefined}>
   {#if isNull && !editable}
     <div class="null">NULL</div>
   {:else if editable}
@@ -52,19 +53,19 @@
     <TextEditor value={shown} readonly />
   {/if}
   {#snippet footer()}
-    <span class="dim">{isNull ? 'NULL' : `${text.length.toLocaleString()}자`}</span>
+    <span class="dim">{isNull ? 'NULL' : t('{n}자', { n: num(text.length) })}</span>
     <span class="spacer"></span>
     {#if json && !editable}
-      <label><input type="checkbox" bind:checked={pretty} /> JSON 정렬</label>
+      <label><input type="checkbox" bind:checked={pretty} /> {t('JSON 정렬')}</label>
     {/if}
     {#if editable}
-      {#if json && json !== text}<button class="btn" onclick={() => (text = json!)}>JSON 정렬</button>{/if}
-      <button class="btn" onclick={() => ((isNull = true), (text = ''))}>NULL로 설정</button>
-      <button class="btn" onclick={onclose}>취소</button>
-      <button class="btn primary" onclick={save} title="Ctrl+Enter / Cmd+Enter">적용</button>
+      {#if json && json !== text}<button class="btn" onclick={() => (text = json!)}>{t('JSON 정렬')}</button>{/if}
+      <button class="btn" onclick={() => ((isNull = true), (text = ''))}>{t('NULL로 설정')}</button>
+      <button class="btn" onclick={onclose}>{t('취소')}</button>
+      <button class="btn primary" onclick={save} title="Ctrl+Enter / Cmd+Enter">{t('적용')}</button>
     {:else}
-      <button class="btn" onclick={() => copyText(shown)} disabled={isNull}>복사</button>
-      <button class="btn primary" onclick={onclose}>닫기</button>
+      <button class="btn" onclick={() => copyText(shown)} disabled={isNull}>{t('복사')}</button>
+      <button class="btn primary" onclick={onclose}>{t('닫기')}</button>
     {/if}
   {/snippet}
 </Modal>

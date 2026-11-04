@@ -1,4 +1,5 @@
 import * as App from '../../bindings/tablume/app'
+import { t } from './i18n.svelte'
 import { isWeb } from './platform'
 import { downloadText, uploadText } from './webfiles.svelte'
 import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex } from './types'
@@ -86,6 +87,7 @@ interface Api {
   FocusTabWindow(tabId: string): Promise<boolean>
   BrowseFiles(dir: string): Promise<FileList>
   TouchSessions(tabIds: string[]): Promise<void>
+  SetLanguage(lang: string): Promise<void>
 }
 
 export interface FileList {
@@ -124,7 +126,7 @@ export function loginExpired(e: unknown): boolean {
 }
 
 export function errText(e: unknown): string {
-  if (loginExpired(e)) return '로그인이 만료되었습니다. 다시 로그인하세요.'
+  if (loginExpired(e)) return t('로그인이 만료되었습니다. 다시 로그인하세요.')
   if (e instanceof Error) return e.message
   return String(e)
 }

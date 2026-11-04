@@ -3,9 +3,8 @@ package dbx
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
 	"strings"
+	"tablume/internal/i18n"
 )
 
 // Routine is a stored procedure, function or (Oracle) package.
@@ -61,7 +60,7 @@ func (m *Manager) RoutineSource(id, schema string, r Routine) (string, error) {
 	}
 	rd, ok := p.d.(routineDialect)
 	if !ok {
-		return "", errors.New("이 DB는 프로시저/함수를 지원하지 않습니다")
+		return "", i18n.Error("이 DB는 프로시저/함수를 지원하지 않습니다")
 	}
 	ctx, cancel := metaCtx()
 	defer cancel()
@@ -75,7 +74,7 @@ func (m *Manager) RoutineSource(id, schema string, r Routine) (string, error) {
 		return "", err
 	}
 	if strings.TrimSpace(src) == "" {
-		return "", fmt.Errorf("%s의 소스를 볼 수 없습니다 (권한이 없을 수 있습니다)", r.Name)
+		return "", i18n.Errorf("%s의 소스를 볼 수 없습니다 (권한이 없을 수 있습니다)", r.Name)
 	}
 	return strings.TrimSpace(src) + "\n", nil
 }

@@ -23,6 +23,7 @@
 </script>
 
 <script lang="ts">
+  import { t } from '../lib/i18n.svelte'
   import { onMount } from 'svelte'
   import { EditorState, Compartment, Prec } from '@codemirror/state'
   import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, rectangularSelection, crosshairCursor, dropCursor } from '@codemirror/view'
@@ -84,7 +85,7 @@
     try {
       formatEditor(v, driver)
     } catch (e) {
-      toast('SQL을 정렬할 수 없습니다: ' + errText(e).split('\n')[0], 'error')
+      toast(t('SQL을 정렬할 수 없습니다') + ': ' + errText(e).split('\n')[0], 'error')
     }
   }
 

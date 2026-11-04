@@ -1,6 +1,7 @@
 <script lang="ts">
   // Browser build: picks a file from the server's files folder (the only
   // folder the server reads SQLite databases and SSH keys from).
+  import { esc, locale, t } from '../lib/i18n.svelte'
   import { onMount } from 'svelte'
   import Modal from './Modal.svelte'
   import Icon from './Icon.svelte'
@@ -22,7 +23,7 @@
   const crumbs = $derived.by(() => {
     if (!list) return []
     const rest = list.dir.slice(list.root.length).split(/[\\/]/).filter(Boolean)
-    const out = [{ label: '파일 폴더', path: list.root }]
+    const out = [{ label: t('파일 폴더'), path: list.root }]
     let p = list.root
     for (const part of rest) {
       p = join(p, part)
@@ -55,7 +56,7 @@
 
   const fmtDate = (s: string) => {
     const d = new Date(s)
-    return isNaN(+d) ? '' : d.toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    return isNaN(+d) ? '' : d.toLocaleString(locale(), { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 </script>
 
@@ -86,21 +87,21 @@
         <span class="dt">{fmtDate(e.modified)}</span>
       </button>
     {:else}
-      {#if list}<div class="empty">빈 폴더입니다{#if atRoot} — 서버의 <code>{list.root}</code>에 파일을 넣으세요{/if}</div>{/if}
+      {#if list}<div class="empty">{t('빈 폴더입니다')}{#if atRoot} — {@html t('서버의 <code>{root}</code>에 파일을 넣으세요', { root: esc(list.root) })}{/if}</div>{/if}
     {/each}
   </div>
   {#if error}<div class="err">{error}</div>{/if}
   {#if req.allowNew}
     <label class="new">
-      <span>파일 이름</span>
-      <input class="mono" bind:value={name} placeholder="없는 이름이면 새 데이터베이스를 만듭니다" spellcheck="false" />
+      <span>{t('파일 이름')}</span>
+      <input class="mono" bind:value={name} placeholder={t('없는 이름이면 새 데이터베이스를 만듭니다')} spellcheck="false" />
     </label>
   {/if}
-  <p class="hint">웹 버전은 서버의 파일 폴더 안에 있는 파일만 쓸 수 있습니다.</p>
+  <p class="hint">{t('웹 버전은 서버의 파일 폴더 안에 있는 파일만 쓸 수 있습니다.')}</p>
   {#snippet footer()}
     <span style="flex:1"></span>
-    <button class="btn" onclick={() => req.resolve(null)}>취소</button>
-    <button class="btn primary" onclick={pick} disabled={!name.trim() || (!req.allowNew && !list?.entries.some((e) => !e.dir && e.name === name))}>선택</button>
+    <button class="btn" onclick={() => req.resolve(null)}>{t('취소')}</button>
+    <button class="btn primary" onclick={pick} disabled={!name.trim() || (!req.allowNew && !list?.entries.some((e) => !e.dir && e.name === name))}>{t('선택')}</button>
   {/snippet}
 </Modal>
 

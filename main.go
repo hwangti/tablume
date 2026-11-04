@@ -31,7 +31,7 @@ func main() {
 
 	opts := application.Options{
 		Name:        "Tablume",
-		Description: "가벼운 데이터베이스 클라이언트",
+		Description: "A lightweight database client",
 		Icon:        appIcon,
 		Services:    []application.Service{application.NewService(svc)},
 		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},

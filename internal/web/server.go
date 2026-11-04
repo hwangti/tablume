@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"tablume/internal/i18n"
 )
 
 // Handler serves the sign-in pages and passes everything else, once signed
@@ -101,12 +102,12 @@ func (s *Server) proxy() *httputil.ReverseProxy {
 func (s *Server) release(w http.ResponseWriter, r *http.Request, _ *loginSession) {
 	b, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 	if err != nil {
-		httpError(w, http.StatusBadRequest, "잘못된 요청입니다")
+		httpError(w, http.StatusBadRequest, i18n.T("잘못된 요청입니다"))
 		return
 	}
 	var ids []string
 	if err := json.Unmarshal(b, &ids); err != nil {
-		httpError(w, http.StatusBadRequest, "잘못된 요청입니다")
+		httpError(w, http.StatusBadRequest, i18n.T("잘못된 요청입니다"))
 		return
 	}
 	if s.cfg.Release != nil && len(ids) > 0 {
@@ -136,14 +137,27 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	s.page(w, loginTmpl, pageData{Token: tok, HasPasskeys: has, SignedIn: signedIn})
+	s.page(w, r, loginTmpl, pageData{Token: tok, HasPasskeys: has, SignedIn: signedIn})
 }
 
 func (s *Server) passkeysPage(w http.ResponseWriter, r *http.Request, _ *loginSession) {
-	s.page(w, passkeysTmpl, pageData{})
+	s.page(w, r, passkeysTmpl, pageData{})
 }
 
-func (s *Server) page(w http.ResponseWriter, t *template.Template, d pageData) {
+// page shows a template in the app's language (or, until one is chosen
+// in the app, the browser's).
+func (s *Server) page(w http.ResponseWriter, r *http.Request, t *template.Template, d pageData) {
+	lang := i18n.Lang()
+	if !i18n.Chosen() {
+		lang = i18n.FromAccept(r.Header.Get("Accept-Language"))
+	}
+	t, err := t.Clone()
+	if err != nil {
+		s.logf("page: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	t.Funcs(pageFuncs(lang))
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")

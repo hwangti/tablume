@@ -2,6 +2,7 @@
   import { fitMenu, closeMenus, onCloseMenus } from './lib/fit'
   import { modKey } from './lib/clipboard'
   import { isWeb } from './lib/platform'
+  import { t as tr } from './lib/i18n.svelte'
   import { filePick } from './lib/webfiles.svelte'
   import FileBrowser from './components/FileBrowser.svelte'
   import { onMount } from 'svelte'
@@ -227,19 +228,19 @@
       y: e.clientY,
       items: [
         // (no shortcut shown in the browser, which keeps ⌘W / ⌘T for its own tabs)
-        { label: '닫기', icon: 'close', run: () => closeTab(id), kbd: isWeb ? undefined : modKey + 'W' },
-        { label: '다른 탭 닫기', run: () => closeTabs(others), disabled: !others.length },
-        { label: '왼쪽 탭 닫기', run: () => closeTabs(left), disabled: !left.length },
-        { label: '오른쪽 탭 닫기', run: () => closeTabs(right), disabled: !right.length },
-        { label: `같은 연결 탭 닫기${c ? ` (${c.name})` : ''}`, icon: 'db', run: () => closeTabs(sameConn) },
-        { label: '모든 탭 닫기', run: () => closeTabs(ids.filter(here)), danger: true },
+        { label: tr('닫기'), icon: 'close', run: () => closeTab(id), kbd: isWeb ? undefined : modKey + 'W' },
+        { label: tr('다른 탭 닫기'), run: () => closeTabs(others), disabled: !others.length },
+        { label: tr('왼쪽 탭 닫기'), run: () => closeTabs(left), disabled: !left.length },
+        { label: tr('오른쪽 탭 닫기'), run: () => closeTabs(right), disabled: !right.length },
+        { label: tr('같은 연결 탭 닫기') + (c ? ` (${c.name})` : ''), icon: 'db', run: () => closeTabs(sameConn) },
+        { label: tr('모든 탭 닫기'), run: () => closeTabs(ids.filter(here)), danger: true },
         app.wide && app.activeTab === id
-          ? { label: '넓게 보기 끝', icon: 'unwide', run: () => (app.wide = false), sep: true }
-          : { label: '넓게 보기', icon: 'wide', run: () => ((app.activeTab = id), (app.wide = true)), sep: true },
-        ...(isWeb ? [] : [{ label: '새 창으로 열기', icon: 'detach', run: () => detachTab(id) }]),
-        { label: '탭 복제', icon: 'copy', run: () => duplicateTab(id) },
-        ...(t.preview ? [{ label: '탭 고정', icon: 'lock', run: () => pinTab(t) }] : []),
-        { label: '이름 바꾸기', icon: 'edit', run: () => (renaming = id) },
+          ? { label: tr('넓게 보기 끝'), icon: 'unwide', run: () => (app.wide = false), sep: true }
+          : { label: tr('넓게 보기'), icon: 'wide', run: () => ((app.activeTab = id), (app.wide = true)), sep: true },
+        ...(isWeb ? [] : [{ label: tr('새 창으로 열기'), icon: 'detach', run: () => detachTab(id) }]),
+        { label: tr('탭 복제'), icon: 'copy', run: () => duplicateTab(id) },
+        ...(t.preview ? [{ label: tr('탭 고정'), icon: 'lock', run: () => pinTab(t) }] : []),
+        { label: tr('이름 바꾸기'), icon: 'edit', run: () => (renaming = id) },
       ],
     }
   }
@@ -318,16 +319,16 @@
         {#if c}<span class="tw-conn">{c.name}</span>{/if}
       {/if}
       <span class="tw-fill"></span>
-      <button class="btn mini" title="이 탭을 메인 창의 탭으로 되돌립니다 (창 닫기 버튼과 같음)" onclick={backToMain} disabled={!t}>
-        <Icon name="attach" size={14} /> 메인 창으로
+      <button class="btn mini" title={tr('이 탭을 메인 창의 탭으로 되돌립니다 (창 닫기 버튼과 같음)')} onclick={backToMain} disabled={!t}>
+        <Icon name="attach" size={14} /> {tr('메인 창으로')}
       </button>
-      <button class="btn mini" title="탭을 닫습니다" onclick={closeTabWindow} disabled={!t}><Icon name="close" size={14} /> 닫기</button>
+      <button class="btn mini" title={tr('탭을 닫습니다')} onclick={closeTabWindow} disabled={!t}><Icon name="close" size={14} /> {tr('닫기')}</button>
     </div>
     <div class="content">
       {#if t}
         <div class="pane"><QueryTab tab={t} /></div>
       {:else if ready}
-        <div class="welcome"><p>이 탭은 더 이상 없습니다.</p></div>
+        <div class="welcome"><p>{tr('이 탭은 더 이상 없습니다.')}</p></div>
       {/if}
     </div>
   </div>
@@ -349,7 +350,7 @@
           {#if c}<span class="tw-conn">{c.name}</span>{/if}
         {/if}
         <span class="tw-fill"></span>
-        <button class="icon-btn strip-btn" title="넓게 보기 끝 — 연결 목록과 탭 줄을 다시 보입니다 ({modKey}B)" onclick={() => (app.wide = false)}>
+        <button class="icon-btn strip-btn" title="{tr('넓게 보기 끝 — 연결 목록과 탭 줄을 다시 보입니다')} ({modKey}B)" onclick={() => (app.wide = false)}>
           <Icon name="unwide" />
         </button>
       </div>
@@ -357,7 +358,7 @@
     <div class="strip">
     <button
       class="icon-btn strip-btn"
-      title="{app.sidebarHidden ? '연결 목록 보이기' : '연결 목록 숨기기'} ({modKey}B)"
+      title="{tr(app.sidebarHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)"
       onclick={sideToggle}
     >
       <Icon name={app.sidebarHidden ? 'sidebarOff' : 'sidebar'} />
@@ -390,15 +391,15 @@
               onkeydown={(e) => (e.key === 'Enter' || e.key === 'Escape') && e.currentTarget.blur()}
             />
           {:else}
-            <span class="name" class:preview={t.preview} title={t.preview ? '미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.' : ''}>{t.title}</span>
+            <span class="name" class:preview={t.preview} title={t.preview ? tr('미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.') : ''}>{t.title}</span>
           {/if}
-          <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label="닫기"><Icon name="close" size={14} /></button>
+          <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label={tr('닫기')}><Icon name="close" size={14} /></button>
         </div>
       {/each}
       {#if app.connections.length}
         <button
           class="icon-btn newtab"
-          title={isWeb ? '새 콘솔' : '새 콘솔 (Ctrl/⌘+T)'}
+          title={isWeb ? tr('새 콘솔') : tr('새 콘솔') + ' (Ctrl/⌘+T)'}
           onclick={() => openConsole(activeTab()?.connId ?? app.connections[0].id)}
         >
           <Icon name="plus" size={14} />
@@ -407,7 +408,7 @@
     </div>
     </div>
     {#if activeTab()}
-      <button class="icon-btn strip-btn" title="넓게 보기 — 이 탭만 창 가득 보입니다" onclick={() => (app.wide = true)}>
+      <button class="icon-btn strip-btn" title={tr('넓게 보기 — 이 탭만 창 가득 보입니다')} onclick={() => (app.wide = true)}>
         <Icon name="wide" />
       </button>
     {/if}
@@ -427,10 +428,10 @@
           <img src={logo} width="64" height="64" alt="" />
           <h2>Tablume</h2>
           {#if app.connections.length === 0}
-            <p>왼쪽의 <b>+</b> 버튼으로 첫 연결을 추가하세요.</p>
+            <p>{@html tr('왼쪽의 <b>+</b> 버튼으로 첫 연결을 추가하세요.')}</p>
           {:else}
-            <p>연결을 클릭해 접속하고, 테이블을 클릭하면 데이터를 볼 수 있습니다.</p>
-            <p class="dim">콘솔 아이콘{isWeb ? '으' : '이나 Ctrl/⌘+T'}로 새 SQL 콘솔을 엽니다.</p>
+            <p>{tr('연결을 클릭해 접속하고, 테이블을 클릭하면 데이터를 볼 수 있습니다.')}</p>
+            <p class="dim">{isWeb ? tr('콘솔 아이콘으로 새 SQL 콘솔을 엽니다.') : tr('콘솔 아이콘이나 Ctrl/⌘+T로 새 SQL 콘솔을 엽니다.')}</p>
           {/if}
         </div>
       {/if}
@@ -465,24 +466,24 @@
         <input type="text" class="mono" bind:value={promptText} use:selectAll style="width:100%" spellcheck="false" />
       {:else}
         <!-- svelte-ignore a11y_autofocus -->
-        <input type="password" bind:value={password} autofocus style="width:100%" placeholder="비밀번호" />
+        <input type="password" bind:value={password} autofocus style="width:100%" placeholder={tr('비밀번호')} />
       {/if}
     </form>
     {#snippet footer()}
       <span style="flex:1"></span>
-      <button class="btn" onclick={() => app.prompt?.resolve(null)}>취소</button>
-      <button class="btn primary" onclick={submitPassword}>{app.prompt?.ok ?? '연결'}</button>
+      <button class="btn" onclick={() => app.prompt?.resolve(null)}>{tr('취소')}</button>
+      <button class="btn primary" onclick={submitPassword}>{app.prompt?.ok ?? tr('연결')}</button>
     {/snippet}
   </Modal>
 {/if}
 
 {#if app.confirm}
-  <Modal title="확인" onclose={() => app.confirm?.resolve(false)} width={380}>
+  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={380}>
     <p style="margin:0">{app.confirm.text}</p>
     {#snippet footer()}
       <span style="flex:1"></span>
-      <button class="btn" onclick={() => app.confirm?.resolve(false)}>취소</button>
-      <button class="btn primary" onclick={() => app.confirm?.resolve(true)}>확인</button>
+      <button class="btn" onclick={() => app.confirm?.resolve(false)}>{tr('취소')}</button>
+      <button class="btn primary" onclick={() => app.confirm?.resolve(true)}>{tr('확인')}</button>
     {/snippet}
   </Modal>
 {/if}

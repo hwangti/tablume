@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"tablume/internal/i18n"
 
 	goora "github.com/sijms/go-ora/v2"
 )
@@ -57,7 +58,7 @@ func (oracleDialect) AfterExec(ctx context.Context, q Querier, stmt string) stri
 	if b.Len() == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%s %s이(가) 컴파일 오류와 함께 생성되었습니다:%s", typ, oracleIdent(m[3]), b.String())
+	return i18n.Sprintf("%s %s이(가) 컴파일 오류와 함께 생성되었습니다:%s", typ, oracleIdent(m[3]), b.String())
 }
 
 // Uses go-ora, a pure Go implementation: no Instant Client needed.

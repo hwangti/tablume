@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"tablume/internal/i18n"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -181,7 +182,7 @@ func ResetPasskeys(dataDir string) error {
 // caller holds mu (or the server isn't serving yet)
 func (s *Server) newSetupToken() {
 	s.setupToken = randToken()
-	s.logf("등록된 패스키가 없습니다. 이 주소를 열어 첫 패스키를 등록하세요 (서버를 다시 시작하면 바뀝니다):\n\n    %s/login?token=%s\n", s.origin, s.setupToken)
+	s.logf(i18n.T("등록된 패스키가 없습니다. 이 주소를 열어 첫 패스키를 등록하세요 (서버를 다시 시작하면 바뀝니다):\n\n    %s/login?token=%s\n"), s.origin, s.setupToken)
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -323,7 +324,7 @@ func (s *Server) loginBegin(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.st.Passkeys) == 0 {
-		httpError(w, http.StatusConflict, "등록된 패스키가 없습니다. 서버 로그에 나온 등록 주소로 먼저 패스키를 등록하세요.")
+		httpError(w, http.StatusConflict, i18n.T("등록된 패스키가 없습니다. 서버 로그에 나온 등록 주소로 먼저 패스키를 등록하세요."))
 		return
 	}
 	opts, data, err := s.wa.BeginLogin(owner{&s.st}, webauthn.WithUserVerification(protocol.VerificationRequired))
@@ -340,17 +341,17 @@ func (s *Server) loginFinish(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	c := s.takeCeremony(r, false)
 	if c == nil {
-		httpError(w, http.StatusBadRequest, "로그인 요청이 만료되었습니다. 다시 시도하세요.")
+		httpError(w, http.StatusBadRequest, i18n.T("로그인 요청이 만료되었습니다. 다시 시도하세요."))
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	cred, err := s.wa.FinishLogin(owner{&s.st}, c.data, r)
 	if err != nil {
-		httpError(w, http.StatusUnauthorized, "패스키를 확인하지 못했습니다: "+errDetail(err))
+		httpError(w, http.StatusUnauthorized, i18n.T("패스키를 확인하지 못했습니다: ")+errDetail(err))
 		return
 	}
 	if cred.Authenticator.CloneWarning {
-		httpError(w, http.StatusUnauthorized, "패스키의 서명 카운터가 맞지 않습니다 (복제된 인증기일 수 있음).")
+		httpError(w, http.StatusUnauthorized, i18n.T("패스키의 서명 카운터가 맞지 않습니다 (복제된 인증기일 수 있음)."))
 		return
 	}
 	for i := range s.st.Passkeys {
@@ -371,19 +372,19 @@ type registerBeginReq struct {
 func (s *Server) registerBegin(w http.ResponseWriter, r *http.Request) {
 	var req registerBeginReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
-		httpError(w, http.StatusBadRequest, "잘못된 요청입니다")
+		httpError(w, http.StatusBadRequest, i18n.T("잘못된 요청입니다"))
 		return
 	}
 	signedIn := s.session(w, r) != nil
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !signedIn && !s.tokenValid(req.Token) {
-		httpError(w, http.StatusForbidden, "등록 링크가 만료되었거나 올바르지 않습니다.")
+		httpError(w, http.StatusForbidden, i18n.T("등록 링크가 만료되었거나 올바르지 않습니다."))
 		return
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		name = "패스키"
+		name = i18n.T("패스키")
 	}
 	if len([]rune(name)) > 60 {
 		name = string([]rune(name)[:60])
@@ -419,17 +420,17 @@ func (s *Server) registerFinish(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	c := s.takeCeremony(r, true)
 	if c == nil {
-		httpError(w, http.StatusBadRequest, "등록 요청이 만료되었습니다. 다시 시도하세요.")
+		httpError(w, http.StatusBadRequest, i18n.T("등록 요청이 만료되었습니다. 다시 시도하세요."))
 		return
 	}
 	if !signedIn && !s.tokenValid(c.token) {
-		httpError(w, http.StatusForbidden, "등록 링크가 만료되었거나 이미 사용되었습니다.")
+		httpError(w, http.StatusForbidden, i18n.T("등록 링크가 만료되었거나 이미 사용되었습니다."))
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	cred, err := s.wa.FinishRegistration(owner{&s.st}, c.data, r)
 	if err != nil {
-		httpError(w, http.StatusBadRequest, "패스키를 등록하지 못했습니다: "+errDetail(err))
+		httpError(w, http.StatusBadRequest, i18n.T("패스키를 등록하지 못했습니다: ")+errDetail(err))
 		return
 	}
 	now := time.Now()
@@ -446,7 +447,7 @@ func (s *Server) registerFinish(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.logf("패스키를 등록했습니다: %s", c.name)
+	s.logf(i18n.T("패스키를 등록했습니다: %s"), c.name)
 	if !signedIn {
 		s.startSession(w, cred.ID)
 	}
@@ -479,13 +480,13 @@ func (s *Server) deletePasskey(w http.ResponseWriter, r *http.Request, ls *login
 		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
-		httpError(w, http.StatusBadRequest, "잘못된 요청입니다")
+		httpError(w, http.StatusBadRequest, i18n.T("잘못된 요청입니다"))
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.st.Passkeys) <= 1 {
-		httpError(w, http.StatusConflict, "마지막 패스키는 지울 수 없습니다. 다른 패스키를 먼저 등록하세요.")
+		httpError(w, http.StatusConflict, i18n.T("마지막 패스키는 지울 수 없습니다. 다른 패스키를 먼저 등록하세요."))
 		return
 	}
 	for i, p := range s.st.Passkeys {
@@ -508,7 +509,7 @@ func (s *Server) deletePasskey(w http.ResponseWriter, r *http.Request, ls *login
 		writeJSON(w, map[string]bool{"ok": true})
 		return
 	}
-	httpError(w, http.StatusNotFound, "패스키가 없습니다")
+	httpError(w, http.StatusNotFound, i18n.T("패스키가 없습니다"))
 }
 
 func (s *Server) renamePasskey(w http.ResponseWriter, r *http.Request, ls *loginSession) {
@@ -517,7 +518,7 @@ func (s *Server) renamePasskey(w http.ResponseWriter, r *http.Request, ls *login
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		httpError(w, http.StatusBadRequest, "잘못된 요청입니다")
+		httpError(w, http.StatusBadRequest, i18n.T("잘못된 요청입니다"))
 		return
 	}
 	s.mu.Lock()
@@ -531,7 +532,7 @@ func (s *Server) renamePasskey(w http.ResponseWriter, r *http.Request, ls *login
 			return
 		}
 	}
-	httpError(w, http.StatusNotFound, "패스키가 없습니다")
+	httpError(w, http.StatusNotFound, i18n.T("패스키가 없습니다"))
 }
 
 // invite makes a one-time link that lets another device register a passkey

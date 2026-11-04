@@ -2,10 +2,10 @@ package dbx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"tablume/internal/i18n"
 	"time"
 )
 
@@ -234,7 +234,7 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 		return EditInfo{}, err
 	}
 	if len(source) == 0 {
-		return EditInfo{Reason: "단일 테이블 SELECT 결과만 편집할 수 있습니다 (JOIN, GROUP BY, UNION 등은 불가)"}, nil
+		return EditInfo{Reason: i18n.T("단일 테이블 SELECT 결과만 편집할 수 있습니다 (JOIN, GROUP BY, UNION 등은 불가)")}, nil
 	}
 	schema, t := m.resolveSource(p, currentSchema, source)
 	ctx, cancel := metaCtx()
@@ -244,7 +244,7 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 		return EditInfo{}, err
 	}
 	if len(cols) == 0 {
-		return EditInfo{Reason: fmt.Sprintf("테이블 %s을(를) 찾을 수 없습니다", strings.Join(source, "."))}, nil
+		return EditInfo{Reason: i18n.Sprintf("테이블 %s을(를) 찾을 수 없습니다", strings.Join(source, "."))}, nil
 	}
 	info := EditInfo{Schema: schema, Table: t, Columns: make([]string, len(resultCols)),
 		Keys: make([]string, len(resultCols)), Refs: make([]string, len(resultCols)),
@@ -281,12 +281,12 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 		}
 	}
 	if len(info.Key) == 0 {
-		info.Reason = "기본 키(PK)가 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)"
+		info.Reason = i18n.T("기본 키(PK)가 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)")
 		return info, nil
 	}
 	for _, k := range info.Key {
 		if !seen[k] {
-			info.Reason = fmt.Sprintf("결과에 기본 키 컬럼 %s이(가) 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)", k)
+			info.Reason = i18n.Sprintf("결과에 기본 키 컬럼 %s이(가) 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)", k)
 			return info, nil
 		}
 	}
@@ -350,12 +350,12 @@ func (p *pool) buildChange(target string, types map[string]string, c RowChange) 
 	}
 	where := func() (string, error) {
 		if len(c.Key) == 0 {
-			return "", errors.New("행을 식별할 키 값이 없습니다")
+			return "", i18n.Error("행을 식별할 키 값이 없습니다")
 		}
 		var conds []string
 		for _, col := range sortedKeys(c.Key) {
 			if _, ok := types[col]; !ok {
-				return "", fmt.Errorf("알 수 없는 컬럼: %s", col)
+				return "", i18n.Errorf("알 수 없는 컬럼: %s", col)
 			}
 			v := strArg(c.Key[col])
 			if v == nil {
@@ -369,12 +369,12 @@ func (p *pool) buildChange(target string, types map[string]string, c RowChange) 
 	switch c.Kind {
 	case "update":
 		if len(c.Values) == 0 {
-			return stmtArgs{}, errors.New("변경할 값이 없습니다")
+			return stmtArgs{}, i18n.Error("변경할 값이 없습니다")
 		}
 		var sets []string
 		for _, col := range sortedKeys(c.Values) {
 			if _, ok := types[col]; !ok {
-				return stmtArgs{}, fmt.Errorf("알 수 없는 컬럼: %s", col)
+				return stmtArgs{}, i18n.Errorf("알 수 없는 컬럼: %s", col)
 			}
 			sets = append(sets, p.quote(col)+" = "+param(col, c.Values[col]))
 		}
@@ -393,7 +393,7 @@ func (p *pool) buildChange(target string, types map[string]string, c RowChange) 
 		var cols, vals []string
 		for _, col := range sortedKeys(c.Values) {
 			if _, ok := types[col]; !ok {
-				return stmtArgs{}, fmt.Errorf("알 수 없는 컬럼: %s", col)
+				return stmtArgs{}, i18n.Errorf("알 수 없는 컬럼: %s", col)
 			}
 			cols = append(cols, p.quote(col))
 			vals = append(vals, param(col, c.Values[col]))
@@ -406,7 +406,7 @@ func (p *pool) buildChange(target string, types map[string]string, c RowChange) 
 		}
 		return stmtArgs{"INSERT INTO " + target + " (" + strings.Join(cols, ", ") + ") VALUES (" + strings.Join(vals, ", ") + ")", args, false}, nil
 	}
-	return stmtArgs{}, fmt.Errorf("알 수 없는 변경 종류: %s", c.Kind)
+	return stmtArgs{}, i18n.Errorf("알 수 없는 변경 종류: %s", c.Kind)
 }
 
 func sortedKeys(m map[string]any) []string {
@@ -479,11 +479,11 @@ func (m *Manager) ApplyChanges(req ApplyRequest) (int, error) {
 	for i, st := range stmts {
 		res, err := tx.ExecContext(ctx, st.sql, st.args...)
 		if err != nil {
-			return 0, fmt.Errorf("%d번째 변경 실패 (모두 취소됨): %w\n%s", i+1, err, inlineArgs(st.sql, st.args, p))
+			return 0, i18n.Errorf("%d번째 변경 실패 (모두 취소됨): %w\n%s", i+1, err, inlineArgs(st.sql, st.args, p))
 		}
 		if st.one {
 			if n, err := res.RowsAffected(); err == nil && n != 1 {
-				return 0, fmt.Errorf("%d번째 변경이 %d개 행에 적용되어 모두 취소했습니다. 다른 곳에서 바뀌었을 수 있으니 새로고침하세요.\n%s",
+				return 0, i18n.Errorf("%d번째 변경이 %d개 행에 적용되어 모두 취소했습니다. 다른 곳에서 바뀌었을 수 있으니 새로고침하세요.\n%s",
 					i+1, n, inlineArgs(st.sql, st.args, p))
 			}
 		}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"tablume/internal/dbx"
+	"tablume/internal/i18n"
 )
 
 // Platform tells the frontend which build it runs in: "desktop" (a native
@@ -41,7 +41,7 @@ type FileList struct {
 // realRoot is the files folder with symlinks resolved.
 func (a *App) realRoot() (string, error) {
 	if a.fileRoot == "" {
-		return "", errors.New("서버 파일 탐색은 웹 버전에서만 쓸 수 있습니다")
+		return "", i18n.Error("서버 파일 탐색은 웹 버전에서만 쓸 수 있습니다")
 	}
 	return filepath.EvalSymlinks(a.fileRoot)
 }
@@ -70,7 +70,7 @@ func (a *App) inRoot(p string) (string, error) {
 	}
 	rel, err := filepath.Rel(root, real)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("웹 버전에서는 파일 폴더(%s) 안의 파일만 쓸 수 있습니다", a.fileRoot)
+		return "", i18n.Errorf("웹 버전에서는 파일 폴더(%s) 안의 파일만 쓸 수 있습니다", a.fileRoot)
 	}
 	return real, nil
 }
@@ -142,7 +142,7 @@ func (a *App) checkFiles(c *dbx.ConnConfig) error {
 	if c.SSH && c.SSHAuth == "key" {
 		// (the desktop app falls back to ~/.ssh/id_*: the server's own keys)
 		if strings.TrimSpace(c.SSHKeyFile) == "" {
-			return errors.New("SSH 키 파일을 고르세요 (웹 버전은 파일 폴더 안의 키만 씁니다)")
+			return i18n.Error("SSH 키 파일을 고르세요 (웹 버전은 파일 폴더 안의 키만 씁니다)")
 		}
 		p, err := a.inRoot(c.SSHKeyFile)
 		if err != nil {

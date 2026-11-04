@@ -2,6 +2,7 @@
   // The table's columns as a table (the "컬럼" side of the structure tab). Type,
   // NULL, default and comment can be edited: the changes become ALTER
   // statements that are shown before they run.
+  import { t } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
   import { copyText } from '../lib/clipboard'
   import { toast, openConsole } from '../lib/state.svelte'
@@ -57,9 +58,9 @@
 
   let readOnlyReason = $derived(
     driver === 'sqlite'
-      ? 'SQLite는 컬럼을 바꾸려면 테이블을 새로 만들어야 해서 여기서는 편집할 수 없습니다'
+      ? t('SQLite는 컬럼을 바꾸려면 테이블을 새로 만들어야 해서 여기서는 편집할 수 없습니다')
       : table.type.toUpperCase().includes('VIEW')
-        ? '뷰는 편집할 수 없습니다'
+        ? t('뷰는 편집할 수 없습니다')
         : '',
   )
 
@@ -147,12 +148,12 @@
     try {
       const r = await api.ApplyAlter({ connId, schema, table: $state.snapshot(table), changes: changes() })
       if (r.error) {
-        onlog?.(a.sql.slice(0, r.rolledBack ? a.sql.length : r.applied + 1), '', r.error + (r.rolledBack ? '\n(모두 취소됨)' : `\n(${r.applied}/${r.total}개 적용됨)`))
+        onlog?.(a.sql.slice(0, r.rolledBack ? a.sql.length : r.applied + 1), '', r.error + '\n' + (r.rolledBack ? t('(모두 취소됨)') : t('({a}/{n}개 적용됨)', { a: r.applied, n: r.total })))
         a.busy = false
         a.error = r.error
         a.note = r.rolledBack
-          ? '하나라도 실패하면 전부 취소됩니다. 아무것도 바뀌지 않았습니다.'
-          : `${r.total}개 중 ${r.applied}개는 이미 적용됐습니다 (이 DB는 DDL을 되돌릴 수 없습니다).`
+          ? t('하나라도 실패하면 전부 취소됩니다. 아무것도 바뀌지 않았습니다.')
+          : t('{n}개 중 {a}개는 이미 적용됐습니다 (이 DB는 DDL을 되돌릴 수 없습니다).', { n: r.total, a: r.applied })
         if (!r.rolledBack && r.applied > 0) {
           draft = {}
           onchanged ? onchanged() : load()
@@ -160,8 +161,8 @@
         return
       }
       apply = null
-      onlog?.(a.sql, `컬럼 변경 ${r.applied}건 적용`)
-      toast(`컬럼 변경 ${r.applied}건 적용됨`)
+      onlog?.(a.sql, t('컬럼 변경 {n}건 적용', { n: r.applied }))
+      toast(t('컬럼 변경 {n}건 적용됨', { n: r.applied }))
       draft = {}
       onchanged ? onchanged() : load()
     } catch (e) {
@@ -172,47 +173,47 @@
 
   function openSql(sql: string[]) {
     apply = null
-    openConsole(connId, { schema, sql: sql.join(';\n') + ';\n', title: `컬럼 변경: ${table.name}` })
+    openConsole(connId, { schema, sql: sql.join(';\n') + ';\n', title: `${t('컬럼 변경')}: ${table.name}` })
   }
 
   function copyRow(c: Column) {
     copyText([c.name, c.type, c.nullable ? 'NULL' : 'NOT NULL', c.default ?? '', c.comment ?? ''].join('\t'))
-    toast('행 복사됨')
+    toast(t('행 복사됨'))
   }
 </script>
 
 {#if error}
   <div class="msg"><pre>{error}</pre></div>
 {:else if cols === null}
-  <div class="placeholder"><span class="spin"></span> 컬럼 불러오는 중…</div>
+  <div class="placeholder"><span class="spin"></span> {t('컬럼 불러오는 중…')}</div>
 {:else}
   <div class="wrap">
     <div class="bar">
-      <span class="title">컬럼 <span class="count">{cols.length}</span></span>
+      <span class="title">{t('컬럼')} <span class="count">{cols.length}</span></span>
       {#if table.comment}<span class="tcomment">{table.comment}</span>{/if}
       <span class="grow"></span>
       {#if readOnlyReason}
-        <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> 읽기 전용</span>
+        <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> {t('읽기 전용')}</span>
       {:else if pending > 0}
-        <span class="pending">컬럼 {pending}개 변경</span>
-        <button class="btn mini primary" onclick={openApply}><Icon name="check" size={13} /> 적용</button>
-        <button class="btn mini" onclick={() => (draft = {})}><Icon name="undo" size={13} /> 되돌리기</button>
+        <span class="pending">{t('컬럼 {n}개 변경', { n: pending })}</span>
+        <button class="btn mini primary" onclick={openApply}><Icon name="check" size={13} /> {t('적용')}</button>
+        <button class="btn mini" onclick={() => (draft = {})}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
       {:else}
-        <span class="hint">타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다</span>
+        <span class="hint">{t('타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
       {/if}
     </div>
     <table>
       <thead>
         <tr>
           <th class="n">#</th>
-          <th class="k">키</th>
-          <th>이름</th>
-          <th>타입</th>
+          <th class="k">{t('키')}</th>
+          <th>{t('이름')}</th>
+          <th>{t('타입')}</th>
           <th class="c">NULL</th>
-          <th>기본값</th>
-          <th>기타</th>
-          <th>참조 (FK)</th>
-          <th>코멘트</th>
+          <th>{t('기본값')}</th>
+          <th>{t('기타')}</th>
+          <th>{t('참조 (FK)')}</th>
+          <th>{t('코멘트')}</th>
         </tr>
       </thead>
       <tbody>
@@ -221,11 +222,11 @@
           <tr class:sel={sel === i} onclick={() => (sel = i)}>
             <td class="n">{i + 1}</td>
             <td class="k">
-              {#if c.pk}<span title="기본 키 (PK)"><Icon name="key" size={12} color="var(--key-pk)" /></span>{/if}
-              {#if c.fk}<span title="외래 키 (FK)"><Icon name="link" size={12} color="var(--key-fk)" /></span>{/if}
-              {#if c.unique}<span title="유니크 (UK)"><Icon name="unique" size={12} color="var(--key-uk)" /></span>{/if}
+              {#if c.pk}<span title={t('기본 키 (PK)')}><Icon name="key" size={12} color="var(--key-pk)" /></span>{/if}
+              {#if c.fk}<span title={t('외래 키 (FK)')}><Icon name="link" size={12} color="var(--key-fk)" /></span>{/if}
+              {#if c.unique}<span title={t('유니크 (UK)')}><Icon name="unique" size={12} color="var(--key-uk)" /></span>{/if}
             </td>
-            <td class="name mono" ondblclick={() => copyRow(c)} title="더블클릭: 행 복사">{c.name}</td>
+            <td class="name mono" ondblclick={() => copyRow(c)} title={t('더블클릭: 행 복사')}>{c.name}</td>
             {#snippet cell(field: 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
               <td class="{cls} edit" class:edited={changed(c, field)} ondblclick={() => startEdit(c, field)}>
                 {#if editing?.name === c.name && editing.field === field}
@@ -235,7 +236,7 @@
             {/snippet}
             {@render cell('type', 'type mono', cur.type.toLowerCase())}
             <td class="c" class:edited={changed(c, 'nullable')}>
-              <label class="nullbox" title={readOnlyReason || 'NULL 허용'}>
+              <label class="nullbox" title={readOnlyReason || t('NULL 허용')}>
                 <input type="checkbox" checked={cur.nullable} disabled={!!readOnlyReason} onchange={(e) => setField(c, 'nullable', (e.currentTarget as HTMLInputElement).checked)} />
                 {#if cur.nullable}<span class="dim">NULL</span>{:else}<b>NOT NULL</b>{/if}
               </label>
@@ -252,12 +253,12 @@
 {/if}
 
 {#if apply}
-  <Modal title="컬럼 변경 적용 — {apply.sql.length}개 문장" onclose={() => (apply = null)} width={760} dismissible={false} onsubmit={() => apply && !apply.busy && !apply.error && doApply()}>
+  <Modal title={t('컬럼 변경 적용 — {n}개 문장', { n: apply.sql.length })} onclose={() => (apply = null)} width={760} dismissible={false} onsubmit={() => apply && !apply.busy && !apply.error && doApply()}>
     <p class="note">
       {#if transactional}
-        아래 문장을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.
+        {t('아래 문장을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.')}
       {:else}
-        아래 문장을 차례로 실행합니다. 이 DB는 DDL을 되돌릴 수 없어서, 중간에 실패하면 그 앞까지는 적용된 채로 남습니다.
+        {t('아래 문장을 차례로 실행합니다. 이 DB는 DDL을 되돌릴 수 없어서, 중간에 실패하면 그 앞까지는 적용된 채로 남습니다.')}
       {/if}
     </p>
     <SqlPreview sql={apply.sql} driver={driver} />
@@ -265,11 +266,11 @@
       <div class="err">{apply.error}{#if apply.note}<div class="err-note">{apply.note}</div>{/if}</div>
     {/if}
     {#snippet footer()}
-      <button class="btn" onclick={() => apply && copyText(apply.sql.join(';\n') + ';')}><Icon name="copy" size={13} /> SQL 복사</button>
-      <button class="btn" title="실행하지 않고 새 SQL 콘솔에 옮깁니다" onclick={() => apply && openSql(apply.sql)}><Icon name="console" size={13} /> 콘솔에서 열기</button>
+      <button class="btn" onclick={() => apply && copyText(apply.sql.join(';\n') + ';')}><Icon name="copy" size={13} /> {t('SQL 복사')}</button>
+      <button class="btn" title={t('실행하지 않고 새 SQL 콘솔에 옮깁니다')} onclick={() => apply && openSql(apply.sql)}><Icon name="console" size={13} /> {t('콘솔에서 열기')}</button>
       <span style="flex:1"></span>
-      <button class="btn" onclick={() => (apply = null)}>닫기</button>
-      <button class="btn primary" onclick={doApply} disabled={apply?.busy || !!apply?.error}>{apply?.busy ? '적용 중…' : '적용'}</button>
+      <button class="btn" onclick={() => (apply = null)}>{t('닫기')}</button>
+      <button class="btn primary" onclick={doApply} disabled={apply?.busy || !!apply?.error}>{apply?.busy ? t('적용 중…') : t('적용')}</button>
     {/snippet}
   </Modal>
 {/if}

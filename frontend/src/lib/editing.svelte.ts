@@ -1,5 +1,6 @@
 // Pending edits on a result set: kept client-side until "적용", then sent to
 // the backend as one transaction.
+import { t } from './i18n.svelte'
 import { api, errText } from './api'
 import { toast, type Tab } from './state.svelte'
 import type { Cell, EditState, RowChange, StmtResult } from './types'
@@ -16,7 +17,7 @@ export async function loadEditInfo(tab: Tab, r: StmtResult) {
   if (!r.source || !r.source.length) {
     st.info = {
       editable: false,
-      reason: '단일 테이블 SELECT 결과만 편집할 수 있습니다 (JOIN, GROUP BY, UNION 등은 불가)',
+      reason: t('단일 테이블 SELECT 결과만 편집할 수 있습니다 (JOIN, GROUP BY, UNION 등은 불가)'),
       schema: '',
       table: { schema: '', name: '', type: '' },
       columns: [],

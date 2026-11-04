@@ -240,6 +240,14 @@ export function SetDarkTitleBar(dark: boolean): $CancellablePromise<void> {
 }
 
 /**
+ * SetLanguage is the interface language chosen in the app ("ko" or "en"):
+ * the backend's messages follow it.
+ */
+export function SetLanguage(lang: string): $CancellablePromise<void> {
+    return $Call.ByID(3105553901, lang);
+}
+
+/**
  * SetSchemaFilter stores which schemas the tree shows for a connection.
  */
 export function SetSchemaFilter(id: string, f: dbx$0.SchemaFilter | null): $CancellablePromise<void> {

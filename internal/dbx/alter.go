@@ -2,9 +2,9 @@ package dbx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
+	"tablume/internal/i18n"
 )
 
 // Editing a table's columns from the structure view: type, NULL, default
@@ -76,10 +76,10 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	}
 	ad, ok := p.d.(alterDialect)
 	if !ok {
-		return nil, nil, nil, errors.New("이 DB에서는 컬럼을 바꿀 수 없습니다 (SQLite는 테이블을 새로 만들어야 합니다)")
+		return nil, nil, nil, i18n.Error("이 DB에서는 컬럼을 바꿀 수 없습니다 (SQLite는 테이블을 새로 만들어야 합니다)")
 	}
 	if strings.Contains(strings.ToUpper(req.Table.Type), "VIEW") {
-		return nil, nil, nil, errors.New("뷰의 컬럼은 바꿀 수 없습니다")
+		return nil, nil, nil, i18n.Error("뷰의 컬럼은 바꿀 수 없습니다")
 	}
 	ctx, cancel := metaCtx()
 	defer cancel()
@@ -87,7 +87,7 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	var out []string
 	for _, a := range req.Changes {
 		if strings.TrimSpace(a.New.Type) == "" {
-			return nil, nil, nil, fmt.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
+			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
 		}
 		if !diffOf(a).any() {
 			continue

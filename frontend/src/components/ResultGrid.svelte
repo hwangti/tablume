@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { num, t } from '../lib/i18n.svelte'
   import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import { onMount, untrack } from 'svelte'
   import type { Cell, EditInfo, ResultColumn, StmtResult } from '../lib/types'
@@ -93,13 +94,13 @@
     if (!inf || !rowEditable(inf, ri)) {
       if (quiet) return false
       if (initial === undefined) openViewer(vi, p)
-      else if (inf) toast('읽기 전용: ' + inf.reason)
+      else if (inf) toast(t('읽기 전용') + ': ' + inf.reason)
       return false
     }
     if (!inf.columns[c]) {
       if (quiet) return false
       if (initial === undefined) openViewer(vi, p)
-      else toast('이 컬럼은 편집할 수 없습니다 (바이너리 또는 계산 컬럼)')
+      else toast(t('이 컬럼은 편집할 수 없습니다 (바이너리 또는 계산 컬럼)'))
       return false
     }
     if (st?.deleted[ri]) return false
@@ -196,7 +197,7 @@
   export async function newRow() {
     const inf = await ensureEdit()
     if (!inf?.editable && !inf?.insertable) {
-      if (inf) toast('읽기 전용: ' + inf.reason)
+      if (inf) toast(t('읽기 전용') + ': ' + inf.reason)
       return
     }
     const ri = addRow(result)
@@ -211,7 +212,7 @@
     const inf = await ensureEdit()
     const rs = selectedRows()
     if (!inf || !rs.every((ri) => rowEditable(inf, ri))) {
-      if (inf) toast('읽기 전용: ' + inf.reason)
+      if (inf) toast(t('읽기 전용') + ': ' + inf.reason)
       return
     }
     toggleDelete(result, rs)
@@ -295,9 +296,9 @@
     const k = info?.keys?.[c]
     if (!k) return []
     const out = []
-    if (k.includes('PK')) out.push({ icon: 'key', color: 'var(--key-pk)', label: '기본 키 (PK)' })
-    if (k.includes('FK')) out.push({ icon: 'link', color: 'var(--key-fk)', label: `외래 키 (FK) → ${info?.refs?.[c] ?? ''}` })
-    if (k.includes('UK')) out.push({ icon: 'unique', color: 'var(--key-uk)', label: '유니크 (UK)' })
+    if (k.includes('PK')) out.push({ icon: 'key', color: 'var(--key-pk)', label: t('기본 키 (PK)') })
+    if (k.includes('FK')) out.push({ icon: 'link', color: 'var(--key-fk)', label: `${t('외래 키 (FK)')} → ${info?.refs?.[c] ?? ''}` })
+    if (k.includes('UK')) out.push({ icon: 'unique', color: 'var(--key-uk)', label: t('유니크 (UK)') })
     return out
   }
 
@@ -630,7 +631,7 @@
     if (withHeader) lines.unshift(m.cols.map((c) => columns[c].name).join('\t'))
     await copyText(lines.join('\n'))
     const n = m.data.length * m.cols.length
-    if (n > 1) toast(`${m.data.length}행 × ${m.cols.length}열 복사됨`)
+    if (n > 1) toast(t('{r}행 × {c}열 복사됨', { r: num(m.data.length), c: m.cols.length }))
   }
 
   async function copyInList() {
@@ -644,7 +645,7 @@
         vals.add(numeric[m.cols[k]] ? v : "'" + v.replace(/'/g, "''") + "'")
       }
     await copyText('(' + [...vals].join(', ') + ')')
-    toast(`IN 목록 복사됨 (${vals.size}개 값)`)
+    toast(t('IN 목록 복사됨 ({n}개 값)', { n: num(vals.size) }))
   }
 
   // "…" while editing inline: continue in the large editor with the draft.
@@ -777,7 +778,7 @@
         class="num corner"
         class:has-hidden={hiddenCount > 0}
         style:width="{numW}px"
-        title={hiddenCount > 0 ? `컬럼 ${hiddenCount}개 숨김 · 눌러서 보이기/숨기기` : '컬럼 보이기/숨기기'}
+        title={hiddenCount > 0 ? t('컬럼 {n}개 숨김 · 눌러서 보이기/숨기기', { n: hiddenCount }) : t('컬럼 보이기/숨기기')}
         onclick={(e) => (e.stopPropagation(), (colMenu = colMenu ? null : (closeMenus(), { x: e.clientX, y: e.clientY })))}
       >
         <Icon name="columns" size={13} />{#if hiddenCount > 0}<span class="hc">{hiddenCount}</span>{/if}
@@ -789,7 +790,7 @@
           class="th"
           class:dragging={drag?.from === p}
           style:width="{cw[c]}px"
-          title={`${col.name} ${col.type.toLowerCase()}${info?.comments?.[c] ? '\n' + info.comments[c] : ''}\n\n${onsort ? '클릭: DB에서 정렬 (ORDER BY)' : hasMore ? '클릭: 불러온 행만 화면에서 정렬' : '클릭: 정렬'} · 드래그: 순서 변경`}
+          title={`${col.name} ${col.type.toLowerCase()}${info?.comments?.[c] ? '\n' + info.comments[c] : ''}\n\n${onsort ? t('클릭: DB에서 정렬 (ORDER BY)') : hasMore ? t('클릭: 불러온 행만 화면에서 정렬') : t('클릭: 정렬')} · ${t('드래그: 순서 변경')}`}
           onmousedown={(e) => headDown(e, p)}
           onclick={() => headerClick(c)}
           oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation(), closeMenus(), (headMenu = { x: e.clientX, y: e.clientY, c }))}
@@ -812,7 +813,7 @@
 
     {#if canLoadPrev || loadingPrev}
       <div class="more top" style:top="{HEAD_H}px" style:left="{barLeft}px" style:width="{barW}px">
-        {#if loadingPrev}이전 행 불러오는 중…{:else}<button class="link" onclick={() => onloadprev?.()}>이전 행 불러오기</button>{/if}
+        {#if loadingPrev}{t('이전 행 불러오는 중…')}{:else}<button class="link" onclick={() => onloadprev?.()}>{t('이전 행 불러오기')}</button>{/if}
       </div>
     {/if}
 
@@ -868,7 +869,7 @@
                    is prevented so the input keeps focus (no blur = no commit) -->
               {#if !kind[c]}<button
                 class="dots"
-                title="큰 창에서 편집 (F2)"
+                title="{t('큰 창에서 편집')} (F2)"
                 onmousedown={(e) => (e.preventDefault(), e.stopPropagation())}
                 ondblclick={(e) => e.stopPropagation()}
                 onclick={(e) => (e.stopPropagation(), editInViewer())}>…</button
@@ -884,13 +885,13 @@
 
     {#if hasMore}
       <div class="more" style:top="{BODY_T + order.length * ROW_H}px" style:left="{barLeft}px" style:width="{barW}px">
-        {#if loadingMore}더 불러오는 중…{:else}<button class="link" onclick={onloadmore}>더 불러오기</button>{/if}
+        {#if loadingMore}{t('더 불러오는 중…')}{:else}<button class="link" onclick={onloadmore}>{t('더 불러오기')}</button>{/if}
       </div>
     {/if}
   </div>
 
   {#if rows.length === 0}
-    <div class="empty">결과 행이 없습니다</div>
+    <div class="empty">{t('결과 행이 없습니다')}</div>
   {/if}
 </div>
 
@@ -898,26 +899,26 @@
 
 {#if menu}
   <div class="menu" style:left="{menu.x}px" style:top="{menu.y}px" use:fitMenu={menu}>
-    <button onclick={() => copySelection(false)}>{@render mi('copy')}복사 <kbd>{modKey}C</kbd></button>
-    <button onclick={() => copySelection(true)}>{@render mi('copy')}헤더 포함 복사</button>
-    <button onclick={copyInList}>{@render mi('list')}IN (…) 목록으로 복사</button>
-    {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>{@render mi('view')}값 보기 <kbd>Shift+Enter</kbd></button>{/if}
+    <button onclick={() => copySelection(false)}>{@render mi('copy')}{t('복사')} <kbd>{modKey}C</kbd></button>
+    <button onclick={() => copySelection(true)}>{@render mi('copy')}{t('헤더 포함 복사')}</button>
+    <button onclick={copyInList}>{@render mi('list')}{t('IN (…) 목록으로 복사')}</button>
+    {#if focus}<button onclick={() => focus && openViewer(focus.r, focus.c)}>{@render mi('view')}{t('값 보기')} <kbd>Shift+Enter</kbd></button>{/if}
     {#if focus && fkTarget(focus.r, focus.c)}
       <button onclick={() => focus && follow(focus.r, focus.c)}
-        >{@render mi('link')}참조 행 열기 ({info?.refs?.[vc[focus.c]]}) <kbd>{isMac ? '⌘' : 'Alt+'}클릭</kbd></button
+        >{@render mi('link')}{t('참조 행 열기')} ({info?.refs?.[vc[focus.c]]}) <kbd>{isMac ? '⌘' : 'Alt+'}{t('클릭')}</kbd></button
       >
     {/if}
-    <button onclick={selectAll}>{@render mi('selectAll')}전체 선택</button>
+    <button onclick={selectAll}>{@render mi('selectAll')}{t('전체 선택')}</button>
     {#if info?.editable || info?.insertable}
       <hr />
-      {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>{@render mi('edit')}편집 <kbd>Enter</kbd></button>{/if}
-      <button onclick={setNull}>{@render mi('nullValue')}NULL로 설정</button>
-      <button onclick={newRow}>{@render mi('rowAdd')}행 추가</button>
-      <button class="danger" onclick={deleteRows}>{@render mi('trash')}행 삭제 / 복원 <kbd>Delete</kbd></button>
+      {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>{@render mi('edit')}{t('편집')} <kbd>Enter</kbd></button>{/if}
+      <button onclick={setNull}>{@render mi('nullValue')}{t('NULL로 설정')}</button>
+      <button onclick={newRow}>{@render mi('rowAdd')}{t('행 추가')}</button>
+      <button class="danger" onclick={deleteRows}>{@render mi('trash')}{t('행 삭제 / 복원')} <kbd>Delete</kbd></button>
       {#if editedInSelection().length}
-        <button onclick={revertSelected}>{@render mi('undo')}선택 셀 되돌리기 <kbd>{modKey}Z</kbd></button>
+        <button onclick={revertSelected}>{@render mi('undo')}{t('선택 셀 되돌리기')} <kbd>{modKey}Z</kbd></button>
       {/if}
-      <button onclick={() => revert(result, selectedRows())}>{@render mi('undo')}선택 행 변경 되돌리기</button>
+      <button onclick={() => revert(result, selectedRows())}>{@render mi('undo')}{t('선택 행 변경 되돌리기')}</button>
     {/if}
   </div>
 {/if}
@@ -933,7 +934,7 @@
         indeterminate={hiddenCount > 0 && vc.length > 0}
         onchange={() => setHidden(hiddenCount === 0 ? columns.slice(1).map((col) => col.name) : [])}
       />
-      <span>컬럼 {vc.length}/{columns.length}</span>
+      <span>{t('컬럼')} {vc.length}/{columns.length}</span>
     </label>
     <div class="cm-list">
       {#each columns as col, i (i)}
@@ -951,7 +952,7 @@
       {/each}
     </div>
     {#if orderNames.length}
-      <button class="link cm-reset" onclick={() => ((orderNames = []), storeLayout())}>컬럼 순서 원래대로</button>
+      <button class="link cm-reset" onclick={() => ((orderNames = []), storeLayout())}>{t('컬럼 순서 원래대로')}</button>
     {/if}
   </div>
 {/if}
@@ -959,10 +960,10 @@
 {#if headMenu}
   {@const hc = headMenu.c}
   <div class="menu" style:left="{headMenu.x}px" style:top="{headMenu.y}px" use:fitMenu={headMenu}>
-    <button onclick={() => setHidden([...hiddenNames, columns[hc].name])} disabled={vc.length <= 1}>{@render mi('eyeOff')}이 컬럼 숨기기</button>
-    {#if hiddenCount > 0}<button onclick={() => setHidden([])}>{@render mi('view')}숨긴 컬럼 모두 보이기 ({hiddenCount})</button>{/if}
-    {#if orderNames.length}<button onclick={() => ((orderNames = []), storeLayout())}>{@render mi('undo')}컬럼 순서 원래대로</button>{/if}
-    <button onclick={() => copyText(columns[hc].name)}>{@render mi('copy')}컬럼 이름 복사</button>
+    <button onclick={() => setHidden([...hiddenNames, columns[hc].name])} disabled={vc.length <= 1}>{@render mi('eyeOff')}{t('이 컬럼 숨기기')}</button>
+    {#if hiddenCount > 0}<button onclick={() => setHidden([])}>{@render mi('view')}{t('숨긴 컬럼 모두 보이기')} ({hiddenCount})</button>{/if}
+    {#if orderNames.length}<button onclick={() => ((orderNames = []), storeLayout())}>{@render mi('undo')}{t('컬럼 순서 원래대로')}</button>{/if}
+    <button onclick={() => copyText(columns[hc].name)}>{@render mi('copy')}{t('컬럼 이름 복사')}</button>
   </div>
 {/if}
 

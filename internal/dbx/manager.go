@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"tablume/internal/i18n"
 	"time"
 	"unicode/utf8"
 )
@@ -224,7 +225,7 @@ func (m *Manager) pool(id string) (*pool, error) {
 	defer m.mu.Unlock()
 	p := m.pools[id]
 	if p == nil {
-		return nil, errors.New("연결되어 있지 않습니다")
+		return nil, i18n.Error("연결되어 있지 않습니다")
 	}
 	return p, nil
 }
@@ -569,12 +570,12 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 	if req.Cursor >= 0 {
 		st, ok := PickAt(req.SQL, stmts, byteOffset(req.SQL, req.Cursor))
 		if !ok {
-			return ExecResponse{}, errors.New("실행할 SQL이 없습니다")
+			return ExecResponse{}, i18n.Error("실행할 SQL이 없습니다")
 		}
 		stmts = []Stmt{st}
 	}
 	if len(stmts) == 0 {
-		return ExecResponse{}, errors.New("실행할 SQL이 없습니다")
+		return ExecResponse{}, i18n.Error("실행할 SQL이 없습니다")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -598,7 +599,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		if q := p.d.UseSchema(req.Schema); q != "" {
 			if _, err := s.conn.ExecContext(ctx, q); err != nil {
 				cancel()
-				return resp, fmt.Errorf("스키마 변경 실패: %w", err)
+				return resp, i18n.Errorf("스키마 변경 실패: %w", err)
 			}
 		}
 		s.schema = req.Schema
@@ -636,7 +637,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		}
 		r.ElapsedMs = time.Since(start).Milliseconds()
 		if abandoned {
-			r.Error = "사용자에 의해 취소됨 (서버가 취소에 응답하지 않아 이 탭의 연결을 새로 엽니다)"
+			r.Error = i18n.T("사용자에 의해 취소됨 (서버가 취소에 응답하지 않아 이 탭의 연결을 새로 엽니다)")
 			resp.Results = append(resp.Results, r)
 			break
 		}
@@ -670,7 +671,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			}
 		}
 		if r.Error != "" && ctx.Err() != nil {
-			r.Error = "사용자에 의해 취소됨"
+			r.Error = i18n.T("사용자에 의해 취소됨")
 		}
 		resp.Results = append(resp.Results, r)
 		if r.Error != "" {
@@ -753,15 +754,15 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 	s := m.sessions[tabID]
 	m.mu.Unlock()
 	if s == nil {
-		return FetchResponse{}, errors.New("세션이 없습니다")
+		return FetchResponse{}, i18n.Error("세션이 없습니다")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cur == nil || s.cur.id != cursorID {
 		if s.expired == cursorID {
-			return FetchResponse{}, fmt.Errorf("%d초 동안 더 불러오지 않아 결과 커서를 닫았습니다 (테이블 잠금을 오래 잡지 않도록). 더 보려면 쿼리를 다시 실행하세요", int(cursorIdle.Seconds()))
+			return FetchResponse{}, i18n.Errorf("%d초 동안 더 불러오지 않아 결과 커서를 닫았습니다 (테이블 잠금을 오래 잡지 않도록). 더 보려면 쿼리를 다시 실행하세요", int(cursorIdle.Seconds()))
 		}
-		return FetchResponse{}, errors.New("결과 커서가 닫혔습니다. 쿼리를 다시 실행하세요")
+		return FetchResponse{}, i18n.Error("결과 커서가 닫혔습니다. 쿼리를 다시 실행하세요")
 	}
 	s.cur.idle.Reset(cursorIdle)
 	if n <= 0 {
@@ -774,7 +775,7 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 	if err != nil && (errors.Is(err, driver.ErrBadConn) || strings.Contains(err.Error(), "invalid connection")) {
 		// MySQL/MariaDB drop a result nobody reads for net_write_timeout
 		// (60s by default). The next run opens a new connection.
-		err = errors.New("DB 서버가 연결을 끊어 나머지 결과를 가져올 수 없습니다. 결과를 오래 읽지 않으면 서버가 연결을 끊습니다(MySQL/MariaDB의 net_write_timeout). 쿼리를 다시 실행하세요")
+		err = i18n.Error("DB 서버가 연결을 끊어 나머지 결과를 가져올 수 없습니다. 결과를 오래 읽지 않으면 서버가 연결을 끊습니다(MySQL/MariaDB의 net_write_timeout). 쿼리를 다시 실행하세요")
 	}
 	return FetchResponse{Rows: rows, HasMore: more && err == nil}, err
 }
@@ -805,7 +806,7 @@ func (m *Manager) pageRun(tabID, connID string, fn func(ctx context.Context, s *
 	}
 	err = fn(ctx, s, p)
 	if err != nil && ctx.Err() != nil {
-		err = errors.New("사용자에 의해 취소됨")
+		err = i18n.Error("사용자에 의해 취소됨")
 	}
 	return err
 }
@@ -819,11 +820,11 @@ func (m *Manager) FetchPage(tabID, connID, stmt string, offset, n int) (FetchRes
 	err := m.pageRun(tabID, connID, func(ctx context.Context, s *session, p *pool) error {
 		q, ok := pagedSQL(stmt, p.d.Style(), n+1, offset, p.legacyOracle)
 		if !ok {
-			return errors.New("이 쿼리는 페이지 단위로 읽을 수 없습니다")
+			return i18n.Error("이 쿼리는 페이지 단위로 읽을 수 없습니다")
 		}
 		out, abandoned := s.runStmt(ctx, q, true, n+1)
 		if abandoned {
-			return errors.New("사용자에 의해 취소됨")
+			return i18n.Error("사용자에 의해 취소됨")
 		}
 		if out.rows != nil {
 			out.rows.Close()

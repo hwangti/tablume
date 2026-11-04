@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '../lib/i18n.svelte'
   import { isWeb } from '../lib/platform'
   import { pickServerFile } from '../lib/webfiles.svelte'
   import { api, errText } from '../lib/api'
@@ -42,27 +43,27 @@
   }
 
   let dbLabel = $derived(
-    c.driver === 'oracle' ? (c.oracleSid ? 'SID' : '서비스 이름') : c.driver === 'sqlite' ? '파일' : '데이터베이스',
+    c.driver === 'oracle' ? (c.oracleSid ? 'SID' : t('서비스 이름')) : c.driver === 'sqlite' ? t('파일') : t('데이터베이스'),
   )
 
   let paramsHint = $derived(
     {
-      mysql: '예: tls=true 또는 tls=skip-verify, tls-ca=/경로/ca.pem',
-      mariadb: '예: tls=true 또는 tls=skip-verify, tls-ca=/경로/ca.pem',
-      postgres: '예: sslmode=require',
-      mssql: '예: encrypt=true&TrustServerCertificate=false',
-      oracle: '예: SSL=true&SSL VERIFY=false',
-      sqlite: '예: _pragma=foreign_keys(1)',
+      mysql: t('예: tls=true 또는 tls=skip-verify, tls-ca=/경로/ca.pem'),
+      mariadb: t('예: tls=true 또는 tls=skip-verify, tls-ca=/경로/ca.pem'),
+      postgres: t('예: {x}', { x: 'sslmode=require' }),
+      mssql: t('예: {x}', { x: 'encrypt=true&TrustServerCertificate=false' }),
+      oracle: t('예: {x}', { x: 'SSL=true&SSL VERIFY=false' }),
+      sqlite: t('예: {x}', { x: '_pragma=foreign_keys(1)' }),
     }[c.driver],
   )
 
   async function pickKey() {
-    const p = isWeb ? await pickServerFile('SSH 개인 키 파일', c.sshKeyFile) : await api.PickKeyFile()
+    const p = isWeb ? await pickServerFile(t('SSH 개인 키 파일'), c.sshKeyFile) : await api.PickKeyFile()
     if (p) c.sshKeyFile = p
   }
 
   async function pickFile() {
-    const p = isWeb ? await pickServerFile('SQLite 데이터베이스 파일', c.database, true) : await api.PickSQLiteFile()
+    const p = isWeb ? await pickServerFile(t('SQLite 데이터베이스 파일'), c.database, true) : await api.PickSQLiteFile()
     if (p) {
       c.database = p
       if (!c.name) c.name = p.split(/[\\/]/).pop() ?? ''
@@ -74,10 +75,10 @@
     result = null
     try {
       const v = await api.TestConnection($state.snapshot(c))
-      let text = `연결 성공 — ${v.version}`
+      let text = `${t('연결 성공')} — ${v.version}`
       if (c.ssh && v.sshHostKey) {
         if (!c.sshHostKey) c.sshHostKey = v.sshHostKey // pinned when saved
-        text += `\nSSH 호스트 키: ${v.sshHostKey}`
+        text += `\n${t('SSH 호스트 키')}: ${v.sshHostKey}`
       }
       result = { ok: true, text }
     } catch (e) {
@@ -99,7 +100,7 @@
         await disconnect(saved.id)
         await connect(saved.id)
       }
-      if (isNew) toast(`'${saved.name}' 저장됨`)
+      if (isNew) toast(t("'{name}' 저장됨", { name: saved.name }))
     } catch (e) {
       result = { ok: false, text: errText(e) }
     } finally {
@@ -112,7 +113,7 @@
   }
 
   async function remove() {
-    if (!(await confirmBox(`'${c.name}' 연결을 삭제할까요?`))) return
+    if (!(await confirmBox(t("'{name}' 연결을 삭제할까요?", { name: c.name })))) return
     await api.DeleteConnection(c.id)
     app.tabs = app.tabs.filter((t) => t.connId !== c.id)
     await loadConnections()
@@ -121,7 +122,7 @@
 
 </script>
 
-<Modal title={isNew ? '새 연결' : '연결 편집'} onclose={close} width={560} dismissible={false}>
+<Modal title={isNew ? t('새 연결') : t('연결 편집')} onclose={close} width={560} dismissible={false}>
   <div class="drivers">
     {#each drivers as d (d.id)}
       <button class="drv" class:on={c.driver === d.id} onclick={() => setDriver(d.id)}>{d.label}</button>
@@ -129,9 +130,9 @@
   </div>
 
   <div class="form">
-    <label for="f-name">이름</label>
+    <label for="f-name">{t('이름')}</label>
     <div class="row">
-      <input id="f-name" bind:value={c.name} placeholder="예: 운영 DB" />
+      <input id="f-name" bind:value={c.name} placeholder={t('예: 운영 DB')} />
       <div class="colors">
         {#each colors as col (col)}
           <button
@@ -139,40 +140,40 @@
             class:on={c.color === col}
             style:background={col || 'transparent'}
             onclick={() => (c.color = col)}
-            title={col ? '' : '색 없음'}
-            aria-label="색상"
+            title={col ? '' : t('색 없음')}
+            aria-label={t('색상')}
           ></button>
         {/each}
       </div>
     </div>
 
     {#if c.driver === 'sqlite'}
-      <label for="f-file">파일</label>
+      <label for="f-file">{t('파일')}</label>
       <div class="row">
-        <input id="f-file" bind:value={c.database} placeholder={isWeb ? '파일 폴더 안의 경로 (예: app.db)' : '/path/to/database.db'} />
-        <button class="btn" onclick={pickFile}>찾기…</button>
+        <input id="f-file" bind:value={c.database} placeholder={isWeb ? t('파일 폴더 안의 경로 (예: app.db)') : '/path/to/database.db'} />
+        <button class="btn" onclick={pickFile}>{t('찾기…')}</button>
       </div>
     {:else}
-      <label for="f-host">호스트</label>
+      <label for="f-host">{t('호스트')}</label>
       <div class="row">
-        <input id="f-host" bind:value={c.host} placeholder={c.driver === 'mssql' ? 'localhost 또는 host\\instance' : 'localhost'} />
-        <span class="dim">포트</span>
+        <input id="f-host" bind:value={c.host} placeholder={c.driver === 'mssql' ? t('localhost 또는 host\\instance') : 'localhost'} />
+        <span class="dim">{t('포트')}</span>
         <input class="port" type="number" bind:value={c.port} />
       </div>
 
-      <label for="f-user">사용자</label>
+      <label for="f-user">{t('사용자')}</label>
       <input id="f-user" bind:value={c.user} autocomplete="off" />
 
-      <label for="f-pw">비밀번호</label>
+      <label for="f-pw">{t('비밀번호')}</label>
       <div class="row">
         <input
           id="f-pw"
           type="password"
           bind:value={c.password}
-          placeholder={!isNew && start.savePassword ? '(저장됨 — 바꿀 때만 입력)' : ''}
+          placeholder={!isNew && start.savePassword ? t('(저장됨 — 바꿀 때만 입력)') : ''}
           autocomplete="new-password"
         />
-        <label class="check"><input type="checkbox" bind:checked={c.savePassword} /> 저장</label>
+        <label class="check"><input type="checkbox" bind:checked={c.savePassword} /> {t('저장')}</label>
       </div>
 
       <label for="f-db">{dbLabel}</label>
@@ -180,64 +181,64 @@
         <input
           id="f-db"
           bind:value={c.database}
-          placeholder={c.driver === 'oracle' ? 'ORCL, FREEPDB1, XEPDB1 …' : '(선택)'}
+          placeholder={c.driver === 'oracle' ? 'ORCL, FREEPDB1, XEPDB1 …' : t('(선택)')}
         />
         {#if c.driver === 'oracle'}
-          <label class="check"><input type="checkbox" bind:checked={c.oracleSid} /> SID 사용</label>
+          <label class="check"><input type="checkbox" bind:checked={c.oracleSid} /> {t('SID 사용')}</label>
         {/if}
       </div>
     {/if}
 
     {#if c.driver !== 'sqlite'}
       <span></span>
-      <label class="check ssh-toggle"><input type="checkbox" bind:checked={c.ssh} /> SSH 터널 사용</label>
+      <label class="check ssh-toggle"><input type="checkbox" bind:checked={c.ssh} /> {t('SSH 터널 사용')}</label>
       {#if c.ssh}
-        <label for="f-sshhost">SSH 호스트</label>
+        <label for="f-sshhost">{t('SSH 호스트')}</label>
         <div class="row">
           <input id="f-sshhost" bind:value={c.sshHost} placeholder="bastion.example.com" />
-          <span class="dim">포트</span>
+          <span class="dim">{t('포트')}</span>
           <input class="port" type="number" bind:value={c.sshPort} />
         </div>
-        <label for="f-sshuser">SSH 사용자</label>
+        <label for="f-sshuser">{t('SSH 사용자')}</label>
         <input id="f-sshuser" bind:value={c.sshUser} autocomplete="off" />
-        <span class="lbl">인증</span>
+        <span class="lbl">{t('인증')}</span>
         <div class="row">
-          <label class="check"><input type="radio" bind:group={c.sshAuth} value="password" /> 비밀번호</label>
-          <label class="check"><input type="radio" bind:group={c.sshAuth} value="key" /> 키 파일</label>
+          <label class="check"><input type="radio" bind:group={c.sshAuth} value="password" /> {t('비밀번호')}</label>
+          <label class="check"><input type="radio" bind:group={c.sshAuth} value="key" /> {t('키 파일')}</label>
         </div>
         {#if c.sshAuth === 'key'}
-          <label for="f-sshkey">키 파일</label>
+          <label for="f-sshkey">{t('키 파일')}</label>
           <div class="row">
-            <input id="f-sshkey" bind:value={c.sshKeyFile} placeholder={isWeb ? '파일 폴더 안의 키 파일' : '(비우면 ~/.ssh/id_ed25519, id_ecdsa, id_rsa)'} />
-            <button class="btn" onclick={pickKey}>찾기…</button>
+            <input id="f-sshkey" bind:value={c.sshKeyFile} placeholder={isWeb ? t('파일 폴더 안의 키 파일') : t('(비우면 ~/.ssh/id_ed25519, id_ecdsa, id_rsa)')} />
+            <button class="btn" onclick={pickKey}>{t('찾기…')}</button>
           </div>
         {/if}
-        <label for="f-sshpw">{c.sshAuth === 'key' ? '키 암호' : 'SSH 비밀번호'}</label>
+        <label for="f-sshpw">{c.sshAuth === 'key' ? t('키 암호') : t('SSH 비밀번호')}</label>
         <input
           id="f-sshpw"
           type="password"
           bind:value={c.sshPassword}
-          placeholder={sshSaved ? '(저장됨 — 바꿀 때만 입력)' : c.sshAuth === 'key' ? '(암호가 없으면 비워 두세요)' : ''}
+          placeholder={sshSaved ? t('(저장됨 — 바꿀 때만 입력)') : c.sshAuth === 'key' ? t('(암호가 없으면 비워 두세요)') : ''}
           autocomplete="new-password"
         />
         {#if c.sshHostKey}
-          <span class="lbl">호스트 키</span>
+          <span class="lbl">{t('호스트 키')}</span>
           <div class="row">
-            <span class="mono hostkey" title="처음 연결할 때 저장된 SSH 서버 키입니다. 다른 키를 가진 서버에는 연결하지 않습니다.">{c.sshHostKey}</span>
-            <button class="btn mini" onclick={() => (c.sshHostKey = '')}>초기화</button>
+            <span class="mono hostkey" title={t('처음 연결할 때 저장된 SSH 서버 키입니다. 다른 키를 가진 서버에는 연결하지 않습니다.')}>{c.sshHostKey}</span>
+            <button class="btn mini" onclick={() => (c.sshHostKey = '')}>{t('초기화')}</button>
           </div>
         {/if}
         <span></span>
-        <span class="hint">위의 호스트·포트는 SSH 서버에서 본 DB 주소입니다 (예: localhost:3306).</span>
+        <span class="hint">{t('위의 호스트·포트는 SSH 서버에서 본 DB 주소입니다 (예: localhost:3306).')}</span>
       {/if}
     {/if}
 
     {#if showAdvanced}
-      <label for="f-params">추가 옵션</label>
+      <label for="f-params">{t('추가 옵션')}</label>
       <input id="f-params" class="mono" bind:value={c.params} placeholder={paramsHint} />
     {:else}
       <span></span>
-      <button class="link" onclick={() => (showAdvanced = true)}>추가 옵션…</button>
+      <button class="link" onclick={() => (showAdvanced = true)}>{t('추가 옵션…')}</button>
     {/if}
   </div>
 
@@ -247,12 +248,12 @@
 
   {#snippet footer()}
     {#if !isNew}
-      <button class="btn danger" onclick={remove}>삭제</button>
+      <button class="btn danger" onclick={remove}>{t('삭제')}</button>
     {/if}
-    <button class="btn" onclick={test} disabled={testing}>{testing ? '테스트 중…' : '연결 테스트'}</button>
+    <button class="btn" onclick={test} disabled={testing}>{testing ? t('테스트 중…') : t('연결 테스트')}</button>
     <span style="flex:1"></span>
-    <button class="btn" onclick={close}>취소</button>
-    <button class="btn primary" onclick={save} disabled={saving}>저장</button>
+    <button class="btn" onclick={close}>{t('취소')}</button>
+    <button class="btn primary" onclick={save} disabled={saving}>{t('저장')}</button>
   {/snippet}
 </Modal>
 

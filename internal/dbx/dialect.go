@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"tablume/internal/i18n"
 )
 
 // Dialect hides the differences between database engines.
@@ -63,9 +64,9 @@ func DialectFor(driver string) (Dialect, error) {
 		return d, nil
 	}
 	if label, ok := driverLabels[driver]; ok {
-		return nil, fmt.Errorf("이 빌드에는 %s 지원이 들어 있지 않습니다", label)
+		return nil, i18n.Errorf("이 빌드에는 %s 지원이 들어 있지 않습니다", label)
 	}
-	return nil, fmt.Errorf("지원하지 않는 드라이버: %s", driver)
+	return nil, i18n.Errorf("지원하지 않는 드라이버: %s", driver)
 }
 
 // SupportedDrivers lists the drivers in this build.

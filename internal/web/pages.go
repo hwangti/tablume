@@ -4,10 +4,20 @@ import (
 	_ "embed"
 	"html/template"
 	"net/http"
+	"tablume/internal/i18n"
 )
 
 //go:embed logo.svg
 var logoSVG []byte
+
+// T translates the pages' text (the Korean is the key, as everywhere);
+// lang is the page's language.
+func pageFuncs(lang string) template.FuncMap {
+	return template.FuncMap{
+		"T":    func(ko string) string { return i18n.In(lang, ko) },
+		"lang": func() string { return lang },
+	}
+}
 
 func serveLogo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "image/svg+xml")
@@ -17,7 +27,7 @@ func serveLogo(w http.ResponseWriter, _ *http.Request) {
 
 // Shared look (the app's colours) and the WebAuthn glue.
 const pageHead = `<!doctype html>
-<html lang="ko">
+<html lang="{{lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -76,9 +86,9 @@ const pageHead = `<!doctype html>
   }
 
   function why(e) {
-    if (e && e.name === 'NotAllowedError') return '취소되었거나 시간이 지났습니다. 다시 시도하세요.'
-    if (e && e.name === 'InvalidStateError') return '이 기기(또는 이 패스키 저장소)에는 이미 등록된 패스키가 있습니다.'
-    if (e && e.name === 'SecurityError') return '이 주소에서는 패스키를 쓸 수 없습니다 (HTTPS 또는 서버의 TABLUME_URL 설정 확인).'
+    if (e && e.name === 'NotAllowedError') return '{{T "취소되었거나 시간이 지났습니다. 다시 시도하세요."}}'
+    if (e && e.name === 'InvalidStateError') return '{{T "이 기기(또는 이 패스키 저장소)에는 이미 등록된 패스키가 있습니다."}}'
+    if (e && e.name === 'SecurityError') return '{{T "이 주소에서는 패스키를 쓸 수 없습니다 (HTTPS 또는 서버의 TABLUME_URL 설정 확인)."}}'
     return (e && e.message) || String(e)
   }
 
@@ -121,7 +131,7 @@ const pageHead = `<!doctype html>
   function deviceName() {
     const ua = navigator.userAgent
     const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
-      : /Mac OS X/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '기기'
+      : /Mac OS X/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '{{T "기기"}}'
     const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : ''
     return br ? os + ' · ' + br : os
   }
@@ -133,7 +143,7 @@ const pageHead = `<!doctype html>
 </script>
 `
 
-var loginTmpl = template.Must(template.New("login").Parse(pageHead + `<title>Tablume 로그인</title>
+var loginTmpl = template.Must(template.New("login").Funcs(pageFuncs("ko")).Parse(pageHead + `<title>{{T "Tablume 로그인"}}</title>
 </head>
 <body>
 <main>
@@ -141,15 +151,15 @@ var loginTmpl = template.Must(template.New("login").Parse(pageHead + `<title>Tab
     <div class="brand"><img src="/auth/logo.svg" alt=""><h1>Tablume</h1></div>
     {{if and .Token (ne .Token "-")}}
       <div class="stack">
-        <p>이 기기에 패스키를 등록하면 Face ID · Touch ID · Windows Hello(PIN)로 로그인합니다.</p>
+        <p>{{T "이 기기에 패스키를 등록하면 Face ID · Touch ID · Windows Hello(PIN)로 로그인합니다."}}</p>
         <div>
-          <label for="name">패스키 이름</label>
+          <label for="name">{{T "패스키 이름"}}</label>
           <input id="name" maxlength="60" autocomplete="off">
         </div>
-        <button id="go" class="primary">이 기기에 패스키 등록</button>
+        <button id="go" class="primary">{{T "이 기기에 패스키 등록"}}</button>
       </div>
       <div id="msg" class="msg"></div>
-      {{if .HasPasskeys}}<hr class="sep"><p class="dim">이미 쓸 수 있는 패스키가 있으면 <a href="/login">로그인</a>하세요.</p>{{end}}
+      {{if .HasPasskeys}}<hr class="sep"><p class="dim"><a href="/login">{{T "이미 쓸 수 있는 패스키가 있으면 로그인하세요."}}</a></p>{{end}}
       <script>
         const tok = {{.Token}}
         const name = document.getElementById('name')
@@ -161,7 +171,7 @@ var loginTmpl = template.Must(template.New("login").Parse(pageHead + `<title>Tab
           say(msg, '')
           try {
             await passkeyRegister(tok, name.value)
-            say(msg, '등록했습니다. 여는 중…', 'ok')
+            say(msg, '{{T "등록했습니다. 여는 중…"}}', 'ok')
             location.replace('/')
           } catch (e) {
             say(msg, why(e), 'error')
@@ -172,9 +182,9 @@ var loginTmpl = template.Must(template.New("login").Parse(pageHead + `<title>Tab
         name.onkeydown = (e) => e.key === 'Enter' && run()
       </script>
     {{else if .HasPasskeys}}
-      {{if eq .Token "-"}}<p class="msg error" style="margin-top:0">등록 링크가 만료되었거나 이미 사용되었습니다.</p>{{end}}
-      <p class="dim">등록한 패스키로 로그인합니다. 다른 기기의 패스키는 휴대폰으로 QR 코드를 찍어 쓸 수 있습니다.</p>
-      <button id="go" class="primary" autofocus>패스키로 로그인</button>
+      {{if eq .Token "-"}}<p class="msg error" style="margin-top:0">{{T "등록 링크가 만료되었거나 이미 사용되었습니다."}}</p>{{end}}
+      <p class="dim">{{T "등록한 패스키로 로그인합니다. 다른 기기의 패스키는 휴대폰으로 QR 코드를 찍어 쓸 수 있습니다."}}</p>
+      <button id="go" class="primary" autofocus>{{T "패스키로 로그인"}}</button>
       <div id="msg" class="msg"></div>
       <script>
         const go = document.getElementById('go')
@@ -192,9 +202,9 @@ var loginTmpl = template.Must(template.New("login").Parse(pageHead + `<title>Tab
         }
       </script>
     {{else}}
-      {{if eq .Token "-"}}<p class="msg error" style="margin-top:0">등록 링크가 만료되었거나 올바르지 않습니다.</p>{{end}}
-      <p>아직 등록된 패스키가 없습니다.</p>
-      <p class="dim">서버를 시작할 때 로그에 나온 등록 주소(<code>/login?token=…</code>)를 열어 첫 패스키를 등록하세요.</p>
+      {{if eq .Token "-"}}<p class="msg error" style="margin-top:0">{{T "등록 링크가 만료되었거나 올바르지 않습니다."}}</p>{{end}}
+      <p>{{T "아직 등록된 패스키가 없습니다."}}</p>
+      <p class="dim">{{T "서버를 시작할 때 로그에 나온 등록 주소를 열어 첫 패스키를 등록하세요."}} (<code>/login?token=…</code>)</p>
     {{end}}
   </div>
 </main>
@@ -202,7 +212,7 @@ var loginTmpl = template.Must(template.New("login").Parse(pageHead + `<title>Tab
 </html>
 `))
 
-var passkeysTmpl = template.Must(template.New("passkeys").Parse(pageHead + `<title>패스키 관리 — Tablume</title>
+var passkeysTmpl = template.Must(template.New("passkeys").Funcs(pageFuncs("ko")).Parse(pageHead + `<title>{{T "패스키 관리"}} — Tablume</title>
 <style>
   .list { margin: 0 0 6px; padding: 0; list-style: none; }
   .list li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -221,31 +231,31 @@ var passkeysTmpl = template.Must(template.New("passkeys").Parse(pageHead + `<tit
 <main class="wide">
   <div class="card">
     <div class="top">
-      <div class="brand"><img src="/auth/logo.svg" alt=""><h1>패스키 관리</h1></div>
-      <a href="/">Tablume로 돌아가기</a>
+      <div class="brand"><img src="/auth/logo.svg" alt=""><h1>{{T "패스키 관리"}}</h1></div>
+      <a href="/">{{T "Tablume로 돌아가기"}}</a>
     </div>
     <ul id="list" class="list"></ul>
     <div id="msg" class="msg"></div>
 
     <hr class="sep">
-    <h2>이 기기에 추가</h2>
-    <p class="dim">지금 쓰는 브라우저나 기기에 패스키를 하나 더 만듭니다.</p>
+    <h2>{{T "이 기기에 추가"}}</h2>
+    <p class="dim">{{T "지금 쓰는 브라우저나 기기에 패스키를 하나 더 만듭니다."}}</p>
     <div class="row">
       <input id="name" maxlength="60" autocomplete="off" style="flex:1">
-      <button id="add">패스키 추가</button>
+      <button id="add">{{T "패스키 추가"}}</button>
     </div>
 
     <hr class="sep">
-    <h2>다른 기기 등록</h2>
-    <p class="dim">등록한 패스키를 쓸 수 없는 기기(예: iCloud 키체인이 없는 Windows PC)에서 열 일회용 링크를 만듭니다. {{/* 15분 */}}15분 동안 한 번만 쓸 수 있습니다.</p>
-    <button id="invite">등록 링크 만들기</button>
+    <h2>{{T "다른 기기 등록"}}</h2>
+    <p class="dim">{{T "등록한 패스키를 쓸 수 없는 기기(예: iCloud 키체인이 없는 Windows PC)에서 열 일회용 링크를 만듭니다. 15분 동안 한 번만 쓸 수 있습니다."}}</p>
+    <button id="invite">{{T "등록 링크 만들기"}}</button>
     <div id="link" class="link">
-      <div class="row"><input id="url" readonly style="flex:1"><button id="copy">복사</button></div>
+      <div class="row"><input id="url" readonly style="flex:1"><button id="copy">{{T "복사"}}</button></div>
       <p id="exp" class="dim" style="margin:6px 0 0"></p>
     </div>
 
     <hr class="sep">
-    <button id="logout" class="danger">이 기기에서 로그아웃</button>
+    <button id="logout" class="danger">{{T "이 기기에서 로그아웃"}}</button>
   </div>
 </main>
 <script>
@@ -268,28 +278,28 @@ var passkeysTmpl = template.Must(template.New("passkeys").Parse(pageHead + `<tit
       if (k.current) {
         const b = document.createElement('span')
         b.className = 'badge'
-        b.textContent = '이 브라우저'
+        b.textContent = '{{T "이 브라우저"}}'
         n.append(b)
       }
       const d = document.createElement('div')
       d.className = 'dim'
-      d.textContent = '등록 ' + fmt(k.created) + ' · 마지막 사용 ' + fmt(k.lastUsed)
+      d.textContent = '{{T "등록 {a} · 마지막 사용 {b}"}}'.replace('{a}', fmt(k.created)).replace('{b}', fmt(k.lastUsed))
       info.append(n, d)
       const ren = document.createElement('button')
       ren.className = 'small'
-      ren.textContent = '이름 바꾸기'
+      ren.textContent = '{{T "이름 바꾸기"}}'
       ren.onclick = async () => {
-        const v = prompt('패스키 이름', k.name)
+        const v = prompt('{{T "패스키 이름"}}', k.name)
         if (!v || v === k.name) return
         try { await post('/auth/passkeys/rename', { id: k.id, name: v }); load() } catch (e) { say(msg, why(e), 'error') }
       }
       const del = document.createElement('button')
       del.className = 'small danger'
-      del.textContent = '삭제'
+      del.textContent = '{{T "삭제"}}'
       del.disabled = keys.length <= 1
-      del.title = keys.length <= 1 ? '마지막 패스키는 지울 수 없습니다' : ''
+      del.title = keys.length <= 1 ? '{{T "마지막 패스키는 지울 수 없습니다"}}' : ''
       del.onclick = async () => {
-        if (!confirm('"' + k.name + '" 패스키를 지울까요? 이 패스키로 로그인한 기기는 로그아웃됩니다.' + (k.current ? ' (이 브라우저 포함)' : ''))) return
+        if (!confirm('{{T "\"{name}\" 패스키를 지울까요? 이 패스키로 로그인한 기기는 로그아웃됩니다."}}'.replace('{name}', k.name) + (k.current ? ' ' + '{{T "(이 브라우저 포함)"}}' : ''))) return
         try { await post('/auth/passkeys/delete', { id: k.id }); k.current ? location.replace('/login') : load() } catch (e) { say(msg, why(e), 'error') }
       }
       li.append(info, ren, del)
@@ -304,7 +314,7 @@ var passkeysTmpl = template.Must(template.New("passkeys").Parse(pageHead + `<tit
     say(msg, '')
     try {
       await passkeyRegister('', name.value)
-      say(msg, '패스키를 추가했습니다.', 'ok')
+      say(msg, '{{T "패스키를 추가했습니다."}}', 'ok')
       load()
     } catch (e) {
       say(msg, why(e), 'error')
@@ -316,7 +326,7 @@ var passkeysTmpl = template.Must(template.New("passkeys").Parse(pageHead + `<tit
     try {
       const r = await post('/auth/invite')
       document.getElementById('url').value = r.url
-      document.getElementById('exp').textContent = new Date(r.expires).toLocaleTimeString() + '까지 쓸 수 있습니다.'
+      document.getElementById('exp').textContent = '{{T "{time}까지 쓸 수 있습니다."}}'.replace('{time}', new Date(r.expires).toLocaleTimeString())
       document.getElementById('link').style.display = 'block'
       document.getElementById('url').select()
     } catch (e) {
@@ -326,8 +336,8 @@ var passkeysTmpl = template.Must(template.New("passkeys").Parse(pageHead + `<tit
   document.getElementById('copy').onclick = async (ev) => {
     const u = document.getElementById('url')
     try { await navigator.clipboard.writeText(u.value) } catch { u.select(); document.execCommand('copy') }
-    ev.target.textContent = '복사됨'
-    setTimeout(() => (ev.target.textContent = '복사'), 1500)
+    ev.target.textContent = '{{T "복사됨"}}'
+    setTimeout(() => (ev.target.textContent = '{{T "복사"}}'), 1500)
   }
   document.getElementById('logout').onclick = async () => {
     await post('/auth/logout').catch(() => {})

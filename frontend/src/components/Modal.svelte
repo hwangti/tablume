@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '../lib/i18n.svelte'
   import type { Snippet } from 'svelte'
   import Icon from './Icon.svelte'
 
@@ -66,9 +67,9 @@
 <div class="backdrop" onmousedown={(e) => dismissible && e.target === e.currentTarget && onclose()}>
   <div class="modal" bind:this={box} style:width="{width}px" style:transform="translate({dx}px, {dy}px)" role="dialog" aria-label={title}>
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <header onmousedown={dragStart} ondblclick={() => ((dx = 0), (dy = 0))} title="드래그해서 이동 · 더블클릭하면 가운데로">
+    <header onmousedown={dragStart} ondblclick={() => ((dx = 0), (dy = 0))} title={t('드래그해서 이동 · 더블클릭하면 가운데로')}>
       <span class="title">{title}</span>
-      <button class="x-btn" onclick={onclose} onmousedown={(e) => e.stopPropagation()} aria-label="닫기"><Icon name="close" size={14} /></button>
+      <button class="x-btn" onclick={onclose} onmousedown={(e) => e.stopPropagation()} aria-label={t('닫기')}><Icon name="close" size={14} /></button>
     </header>
     <div class="body">{@render children()}</div>
     {#if footer}

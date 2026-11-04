@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { num, t } from '../lib/i18n.svelte'
   import type { EditorView } from '@codemirror/view'
   import { flushSync } from 'svelte'
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
@@ -123,7 +124,7 @@
 
   async function guardPending(): Promise<boolean> {
     const n = tabPending(tab)
-    return n === 0 || confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 실행할까요?`)
+    return n === 0 || confirmBox(t('적용하지 않은 변경 {n}건이 있습니다. 버리고 실행할까요?', { n }))
   }
 
   // Grid edits go straight in (one transaction); the statements and the
@@ -136,11 +137,11 @@
     try {
       sql = (await previewChanges(tab, current)) ?? []
       const { count, inserted } = await applyChanges(tab, current)
-      logStatements(tab, sql, `${count}건 적용`)
-      toast(`${count}건 적용됨`)
+      logStatements(tab, sql, t('{n}건 적용', { n: count }))
+      toast(t('{n}건 적용됨', { n: count }))
       if (inserted) await rerun() // show generated values (auto ids, defaults)
     } catch (e) {
-      if (sql.length) logStatements(tab, sql, '', errText(e) + '\n(모두 취소됨)')
+      if (sql.length) logStatements(tab, sql, '', errText(e) + '\n' + t('(모두 취소됨)'))
       toast(errText(e), 'error')
     } finally {
       applying = false
@@ -444,7 +445,7 @@
     const name = tab.title.endsWith('.sql') ? tab.title : tab.title.replace(/[\\/:*?"<>|]/g, '_') + '.sql'
     try {
       const p = await api.SaveTextFile(name, tab.sql)
-      if (p) toast('저장됨: ' + p)
+      if (p) toast(t('저장됨') + ': ' + p)
     } catch (e) {
       toast(errText(e), 'error')
     }
@@ -493,7 +494,7 @@
       }
       const base = (r.edit?.info?.table.name || r.source?.[r.source.length - 1] || 'result').replace(/[\\/:*?"<>|]/g, '_')
       const p = await api.SaveTextFile(`${base}.${kind}`, text)
-      if (p) toast(`${r.rows!.length}행 내보냄${r.hasMore ? ' (불러온 행만)' : ''}: ${p}`)
+      if (p) toast(t(r.hasMore ? '{n}행 내보냄 (불러온 행만)' : '{n}행 내보냄', { n: num(r.rows!.length) }) + ': ' + p)
     } catch (e) {
       toast(errText(e), 'error')
     }
@@ -501,7 +502,7 @@
 
   function resultLabel(r: StmtResult, i: number) {
     const m = r.sql.match(/\bfrom\s+([^\s,;()]+)/i)
-    return m ? m[1].replace(/["`[\]]/g, '') : `결과 ${i + 1}`
+    return m ? m[1].replace(/["`[\]]/g, '') : t('결과 {n}', { n: i + 1 })
   }
 
   let elapsed = $derived.by(() => {
@@ -516,8 +517,8 @@
   <div class="messages">
     {#if tab.messages.length === 0 && hint}
       <div class="placeholder">
-        <p>{modKey}Enter — 커서가 있는 문장 실행 (선택했으면 선택 영역)</p>
-        <p>{modKey}Shift+Enter — 전체 실행</p>
+        <p>{modKey}Enter — {t('커서가 있는 문장 실행 (선택했으면 선택 영역)')}</p>
+        <p>{modKey}Shift+Enter — {t('전체 실행')}</p>
       </div>
     {/if}
     {#each tab.messages.slice().reverse() as m, i (tab.messages.length - i)}
@@ -536,17 +537,17 @@
 <div class="tab">
   {#if !isTable}
     <div class="toolbar">
-      <button class="icon-btn run" title="실행 ({modKey}Enter) — 커서 위치 문장 또는 선택 영역" onclick={run} disabled={tab.running}>
+      <button class="icon-btn run" title="{t('실행')} ({modKey}Enter) — {t('커서 위치 문장 또는 선택 영역')}" onclick={run} disabled={tab.running}>
         <Icon name="play" />
       </button>
-      <button class="icon-btn run" title="전체 실행 ({modKey}Shift+Enter)" onclick={runAll} disabled={tab.running}>
+      <button class="icon-btn run" title="{t('전체 실행')} ({modKey}Shift+Enter)" onclick={runAll} disabled={tab.running}>
         <Icon name="playAll" />
       </button>
-      <button class="icon-btn stop" title="취소" onclick={() => cancel(tab)} disabled={!tab.running}>
+      <button class="icon-btn stop" title={t('취소')} onclick={() => cancel(tab)} disabled={!tab.running}>
         <Icon name="stop" />
       </button>
       <span class="sep"></span>
-      <select value={tab.connId} onchange={(e) => changeConn(e.currentTarget.value)} title="연결">
+      <select value={tab.connId} onchange={(e) => changeConn(e.currentTarget.value)} title={t('연결#선택')}>
         {#each app.connections as c (c.id)}
           <option value={c.id}>{c.name}</option>
         {/each}
@@ -555,23 +556,23 @@
         bind:value={tab.schema}
         onchange={saveWorkspaceSoon}
         disabled={!connected || conn?.driver === 'sqlite'}
-        title="기본 스키마 / 데이터베이스"
+        title={t('기본 스키마 / 데이터베이스')}
       >
-        {#if !schemaOptions.length}<option value="">(스키마)</option>{/if}
+        {#if !schemaOptions.length}<option value="">({t('스키마')})</option>{/if}
         {#each schemaOptions as s (s)}
           <option value={s}>{s}</option>
         {/each}
       </select>
       <span class="sep"></span>
-      <button class="icon-btn" title="SQL 정렬 ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — 선택 영역 또는 전체" onclick={() => editor?.format()}
+      <button class="icon-btn" title="{t('SQL 정렬')} ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — {t('선택 영역 또는 전체')}" onclick={() => editor?.format()}
         ><Icon name="format" /></button
       >
       <span class="sep"></span>
-      <button class="icon-btn" title="SQL 파일 열기" onclick={openFile}><Icon name="open" /></button>
-      <button class="icon-btn" title="SQL 파일로 저장" onclick={saveFile}><Icon name="save" /></button>
+      <button class="icon-btn" title={t('SQL 파일 열기')} onclick={openFile}><Icon name="open" /></button>
+      <button class="icon-btn" title={t('SQL 파일로 저장')} onclick={saveFile}><Icon name="save" /></button>
       <span class="grow"></span>
       {#if tab.running}
-        <span class="running"><span class="spin"></span> 실행 중 {elapsed}</span>
+        <span class="running"><span class="spin"></span> {t('실행 중')} {elapsed}</span>
       {/if}
     </div>
   {/if}
@@ -587,20 +588,20 @@
         class:collapsed={tab.layout === 'results'}
         onmousedown={startDrag}
         ondblclick={toggleLayout}
-        title="드래그: 크기 조절 · 더블클릭: 결과만 보기"
+        title={t('드래그: 크기 조절 · 더블클릭: 결과만 보기')}
       ></div>
     {/if}
     <div class="results">
       <div class="rtabs">
         {#if isTable}
           <button class="rtab" class:on={tableView === 'data'} onclick={() => (tableView = 'data')}>
-            <Icon name="table" size={13} /> 데이터
+            <Icon name="table" size={13} /> {t('데이터')}
           </button>
           <button class="rtab" class:on={tableView === 'ddl'} onclick={() => (tableView = 'ddl')}>
-            <Icon name="ddl" size={13} /> 구조
+            <Icon name="ddl" size={13} /> {t('구조')}
           </button>
           <button class="rtab" class:on={tableView === 'log'} onclick={() => (tableView = 'log')}>
-            로그
+            {t('로그')}
             {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
           </button>
           {#if busy}<span class="running small"><span class="spin"></span> {elapsed}</span>{/if}
@@ -612,7 +613,7 @@
             </button>
           {/each}
           <button class="rtab" class:on={tab.activeResult === -1} onclick={() => (tab.activeResult = -1)}>
-            로그
+            {t('로그')}
             {#if tab.messages.some((m) => m.kind === 'error')}<span class="dot"></span>{/if}
           </button>
         {/if}
@@ -622,7 +623,7 @@
           <div class="grp">
             <button
               class="icon-btn"
-              title={tab.layout === 'results' ? 'SQL 에디터 보이기' : '결과만 크게 보기'}
+              title={tab.layout === 'results' ? t('SQL 에디터 보이기') : t('결과만 크게 보기')}
               onclick={toggleLayout}
             >
               <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
@@ -632,37 +633,37 @@
         {#if isTable && tableView === 'data' && !current && !busy}
           <!-- restored tab, not loaded yet -->
           <div class="grp">
-            <button class="icon-btn" title={connected ? '불러오기' : '연결하고 불러오기'} onclick={() => reloadTable(tab)}>
+            <button class="icon-btn" title={connected ? t('불러오기') : t('연결하고 불러오기')} onclick={() => reloadTable(tab)}>
               <Icon name="refresh" size={14} />
             </button>
-            <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole} disabled={!tab.sql}><Icon name="console" size={14} /></button>
+            <button class="icon-btn" title={t('이 SELECT를 SQL 콘솔에서 열기')} onclick={openAsConsole} disabled={!tab.sql}><Icon name="console" size={14} /></button>
           </div>
         {/if}
         {#if current && (!isTable || tableView === 'data')}
           {#if pending > 0}
             <div class="grp">
-              <span class="pending">변경 {pending}건</span>
-              <button class="btn mini primary" onclick={openApply} title="변경 적용 ({modKey}Enter · {modKey}S)"><Icon name="check" size={13} /> 적용</button>
-              <button class="btn mini" onclick={() => current && revert(current)} title="모든 변경 되돌리기"><Icon name="undo" size={13} /> 되돌리기</button>
+              <span class="pending">{t('변경 {n}건', { n: pending })}</span>
+              <button class="btn mini primary" onclick={openApply} title="{t('변경 적용')} ({modKey}Enter · {modKey}S)"><Icon name="check" size={13} /> {t('적용')}</button>
+              <button class="btn mini" onclick={() => current && revert(current)} title={t('모든 변경 되돌리기')}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
             </div>
           {/if}
           {#if editInfo}
             <div class="grp">
               {#if !editInfo.editable}
-                <span class="ro" title={'읽기 전용: ' + editInfo.reason}><Icon name="lock" size={13} /> 읽기 전용</span>
+                <span class="ro" title={t('읽기 전용') + ': ' + editInfo.reason}><Icon name="lock" size={13} /> {t('읽기 전용')}</span>
               {/if}
               {#if editInfo.editable || editInfo.insertable}
-                <button class="icon-btn" title="행 추가" onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
-                <button class="icon-btn" title={editInfo.editable ? '선택 행 삭제 (Delete)' : '추가한 행 취소 (Delete)'} onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
+                <button class="icon-btn" title={t('행 추가')} onclick={() => grid?.newRow()}><Icon name="plus" size={14} /></button>
+                <button class="icon-btn" title={(editInfo.editable ? t('선택 행 삭제') : t('추가한 행 취소')) + ' (Delete)'} onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
               {/if}
             </div>
           {/if}
           <div class="grp">
-            <button class="icon-btn" title="다시 조회" onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
+            <button class="icon-btn" title={t('다시 조회')} onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
               <Icon name="refresh" size={14} />
             </button>
             <div class="dropdown">
-              <button class="icon-btn split" class:active={!!exportMenu} onclick={toggleExport} title="결과 내보내기">
+              <button class="icon-btn split" class:active={!!exportMenu} onclick={toggleExport} title={t('결과 내보내기')}>
                 <Icon name="download" size={14} /><Icon name="chevronDown" size={10} />
               </button>
               {#if exportMenu}
@@ -670,13 +671,13 @@
                   <button onclick={() => exportResult('csv')}>CSV <span class="dim">.csv</span></button>
                   <button onclick={() => exportResult('tsv')}>TSV <span class="dim">.tsv</span></button>
                   <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
-                  <button onclick={() => exportResult('sql')}>INSERT 문 <span class="dim">.sql</span></button>
-                  <div class="hint">불러온 {current.rows!.length.toLocaleString()}행{current.hasMore ? ' (전체 아님)' : ''}</div>
+                  <button onclick={() => exportResult('sql')}>{t('INSERT 문')} <span class="dim">.sql</span></button>
+                  <div class="hint">{t(current.hasMore ? '불러온 {n}행 (전체 아님)' : '불러온 {n}행', { n: num(current.rows!.length) })}</div>
                 </div>
               {/if}
             </div>
             {#if isTable}
-              <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
+              <button class="icon-btn" title={t('이 SELECT를 SQL 콘솔에서 열기')} onclick={openAsConsole}><Icon name="console" size={14} /></button>
             {/if}
           </div>
         {/if}
@@ -684,39 +685,39 @@
           <div class="grp">
             {#if tableView === 'ddl'}
               <div class="seg" role="group">
-                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>컬럼·인덱스</button>
+                <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>{t('컬럼·인덱스')}</button>
                 <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>DDL</button>
               </div>
               {#if app.ddlMode === 'sql' && ddl}
-                <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> 복사</button>
+                <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> {t('복사')}</button>
               {/if}
             {/if}
-            <button class="icon-btn" title="이 SELECT를 SQL 콘솔에서 열기" onclick={openAsConsole}><Icon name="console" size={14} /></button>
+            <button class="icon-btn" title={t('이 SELECT를 SQL 콘솔에서 열기')} onclick={openAsConsole}><Icon name="console" size={14} /></button>
           </div>
         {/if}
         {#if current && (!isTable || tableView === 'data') && current.columns?.length}
           <div class="pager dropdown grp">
-            <button class="icon-btn sm" title="처음으로" disabled={busy || whole} onclick={goFirst}><Icon name="first" size={13} /></button>
-            <button class="icon-btn sm" title="이전 {app.pageSize.toLocaleString()}행" disabled={busy || whole} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
-            <button class="range" class:open={!!sizeMenu} title="불러온 행 · 눌러서 페이지 크기 변경" onclick={toggleSizeMenu}>
-              {#if whole}{loaded.toLocaleString()}{:else}{(start + 1).toLocaleString()}–{(start + loaded).toLocaleString()}{/if}
+            <button class="icon-btn sm" title={t('처음으로')} disabled={busy || whole} onclick={goFirst}><Icon name="first" size={13} /></button>
+            <button class="icon-btn sm" title={t('이전 {n}행', { n: num(app.pageSize) })} disabled={busy || whole} onclick={() => goStep(-1)}><Icon name="prev" size={13} /></button>
+            <button class="range" class:open={!!sizeMenu} title={t('불러온 행 · 눌러서 페이지 크기 변경')} onclick={toggleSizeMenu}>
+              {#if whole}{num(loaded)}{:else}{num(start + 1)}–{num(start + loaded)}{/if}
               <Icon name="chevronDown" size={10} />
             </button>
             {#if whole}
               <!-- all rows shown: the count is the range -->
             {:else if total !== null}
-              <button class="total" title={current.paged ? '다시 세기 (COUNT)' : '전체 행 수'} onclick={count} disabled={counting || !current.paged}>{total.toLocaleString()}</button>
+              <button class="total" title={current.paged ? t('다시 세기 (COUNT)') : t('전체 행 수')} onclick={count} disabled={counting || !current.paged}>{num(total)}</button>
             {:else}
-              <button class="total unknown" title={current.paged ? '전체 행 수 세기 (COUNT)' : '이 쿼리는 셀 수 없습니다'} onclick={count} disabled={counting || !current.paged}>
-                {counting ? '세는 중…' : (start + loaded + 1).toLocaleString() + '+'}
+              <button class="total unknown" title={current.paged ? t('전체 행 수 세기 (COUNT)') : t('이 쿼리는 셀 수 없습니다')} onclick={count} disabled={counting || !current.paged}>
+                {counting ? t('세는 중…') : num(start + loaded + 1) + '+'}
               </button>
             {/if}
-            <button class="icon-btn sm" title="다음 {app.pageSize.toLocaleString()}행" disabled={busy || whole} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
-            <button class="icon-btn sm" title="마지막으로" disabled={busy || whole || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
+            <button class="icon-btn sm" title={t('다음 {n}행', { n: num(app.pageSize) })} disabled={busy || whole} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
+            <button class="icon-btn sm" title={t('마지막으로')} disabled={busy || whole || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
             {#if sizeMenu}
               <div class="menu size-menu" style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
                 {#each PAGE_SIZES as n (n)}
-                  <button class:on={app.pageSize === n} onclick={() => setPageSize(n)}>{n.toLocaleString()}</button>
+                  <button class:on={app.pageSize === n} onclick={() => setPageSize(n)}>{num(n)}</button>
                 {/each}
               </div>
             {/if}
@@ -732,17 +733,17 @@
             <span class="kw" class:on={!!tab.tableRef.where}>WHERE</span>
             <div class="fwrap">
               <FilterInput bind:value={whereDraft} columns={filterCols} keywords={WHERE_KW} onsubmit={applyFilter} onrevert={revertFilter} />
-              {#if tab.tableRef.where}<button class="x-btn fclear" title="WHERE 지우기" onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
+              {#if tab.tableRef.where}<button class="x-btn fclear" title={t('WHERE 지우기')} onclick={() => clearFilter('where')}><Icon name="close" size={14} /></button>{/if}
             </div>
           </div>
           <div class="fpart order" style:flex="0 0 {app.orderShare * 100}%">
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="fsplit" class:on={splitting} title="끌어서 폭 조정 · 더블클릭하면 기본값" onmousedown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
+            <div class="fsplit" class:on={splitting} title={t('끌어서 폭 조정 · 더블클릭하면 기본값')} onmousedown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
             <span class="ficon order"><Icon name="sortLines" size={14} /></span>
             <span class="kw" class:on={!!tab.tableRef.orderBy}>ORDER BY</span>
             <div class="fwrap">
               <FilterInput bind:value={orderDraft} columns={filterCols} keywords={ORDER_KW} onsubmit={applyFilter} onrevert={revertFilter} />
-              {#if tab.tableRef.orderBy}<button class="x-btn fclear" title="정렬 지우기" onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
+              {#if tab.tableRef.orderBy}<button class="x-btn fclear" title={t('정렬 지우기')} onclick={() => clearFilter('order')}><Icon name="close" size={14} /></button>{/if}
             </div>
           </div>
         </div>
@@ -752,7 +753,7 @@
         {#if isTable && tableView === 'data' && busy}
           <!-- over the old rows (reload) or the empty tab (first load) -->
           <div class="loading" class:blank={!current}>
-            <div class="loading-pill"><span class="spin"></span> 데이터 불러오는 중… {elapsed}</div>
+            <div class="loading-pill"><span class="spin"></span> {t('데이터 불러오는 중…')} {elapsed}</div>
           </div>
         {/if}
         {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
@@ -779,7 +780,7 @@
           {#if ddlError}
             <div class="msg error"><pre>{ddlError}</pre></div>
           {:else if ddl === null}
-            <div class="placeholder"><span class="spin"></span> DDL 불러오는 중…</div>
+            <div class="placeholder"><span class="spin"></span> {t('DDL 불러오는 중…')}</div>
           {:else}
             <SqlEditor value={ddl} driver={conn?.driver} readonly onchange={() => {}} onrun={() => {}} onrunall={() => {}} />
           {/if}
@@ -809,7 +810,7 @@
           <div class="reload-blank">
             <button class="btn primary" onclick={() => reloadTable(tab)}>
               <Icon name={connected ? 'refresh' : 'plug'} size={14} />
-              {connected ? '데이터 불러오기' : '연결하고 불러오기'}
+              {connected ? t('데이터 불러오기') : t('연결하고 불러오기')}
             </button>
             {#if !connected && conn}<span class="dim">{conn.name}</span>{/if}
           </div>

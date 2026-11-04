@@ -8,9 +8,9 @@ package dbx
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
+	"tablume/internal/i18n"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -118,7 +118,7 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 		return nil, err
 	}
 	if strings.TrimSpace(gen.String) != "" {
-		return nil, errors.New("계산(generated) 컬럼은 여기서 바꿀 수 없습니다")
+		return nil, i18n.Error("계산(generated) 컬럼은 여기서 바꿀 수 없습니다")
 	}
 	n := a.New
 	def := quoteWith(n.Name, "`", "`") + " " + strings.TrimSpace(n.Type)

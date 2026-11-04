@@ -8,4 +8,7 @@ const platform = "desktop"
 
 // setupPlatform adjusts the app options for this build and returns what to
 // start once the app exists. Nothing to do for the desktop app.
-func setupPlatform(*App, *application.Options) func() { return func() {} }
+func setupPlatform(*App, *application.Options) func() {
+	loadLanguage()
+	return func() {}
+}

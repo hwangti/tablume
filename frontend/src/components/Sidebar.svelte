@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatBytes } from '../lib/format'
   import { isWeb } from '../lib/platform'
+  import { i18n, LANGS, locale, num, t as tr } from '../lib/i18n.svelte'
   import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import Icon from './Icon.svelte'
   import {
@@ -28,6 +29,7 @@
     ZOOM_MIN,
     ZOOM_MAX,
     ZOOM_PRESETS,
+    setLanguage,
     type SchemaNode,
     type TableNode,
     type Tab,
@@ -42,11 +44,12 @@
   let viewMenu = $state(false)
   let zoomList = $state(false) // the zoom presets under the zoom field
 
-  const compact = new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 })
+  // 1.2만 / 1.2K
+  const compact = $derived(new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }))
 
   function fmtRows(n: number | undefined): string {
     if (n === undefined || n < 0) return ''
-    return n < 10000 ? n.toLocaleString('ko-KR') : compact.format(n)
+    return n < 10000 ? num(n) : compact.format(n)
   }
 
 
@@ -190,18 +193,18 @@
             for (const r of s.routines ?? [])
               out.push({ kind: 'routine', key: `r|${c.id}|${s.name}|${r.schema}.${r.name}(${r.args})|${r.type}`, depth: 3, c, s, r })
             if (s.routines && s.routines.length === 0)
-              out.push({ kind: 'info', key: `rn|${c.id}|${s.name}`, depth: 3, text: '프로시저·함수가 없습니다', cls: 'searching' })
+              out.push({ kind: 'info', key: `rn|${c.id}|${s.name}`, depth: 3, text: tr('프로시저·함수가 없습니다'), cls: 'searching' })
           }
         }
       }
       if (filtering && shownSchemas(c.id).length === 0)
-        out.push({ kind: 'info', key: 'f|' + c.id, depth: 1, text: '일치하는 테이블이 없습니다', cls: 'searching' })
+        out.push({ kind: 'info', key: 'f|' + c.id, depth: 1, text: tr('일치하는 테이블이 없습니다'), cls: 'searching' })
       if (filtering && unloadedSchemas(c.id) > 0)
         out.push({
           kind: 'info',
           key: 'fu|' + c.id,
           depth: 1,
-          text: `펼친 적 없는 스키마 ${unloadedSchemas(c.id)}개는 찾지 않습니다`,
+          text: tr('펼친 적 없는 스키마 {n}개는 찾지 않습니다', { n: unloadedSchemas(c.id) }),
           cls: 'searching',
         })
       if (!filtering && visibleSchemas(c.id).length === 0 && st.schemas.length > 0)
@@ -209,7 +212,7 @@
           kind: 'info',
           key: 'h|' + c.id,
           depth: 1,
-          text: '표시할 스키마를 고르세요',
+          text: tr('표시할 스키마를 고르세요'),
           cls: 'more',
           run: () => openPicker(c.id, null),
         })
@@ -318,7 +321,7 @@
     const s = st.schemas.find((x) => x.name === ref.schema)
     if (!s) return
     if (!schemaShown(tab.connId, s.name)) {
-      toast(`${s.name} 스키마는 트리에 표시하지 않도록 골라 두었습니다`)
+      toast(tr('{name} 스키마는 트리에 표시하지 않도록 골라 두었습니다', { name: s.name }))
       return
     }
     if (!s.expanded) {
@@ -382,13 +385,13 @@
   let tip = $state<null | { top: number; left: number; title: string; lines: string[] }>(null)
   let tipTimer: ReturnType<typeof setTimeout> | undefined
 
-  const routineLabel: Record<string, string> = { PROCEDURE: '프로시저', FUNCTION: '함수', PACKAGE: '패키지' }
+  const routineLabel = (type: string) => ({ PROCEDURE: tr('프로시저'), FUNCTION: tr('함수'), PACKAGE: tr('패키지') })[type] ?? type
 
   function tipFor(r: Row): { title: string; lines: string[] } | null {
     if (r.kind === 'routine') {
-      const lines = [routineLabel[r.r.type] ?? r.r.type]
+      const lines = [routineLabel(r.r.type)]
       if (r.r.args) lines.push(`(${r.r.args})`)
-      lines.push('클릭: 소스 열기')
+      lines.push(tr('클릭: 소스 열기'))
       return { title: (r.r.schema && r.c.driver === 'mssql' ? r.r.schema + '.' : '') + r.r.name, lines }
     }
     if (r.kind === 'table') {
@@ -396,11 +399,11 @@
       if (r.t.t.comment) lines.push(r.t.t.comment)
       const meta = [
         r.t.t.type !== 'TABLE' ? r.t.t.type : '',
-        fmtRows(r.t.t.rows) && `행 ${fmtRows(r.t.t.rows)} (추정)`,
-        fmtSize(r.t.t.size) && `크기 ${fmtSize(r.t.t.size)}`,
+        fmtRows(r.t.t.rows) && tr('행 {n} (추정)', { n: fmtRows(r.t.t.rows) }),
+        fmtSize(r.t.t.size) && tr('크기 {n}', { n: fmtSize(r.t.t.size) }),
       ].filter(Boolean)
       if (meta.length) lines.push(meta.join(' · '))
-      lines.push('클릭: 미리보기 · 더블클릭: 탭 고정')
+      lines.push(tr('클릭: 미리보기 · 더블클릭: 탭 고정'))
       return { title: r.t.t.name, lines }
     }
     if (r.kind === 'col') {
@@ -448,8 +451,8 @@
         x: e.clientX,
         y: e.clientY,
         items: [
-          { label: '소스 열기', icon: 'code', run: () => openRoutine(rt.c.id, rt.s.name, rt.r) },
-          { label: '이름 복사', icon: 'copy', run: () => copyText(rt.r.name) },
+          { label: tr('소스 열기'), icon: 'code', run: () => openRoutine(rt.c.id, rt.s.name, rt.r) },
+          { label: tr('이름 복사'), icon: 'copy', run: () => copyText(rt.r.name) },
         ],
       }
     }
@@ -479,22 +482,22 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '새 콘솔', icon: 'console', run: () => openConsole(c.id) },
+        { label: tr('새 콘솔'), icon: 'console', run: () => openConsole(c.id) },
         on
-          ? { label: '새로고침', icon: 'refresh', run: () => refreshSchemas(c.id) }
-          : { label: '연결', icon: 'plug', run: () => connect(c.id) },
+          ? { label: tr('새로고침'), icon: 'refresh', run: () => refreshSchemas(c.id) }
+          : { label: tr('연결'), icon: 'plug', run: () => connect(c.id) },
         ...(on
           ? [
-              { label: '표시할 스키마…', icon: 'schemas', run: () => openPicker(c.id, e) },
-              { label: '연결 해제', icon: 'unplug', run: () => disconnect(c.id) },
+              { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
+              { label: tr('연결 해제'), icon: 'unplug', run: () => disconnect(c.id) },
             ]
           : []),
-        { label: '편집…', icon: 'edit', run: () => (app.editing = { ...c }), sep: true },
-        { label: '복제', icon: 'copy', run: () => (app.editing = { ...c, id: '', name: c.name + ' 복사본' }) },
-        { label: '맨 위로', icon: 'toTop', run: () => moveConnection(c.id, 0), sep: true, disabled: i === 0 },
-        { label: '위로', icon: 'arrowUp', run: () => moveConnection(c.id, i - 1), disabled: i === 0 },
-        { label: '아래로', icon: 'arrowDown', run: () => moveConnection(c.id, i + 1), disabled: i === last },
-        { label: '맨 아래로', icon: 'toBottom', run: () => moveConnection(c.id, last), disabled: i === last },
+        { label: tr('편집…'), icon: 'edit', run: () => (app.editing = { ...c }), sep: true },
+        { label: tr('복제'), icon: 'copy', run: () => (app.editing = { ...c, id: '', name: c.name + tr(' 복사본') }) },
+        { label: tr('맨 위로'), icon: 'toTop', run: () => moveConnection(c.id, 0), sep: true, disabled: i === 0 },
+        { label: tr('위로'), icon: 'arrowUp', run: () => moveConnection(c.id, i - 1), disabled: i === 0 },
+        { label: tr('아래로'), icon: 'arrowDown', run: () => moveConnection(c.id, i + 1), disabled: i === last },
+        { label: tr('맨 아래로'), icon: 'toBottom', run: () => moveConnection(c.id, last), disabled: i === last },
       ],
     }
   }
@@ -513,12 +516,12 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '데이터 보기', icon: 'table', run: () => openTable(c.id, s.name, t), kbd: 'Enter' },
-        { label: '새 탭에서 데이터 보기', icon: 'plus', run: () => pinTable(c.id, s.name, t) },
-        { label: 'DDL 보기', icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
-        { label: '이름 바꾸기', icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2' },
+        { label: tr('데이터 보기'), icon: 'table', run: () => openTable(c.id, s.name, t), kbd: 'Enter' },
+        { label: tr('새 탭에서 데이터 보기'), icon: 'plus', run: () => pinTable(c.id, s.name, t) },
+        { label: tr('DDL 보기'), icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
+        { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2' },
         {
-          label: 'SELECT 문을 콘솔에 넣기',
+          label: tr('SELECT 문을 콘솔에 넣기'),
           icon: 'console',
           run: async () => {
             const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100, 0)
@@ -526,8 +529,8 @@
             else openConsole(c.id, { schema: s.name, sql: sql + ';' })
           },
         },
-        { label: '이름 복사', icon: 'copy', run: () => copyText(t.t.name), sep: true },
-        { label: '전체 이름 복사', icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
+        { label: tr('이름 복사'), icon: 'copy', run: () => copyText(t.t.name), sep: true },
+        { label: tr('전체 이름 복사'), icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
       ],
     }
   }
@@ -539,10 +542,10 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: '이 스키마로 새 콘솔', icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
-        { label: '새로고침', icon: 'refresh', run: () => loadTables(c.id, s) },
-        { label: '표시할 스키마…', icon: 'schemas', run: () => openPicker(c.id, e) },
-        { label: '이름 복사', icon: 'copy', run: () => copyText(s.name), sep: true },
+        { label: tr('이 스키마로 새 콘솔'), icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
+        { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s) },
+        { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
+        { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },
       ],
     }
   }
@@ -573,13 +576,13 @@
 
 <aside>
   <div class="top">
-    <span class="title">연결</span>
-    <button class="icon-btn" title="열린 테이블을 트리에서 찾기" onclick={locate} disabled={!activeKey}><Icon name="locate" /></button>
+    <span class="title">{tr('연결#목록')}</span>
+    <button class="icon-btn" title={tr('열린 테이블을 트리에서 찾기')} onclick={locate} disabled={!activeKey}><Icon name="locate" /></button>
     <div class="viewopt">
       <button
         class="icon-btn"
         class:active={viewMenu}
-        title="보기 옵션"
+        title={tr('보기 옵션')}
         onclick={(e) => (e.stopPropagation(), viewMenu || closeMenus(), (viewMenu = !viewMenu))}
       >
         <Icon name="sliders" />
@@ -587,12 +590,18 @@
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="viewmenu" onclick={(e) => (e.stopPropagation(), (e.target as Element).closest('.zoom-mid') || (zoomList = false))}>
-          <div class="vm-title">테마</div>
+          <div class="vm-title">{tr('언어')}{i18n.lang === 'ko' ? ' · Language' : ''}</div>
           <div class="theme-seg" role="group">
-            {#each [['auto', '자동'], ['dark', '다크'], ['light', '라이트']] as [m, label] (m)}
+            {#each LANGS as l (l.id)}
+              <button class:on={i18n.lang === l.id} onclick={() => setLanguage(l.id)}>{l.label}</button>
+            {/each}
+          </div>
+          <div class="vm-title sep">{tr('테마')}</div>
+          <div class="theme-seg" role="group">
+            {#each [['auto', tr('자동')], ['dark', tr('다크')], ['light', tr('라이트')]] as [m, label] (m)}
               <button
                 class:on={app.theme === m}
-                title={m === 'auto' ? 'OS 설정을 따릅니다' : ''}
+                title={m === 'auto' ? tr('OS 설정을 따릅니다') : ''}
                 onclick={() => {
                   app.theme = m as ThemeMode
                   setTheme(app.theme)
@@ -606,15 +615,15 @@
                a drag can't be followed. (The browser build leaves zoom to
                the browser.) -->
           {#if !isWeb}
-          <div class="vm-title sep">화면 배율</div>
+          <div class="vm-title sep">{tr('화면 배율')}</div>
           <div class="zoom-box">
-            <button title="5% 축소" disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
+            <button title={tr('5% 축소')} disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
             <div class="zoom-mid">
               <input
                 class="zoom-in"
                 inputmode="numeric"
                 value={Math.round(app.zoom * 100) + '%'}
-                title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, Enter로 적용 · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + 휠' : 'Ctrl + = / - / 0, Ctrl + 휠'}"
+                title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
                 onfocus={(e) => e.currentTarget.select()}
                 onchange={zoomInput}
                 onkeydown={(e) => {
@@ -626,7 +635,7 @@
                   if (e.key === 'ArrowDown' && e.altKey) zoomList = true
                 }}
               />
-              <button class="zoom-drop" class:on={zoomList} title="배율 고르기" onclick={() => (zoomList = !zoomList)}><Icon name="chevronDown" size={12} /></button>
+              <button class="zoom-drop" class:on={zoomList} title={tr('배율 고르기')} onclick={() => (zoomList = !zoomList)}><Icon name="chevronDown" size={12} /></button>
               {#if zoomList}
                 <div class="zoom-list" role="listbox">
                   {#each ZOOM_PRESETS as z (z)}
@@ -640,47 +649,45 @@
                 </div>
               {/if}
             </div>
-            <button title="5% 확대" disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
+            <button title={tr('5% 확대')} disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
           </div>
           {/if}
-          <div class="vm-title sep">트리에 표시</div>
-          <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> 스키마별 테이블 수</label>
-          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> 테이블 · 컬럼 코멘트</label>
+          <div class="vm-title sep">{tr('트리에 표시')}</div>
+          <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> {tr('스키마별 테이블 수')}</label>
+          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> {tr('테이블 · 컬럼 코멘트')}</label>
           <label
-            ><input type="checkbox" bind:checked={app.treeView.rows} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> 테이블
-            행 수</label
+            ><input type="checkbox" bind:checked={app.treeView.rows} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> {tr('테이블 행 수')}</label
           >
           <label
-            ><input type="checkbox" bind:checked={app.treeView.size} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> 테이블
-            크기</label
+            ><input type="checkbox" bind:checked={app.treeView.size} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> {tr('테이블 크기')}</label
           >
 
-          <div class="vm-title sep">결과 표</div>
-          <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> 컬럼 번호 표시</label>
-          <div class="vm-title sep">테이블 열 때</div>
-          <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> 기본 정렬: PK 내림차순</label>
+          <div class="vm-title sep">{tr('결과 표')}</div>
+          <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> {tr('컬럼 번호 표시')}</label>
+          <div class="vm-title sep">{tr('테이블 열 때')}</div>
+          <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> {tr('기본 정렬: PK 내림차순')}</label>
           {#if isWeb}
-            <div class="vm-title sep">계정</div>
-            <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> 패스키 관리</a>
-            <button class="vm-item" onclick={logout}><Icon name="logout" size={14} /> 로그아웃</button>
+            <div class="vm-title sep">{tr('계정')}</div>
+            <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> {tr('패스키 관리')}</a>
+            <button class="vm-item" onclick={logout}><Icon name="logout" size={14} /> {tr('로그아웃')}</button>
           {/if}
         </div>
       {/if}
     </div>
-    <button class="icon-btn" title="새 연결" onclick={() => (app.editing = blank())}><Icon name="plus" /></button>
+    <button class="icon-btn" title={tr('새 연결')} onclick={() => (app.editing = blank())}><Icon name="plus" /></button>
   </div>
   <div class="filter">
     <Icon name="filter" size={14} />
-    <input bind:value={filter} placeholder="테이블 필터" spellcheck="false" />
-    {#if filter}<button class="x-btn" title="필터 지우기" onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
+    <input bind:value={filter} placeholder={tr('테이블 필터')} spellcheck="false" />
+    {#if filter}<button class="x-btn" title={tr('필터 지우기')} onclick={() => (filter = '')}><Icon name="close" size={14} /></button>{/if}
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div class="tree" bind:this={treeEl} tabindex="0" role="tree" onkeydown={treeKey} onscroll={() => (tip = null)}>
     {#if app.connections.length === 0}
       <div class="hint">
-        <p>저장된 연결이 없습니다.</p>
-        <button class="btn primary" onclick={() => (app.editing = blank())}><Icon name="plus" size={14} /> 새 연결</button>
+        <p>{tr('저장된 연결이 없습니다.')}</p>
+        <button class="btn primary" onclick={() => (app.editing = blank())}><Icon name="plus" size={14} /> {tr('새 연결')}</button>
       </div>
     {/if}
 
@@ -688,7 +695,6 @@
       {#if r.kind === 'info'}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="node info {r.cls}" style:padding-left="{8 + r.depth * 16 + 18}px" title={r.text} onclick={() => r.run?.()}>
-          {#if r.cls === 'searching' && r.text.includes('찾는 중')}<span class="spin"></span>{/if}
           <span class="label">{r.text}</span>
         </div>
       {:else}
@@ -721,7 +727,7 @@
               class="chev-slot chev"
               class:open={isOpen(r)}
               tabindex="-1"
-              aria-label="펼치기"
+              aria-label={tr('펼치기')}
               onclick={(e) => (e.stopPropagation(), (cursor = r.key), toggle(r))}
               ondblclick={(e) => e.stopPropagation()}
             >
@@ -738,21 +744,21 @@
               <button
                 class="pick-btn"
                 class:on={picker?.connId === r.c.id}
-                title="표시할 스키마 고르기"
+                title={tr('표시할 스키마 고르기')}
                 onclick={(e) => (e.stopPropagation(), picker?.connId === r.c.id ? (picker = null) : openPicker(r.c.id, null))}
                 ondblclick={(e) => e.stopPropagation()}
                 >{visibleSchemas(r.c.id).length}/{st.schemas.length}</button
               >
             {/if}
             <span class="drv">{driverLabel(r.c.driver)}</span>
-            <button class="icon-btn small act" title="새 콘솔" onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
+            <button class="icon-btn small act" title={tr('새 콘솔')} onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
               <Icon name="console" size={16} />
             </button>
           {:else if r.kind === 'schema'}
             <Icon name="schema" size={15} color="var(--warn)" />
             <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
-            {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : '행 수 · 크기 가져오는 중'}></span>{/if}
-            {#if r.s.tables && app.treeView.tableCount}<span class="count">{r.s.tables.length.toLocaleString('ko-KR')}</span>{/if}
+            {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : tr('행 수 · 크기 가져오는 중')}></span>{/if}
+            {#if r.s.tables && app.treeView.tableCount}<span class="count">{num(r.s.tables.length)}</span>{/if}
           {:else if r.kind === 'table'}
             <Icon name={r.t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
             <span class="label">{tableLabel(r.t, r.c.driver)}</span>
@@ -761,11 +767,11 @@
             {#if tableMeta(r.t)}<span class="tmeta">{tableMeta(r.t)}</span>{/if}
           {:else if r.kind === 'rgroup'}
             <Icon name="fn" size={15} color="var(--syn-type)" />
-            <span class="label">프로시저 · 함수</span>
+            <span class="label">{tr('프로시저 · 함수')}</span>
             {#if r.s.routinesLoading}<span class="spin"></span>{/if}
-            {#if r.s.routines && app.treeView.tableCount}<span class="count">{r.s.routines.length.toLocaleString('ko-KR')}</span>{/if}
+            {#if r.s.routines && app.treeView.tableCount}<span class="count">{num(r.s.routines.length)}</span>{/if}
           {:else if r.kind === 'routine'}
-            <span class="rbadge" class:f={r.r.type === 'FUNCTION'} class:k={r.r.type === 'PACKAGE'} title={routineLabel[r.r.type] ?? r.r.type}
+            <span class="rbadge" class:f={r.r.type === 'FUNCTION'} class:k={r.r.type === 'PACKAGE'} title={routineLabel(r.r.type)}
               >{r.r.type === 'FUNCTION' ? 'F' : r.r.type === 'PACKAGE' ? 'K' : 'P'}</span
             >
             <span class="label">{r.c.driver === 'mssql' && r.r.schema !== 'dbo' ? r.r.schema + '.' : ''}{r.r.name}</span>

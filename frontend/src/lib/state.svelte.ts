@@ -1,6 +1,7 @@
 import { api, errText, loginExpired } from './api'
 import { Events, Window } from '@wailsio/runtime'
 import { isWeb } from './platform'
+import { i18n, isLang, t as tr, type Lang } from './i18n.svelte'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import { DRIVERS } from './types'
@@ -180,7 +181,7 @@ export function askPassword(title: string): Promise<string | null> {
 }
 
 /** Asks for a line of text (null = cancelled). */
-export function askText(title: string, value: string, ok = '확인'): Promise<string | null> {
+export function askText(title: string, value: string, ok = tr('확인')): Promise<string | null> {
   return new Promise((resolve) => {
     app.prompt = {
       title,
@@ -224,7 +225,7 @@ export async function connect(id: string): Promise<boolean> {
   }
   let pw = ''
   if (await api.NeedsPassword(id)) {
-    const v = await askPassword(`${c.name} 비밀번호`)
+    const v = await askPassword(tr('{name} 비밀번호', { name: c.name }))
     if (v === null) return false
     pw = v
   }
@@ -314,7 +315,7 @@ export async function loadStats(id: string, s: SchemaNode) {
     s.stats = 'done'
   } catch (e) {
     s.stats = undefined
-    toast(`${s.name}: 행 수 · 크기를 가져오지 못했습니다 — ${errText(e)}`, 'error')
+    toast(`${s.name}: ${tr('행 수 · 크기를 가져오지 못했습니다')} — ${errText(e)}`, 'error')
   }
 }
 
@@ -327,6 +328,16 @@ export async function ensureStats() {
     if (st?.status !== 'connected') continue
     for (const s of st.schemas) if (s.tables && !s.stats && schemaShown(c.id, s.name)) await loadStats(c.id, s)
   }
+}
+
+// ---------------------------------------------------------------- language
+// The backend has its own copy (its error messages, the macOS menu, the
+// browser build's sign-in pages).
+export function setLanguage(l: Lang, save = true) {
+  i18n.lang = l
+  document.documentElement.lang = l
+  api.SetLanguage(l).catch(() => {})
+  if (save) saveWorkspaceSoon()
 }
 
 // ---------------------------------------------------------------- zoom
@@ -504,7 +515,7 @@ export async function closeTab(id: string) {
   const i = app.tabs.findIndex((t) => t.id === id)
   if (i < 0) return
   const n = tabPending(app.tabs[i])
-  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 탭을 닫을까요?`))) return
+  if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n })))) return
   if (app.tabs[i].detached) api.CloseTabWindow(id)
   api.CloseSession(id)
   app.tabs.splice(i, 1)
@@ -518,7 +529,7 @@ export async function closeTabs(ids: string[]) {
   const closing = app.tabs.filter((t) => set.has(t.id))
   if (!closing.length) return
   const n = closing.reduce((a, t) => a + tabPending(t), 0)
-  if (n && !(await confirmBox(`닫을 탭에 적용하지 않은 변경 ${n}건이 있습니다. 버리고 닫을까요?`))) return
+  if (n && !(await confirmBox(tr('닫을 탭에 적용하지 않은 변경 {n}건이 있습니다. 버리고 닫을까요?', { n })))) return
   const activeIdx = app.tabs.findIndex((t) => t.id === app.activeTab)
   for (const t of closing) api.CloseSession(t.id)
   const remaining = app.tabs.filter((t) => !set.has(t.id))
@@ -537,7 +548,7 @@ export async function closeTabs(ids: string[]) {
 export async function duplicateTab(id: string) {
   const src = app.tabs.find((t) => t.id === id)
   if (!src) return
-  const tab = openConsole(src.connId, { schema: src.schema, sql: src.sql, title: src.title + ' 복사본' })
+  const tab = openConsole(src.connId, { schema: src.schema, sql: src.sql, title: src.title + tr(' 복사본') })
   tab.layout = src.layout
   if (src.tableRef) tab.tableRef = $state.snapshot(src.tableRef)
   // place it right after the original
@@ -645,8 +656,8 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     for (const r of results) {
       if (r.error) log(tab, 'error', r.error, short(r.sql))
       else if (r.columns && r.columns.length)
-        log(tab, 'info', `${r.rows!.length}${r.hasMore ? '+' : ''}행 조회 (${r.elapsedMs}ms)`, short(r.sql))
-      else log(tab, 'info', `${r.rowsAffected >= 0 ? `${r.rowsAffected}행 영향` : '완료'} (${r.elapsedMs}ms)`, short(r.sql))
+        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql))
+      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql))
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
     const failed = results.some((r) => r.error)
@@ -718,7 +729,7 @@ export async function fetchPrev(tab: Tab, r: StmtResult): Promise<number> {
 /** Replaces the loaded rows with the page at `offset` (pending edits are dropped). */
 export async function jumpTo(tab: Tab, r: StmtResult, offset: number): Promise<boolean> {
   if (!r.paged || tab.loadingMore || tab.running) return false
-  if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 이동할까요?`))) return false
+  if (tabPending(tab) && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 이동할까요?', { n: tabPending(tab) })))) return false
   tab.loadingMore = true
   try {
     const res = await api.FetchPage(tab.id, tab.connId, r.sql, offset, app.pageSize)
@@ -987,8 +998,8 @@ export async function followForeignKey(tab: Tab, r: StmtResult, col: number, val
  * new name; the tree is reloaded.
  */
 export async function renameTable(connId: string, schema: string, t: Table) {
-  const kind = t.type.toUpperCase().includes('VIEW') ? '뷰' : '테이블'
-  const name = (await askText(`${kind} 이름 바꾸기 — ${t.name}`, t.name, '바꾸기'))?.trim()
+  const view = t.type.toUpperCase().includes('VIEW')
+  const name = (await askText(`${tr(view ? '뷰 이름 바꾸기' : '테이블 이름 바꾸기')} — ${t.name}`, t.name, tr('바꾸기')))?.trim()
   if (!name || name === t.name) return
   let st: string
   try {
@@ -1003,7 +1014,7 @@ export async function renameTable(connId: string, schema: string, t: Table) {
     if (tab.connId !== connId || !ref || ref.schema !== schema || !sameTable(ref.table, t)) continue
     ref.table = { ...$state.snapshot(ref.table), name }
     if (tab.title === t.name) tab.title = name
-    logStatements(tab, [st], `${kind} 이름 바꿈`)
+    logStatements(tab, [st], tr(view ? '뷰 이름 바꿈' : '테이블 이름 바꿈'))
     if (!tabPending(tab) && tab.results.length) reloadTable(tab) // its SELECT has the old name
   }
   saveWorkspaceSoon()
@@ -1028,7 +1039,7 @@ async function applyPkDesc(connId: string, ref: TableRef) {
 export async function reloadTable(tab: Tab): Promise<boolean> {
   const ref = tab.tableRef
   if (!ref) return false
-  if (tabPending(tab) && !(await confirmBox(`적용하지 않은 변경 ${tabPending(tab)}건이 있습니다. 버리고 다시 조회할까요?`))) return false
+  if (tabPending(tab) && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 다시 조회할까요?', { n: tabPending(tab) })))) return false
   // a tab restored from the last session: connect first
   if (!(await connect(tab.connId))) return false
   try {
@@ -1091,6 +1102,7 @@ export function saveWorkspaceSoon() {
       gridColNumbers: app.gridColNumbers,
       ddlView: app.ddlMode,
       theme: app.theme,
+      lang: i18n.lang,
       sidebarHidden: app.sidebarHidden,
       tabs: app.tabs.map(savedTab),
     }
@@ -1102,7 +1114,7 @@ export function saveWorkspaceSoon() {
 export async function loadWorkspace(tabs = true) {
   try {
     const raw = await api.LoadWorkspace()
-    if (!raw) return
+    if (!raw) return setLanguage(i18n.lang, false) // (the detected one)
     const data = JSON.parse(raw)
     // pageSize replaced the console's fetchSize
     const ps = data.pageSize ?? data.fetchSize
@@ -1117,6 +1129,7 @@ export async function loadWorkspace(tabs = true) {
     if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     else if (data.ddlView === 'index') app.ddlMode = 'table' // was a view of its own
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
+    setLanguage(isLang(data.lang) ? data.lang : i18n.lang, false)
     if (typeof data.sidebarHidden === 'boolean') app.sidebarHidden = data.sidebarHidden
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
     // (the old per-tab gridZoom is ignored)
@@ -1178,7 +1191,7 @@ export async function detachTab(id: string) {
   const t = app.tabs[i]
   if (!t || t.detached) return
   const n = tabPending(t)
-  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 새 창으로 열까요?`))) return
+  if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 새 창으로 열까요?', { n })))) return
   if (app.activeTab === id) {
     const rest = app.tabs.filter((x) => !x.detached && x.id !== id)
     const right = app.tabs.slice(i + 1).find((x) => !x.detached)
@@ -1265,7 +1278,7 @@ export async function backToMain() {
   const t = app.tabs[0]
   if (!t) return
   const n = tabPending(t)
-  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 메인 창으로 옮길까요?`))) return
+  if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 메인 창으로 옮길까요?', { n })))) return
   clearTimeout(saveTimer)
   await Events.Emit('tab:restore', { id: t.id, tab: savedTab(t) }).catch(() => {})
   api.CloseTabWindow(t.id)
@@ -1276,7 +1289,7 @@ export async function closeTabWindow() {
   const t = app.tabs[0]
   if (!t) return
   const n = tabPending(t)
-  if (n && !(await confirmBox(`적용하지 않은 변경 ${n}건이 있습니다. 버리고 탭을 닫을까요?`))) return
+  if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n })))) return
   clearTimeout(saveTimer)
   api.CloseSession(t.id)
   await Events.Emit('tab:close', { id: t.id }).catch(() => {})

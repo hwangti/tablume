@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	"tablume/internal/i18n"
 	"tablume/internal/store"
 	"tablume/internal/web"
 
@@ -58,6 +59,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		store.DirOverride = *dataDir
 	}
 	store.NoKeyring = true
+	loadLanguage()
 	dir, err := store.Dir()
 	if err != nil {
 		fail("data directory: %v", err)
@@ -78,7 +80,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		if err := web.ResetPasskeys(dir); err != nil {
 			fail("reset passkeys: %v", err)
 		}
-		log.Print("패스키를 모두 지웠습니다.")
+		log.Print(i18n.T("패스키를 모두 지웠습니다."))
 	}
 
 	pub, err := publicURL(*listen, *public)
@@ -138,7 +140,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		if err != nil {
 			fail("listen %s: %v", *listen, err)
 		}
-		log.Printf("Tablume 웹: %s (listening on %s, data %s, files %s)", pub, *listen, dir, svc.fileRoot)
+		log.Printf(i18n.T("Tablume 웹: %s (listening on %s, data %s, files %s)"), pub, *listen, dir, svc.fileRoot)
 		srv := &http.Server{Handler: front.Handler(), ReadHeaderTimeout: 15 * time.Second}
 		go func() {
 			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -148,7 +150,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		go func() {
 			for range time.Tick(5 * time.Minute) {
 				if n := svc.db.CloseIdleSessions(sessionIdle); n > 0 {
-					log.Printf("닫힌 페이지의 DB 세션 %d개를 정리했습니다", n)
+					log.Printf(i18n.T("닫힌 페이지의 DB 세션 %d개를 정리했습니다"), n)
 				}
 			}
 		}()
@@ -164,16 +166,16 @@ func publicURL(listen, public string) (*url.URL, error) {
 			return nil, fmt.Errorf("-listen %q: %v", listen, err)
 		}
 		if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			return nil, errors.New("-url (TABLUME_URL)을 지정하세요: 브라우저에서 여는 주소, 예) https://db.example.com — 패스키가 이 주소의 도메인에 묶입니다")
+			return nil, i18n.Error("-url (TABLUME_URL)을 지정하세요: 브라우저에서 여는 주소, 예) https://db.example.com — 패스키가 이 주소의 도메인에 묶입니다")
 		}
 		public = "http://localhost:" + port
 	}
 	u, err := url.Parse(public)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return nil, fmt.Errorf("-url %q: http(s)://호스트 형식이어야 합니다", public)
+		return nil, i18n.Errorf("-url %q: http(s)://호스트 형식이어야 합니다", public)
 	}
 	if u.Scheme == "http" && u.Hostname() != "localhost" {
-		return nil, fmt.Errorf("-url %q: 패스키는 HTTPS(또는 localhost)에서만 쓸 수 있습니다", public)
+		return nil, i18n.Errorf("-url %q: 패스키는 HTTPS(또는 localhost)에서만 쓸 수 있습니다", public)
 	}
 	return u, nil
 }

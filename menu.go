@@ -1,8 +1,13 @@
 package main
 
-import "github.com/wailsapp/wails/v3/pkg/application"
+import (
+	"tablume/internal/i18n"
 
-// macMenu is the macOS menu bar, with the Korean titles macOS itself uses.
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+// macMenu is the macOS menu bar, with the titles macOS itself uses (in the
+// app's language; made again when it changes).
 // Without an Edit menu, Cmd+C / Cmd+V don't reach the webview on macOS.
 // Zoom is left to the page (Cmd +/-/0), so there is no View menu.
 func macMenu() *application.Menu {
@@ -12,44 +17,44 @@ func macMenu() *application.Menu {
 	sep := application.NewMenuItemSeparator
 
 	app := application.NewMenuFromItems(
-		role(application.About, "Tablume에 관하여"),
+		role(application.About, i18n.T("Tablume에 관하여")),
 		sep(),
-		role(application.ServicesMenu, "서비스"),
+		role(application.ServicesMenu, i18n.T("서비스")),
 		sep(),
-		role(application.Hide, "Tablume 가리기"),
-		role(application.HideOthers, "기타 가리기"),
-		role(application.UnHide, "모두 보기"),
+		role(application.Hide, i18n.T("Tablume 가리기")),
+		role(application.HideOthers, i18n.T("기타 가리기")),
+		role(application.UnHide, i18n.T("모두 보기")),
 		sep(),
-		role(application.Quit, "Tablume 종료"),
+		role(application.Quit, i18n.T("Tablume 종료")),
 	)
 	speech := application.NewMenuFromItems(
-		role(application.StartSpeaking, "말하기 시작"),
-		role(application.StopSpeaking, "말하기 중단"),
+		role(application.StartSpeaking, i18n.T("말하기 시작")),
+		role(application.StopSpeaking, i18n.T("말하기 중단")),
 	)
 	// No Delete item: its plain Backspace shortcut would be a menu key
 	// equivalent and could take the key away from the editor and the grid.
 	edit := application.NewMenuFromItems(
-		role(application.Undo, "실행 취소"),
-		role(application.Redo, "실행 복귀"),
+		role(application.Undo, i18n.T("실행 취소")),
+		role(application.Redo, i18n.T("실행 복귀")),
 		sep(),
-		role(application.Cut, "오려두기"),
-		role(application.Copy, "복사하기"),
-		role(application.Paste, "붙여넣기"),
-		role(application.PasteAndMatchStyle, "붙여넣고 스타일 일치시키기"),
-		role(application.SelectAll, "전체 선택"),
+		role(application.Cut, i18n.T("오려두기")),
+		role(application.Copy, i18n.T("복사하기")),
+		role(application.Paste, i18n.T("붙여넣기")),
+		role(application.PasteAndMatchStyle, i18n.T("붙여넣고 스타일 일치시키기")),
+		role(application.SelectAll, i18n.T("전체 선택")),
 		sep(),
-		application.NewSubmenu("말하기", speech),
+		application.NewSubmenu(i18n.T("말하기"), speech),
 	)
 	window := application.NewMenuFromItems(
-		role(application.Minimise, "최소화"),
-		role(application.Zoom, "확대/축소"),
+		role(application.Minimise, i18n.T("최소화")),
+		role(application.Zoom, i18n.T("확대/축소")),
 		sep(),
-		role(application.Front, "모두 앞으로 가져오기"),
+		role(application.Front, i18n.T("모두 앞으로 가져오기")),
 	)
 
 	return application.NewMenuFromItems(
 		application.NewSubmenu("Tablume", app),
-		application.NewSubmenu("편집", edit),
-		application.NewSubmenu("윈도우", window),
+		application.NewSubmenu(i18n.T("편집"), edit),
+		application.NewSubmenu(i18n.T("윈도우"), window),
 	)
 }

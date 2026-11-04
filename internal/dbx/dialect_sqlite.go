@@ -8,10 +8,10 @@ package dbx
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"tablume/internal/i18n"
 
 	_ "modernc.org/sqlite"
 )
@@ -145,7 +145,7 @@ func (sqliteDialect) createIndex(schema string, t Table, ix NewIndex) string {
 
 func (sqliteDialect) dropIndex(schema string, t Table, ix Index) (string, error) {
 	if ix.Constraint != "" {
-		return "", errors.New("PRIMARY KEY / UNIQUE 제약에 딸린 인덱스는 테이블을 다시 만들어야 지울 수 있습니다")
+		return "", i18n.Error("PRIMARY KEY / UNIQUE 제약에 딸린 인덱스는 테이블을 다시 만들어야 지울 수 있습니다")
 	}
 	name := quoteWith(ix.Name, `"`, `"`)
 	if schema != "" && schema != "main" {

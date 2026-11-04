@@ -3,8 +3,8 @@ package dbx
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"strings"
+	"tablume/internal/i18n"
 )
 
 // DDL returns the CREATE statement(s) for a table or view.
@@ -25,7 +25,7 @@ func (m *Manager) DDL(id, schema string, t Table) (string, error) {
 		return "", err
 	}
 	if strings.TrimSpace(ddl) == "" {
-		return "", fmt.Errorf("%s의 DDL을 찾을 수 없습니다", t.Name)
+		return "", i18n.Errorf("%s의 DDL을 찾을 수 없습니다", t.Name)
 	}
 	return strings.TrimSpace(ddl) + "\n", nil
 }

@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 
 	"tablume/internal/dbx"
+	"tablume/internal/i18n"
 	"tablume/internal/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -109,7 +111,7 @@ func (a *App) NeedsPassword(id string) bool {
 func (a *App) Connect(id, password string) (string, error) {
 	c, ok := a.store.Get(id)
 	if !ok {
-		return "", errors.New("연결 정보를 찾을 수 없습니다")
+		return "", i18n.Error("연결 정보를 찾을 수 없습니다")
 	}
 	if password != "" {
 		c.Password = password
@@ -233,10 +235,10 @@ func (a *App) openFile(ctx context.Context, o application.OpenFileDialogOptions)
 
 func (a *App) PickSQLiteFile(ctx context.Context) (string, error) {
 	return a.openFile(ctx, application.OpenFileDialogOptions{
-		Title: "SQLite 데이터베이스 파일",
+		Title: i18n.T("SQLite 데이터베이스 파일"),
 		Filters: []application.FileFilter{
 			{DisplayName: "SQLite (*.db;*.sqlite;*.sqlite3;*.db3)", Pattern: "*.db;*.sqlite;*.sqlite3;*.db3"},
-			{DisplayName: "모든 파일", Pattern: "*"},
+			{DisplayName: i18n.T("모든 파일"), Pattern: "*"},
 		},
 	})
 }
@@ -250,7 +252,7 @@ func (a *App) PickKeyFile(ctx context.Context) (string, error) {
 		}
 	}
 	// Key files are often hidden-ish (no extension, in a dot directory).
-	return a.openFile(ctx, application.OpenFileDialogOptions{Title: "SSH 개인 키 파일", Directory: dir, ShowHiddenFiles: true})
+	return a.openFile(ctx, application.OpenFileDialogOptions{Title: i18n.T("SSH 개인 키 파일"), Directory: dir, ShowHiddenFiles: true})
 }
 
 // SaveTextFile asks for a path and writes content. Returns "" if cancelled.
@@ -273,7 +275,7 @@ type OpenedFile struct {
 
 func (a *App) OpenSQLFile(ctx context.Context) (*OpenedFile, error) {
 	path, err := a.openFile(ctx, application.OpenFileDialogOptions{
-		Filters: []application.FileFilter{{DisplayName: "SQL (*.sql)", Pattern: "*.sql"}, {DisplayName: "모든 파일", Pattern: "*"}},
+		Filters: []application.FileFilter{{DisplayName: "SQL (*.sql)", Pattern: "*.sql"}, {DisplayName: i18n.T("모든 파일"), Pattern: "*"}},
 	})
 	if err != nil || path == "" {
 		return nil, err
@@ -299,6 +301,27 @@ func (a *App) LoadWorkspace() string {
 
 func (a *App) SaveWorkspace(data string) error {
 	return os.WriteFile(workspacePath(), []byte(data), 0o600)
+}
+
+// loadLanguage takes the interface language saved with the workspace, so
+// messages before the page says (the macOS menu, the server log) use it.
+func loadLanguage() {
+	var w struct {
+		Lang string `json:"lang"`
+	}
+	if b, err := os.ReadFile(workspacePath()); err == nil && json.Unmarshal(b, &w) == nil && w.Lang != "" {
+		i18n.Set(w.Lang)
+	}
+}
+
+// SetLanguage is the interface language chosen in the app ("ko" or "en"):
+// the backend's messages follow it.
+func (a *App) SetLanguage(lang string) {
+	if i18n.Set(lang) && goruntime.GOOS == "darwin" {
+		if app := application.Get(); app != nil {
+			app.Menu.Set(macMenu())
+		}
+	}
 }
 
 // SetDarkTitleBar matches the calling window's native title bar (Windows)

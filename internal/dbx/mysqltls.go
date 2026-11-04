@@ -7,10 +7,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"tablume/internal/i18n"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -36,11 +36,11 @@ func (mysqlDialect) prepareParams(c ConnConfig, viaTunnel bool) (string, error) 
 	if caFile != "" {
 		b, err := os.ReadFile(expandHome(caFile))
 		if err != nil {
-			return "", fmt.Errorf("CA 인증서 파일을 읽을 수 없습니다: %w", err)
+			return "", i18n.Errorf("CA 인증서 파일을 읽을 수 없습니다: %w", err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(b) {
-			return "", errors.New("CA 인증서 파일에서 PEM 인증서를 찾지 못했습니다")
+			return "", i18n.Error("CA 인증서 파일에서 PEM 인증서를 찾지 못했습니다")
 		}
 		cfg.RootCAs = pool
 	}
@@ -60,6 +60,5 @@ func (mysqlDialect) explainOpenError(err error) error {
 	if err == nil || !strings.Contains(err.Error(), "x509:") {
 		return err
 	}
-	return fmt.Errorf("%w\n\n서버 인증서를 확인하지 못했습니다. 회사나 서버가 직접 만든 인증서라면 추가 옵션에 "+
-		"tls-ca=CA 인증서 파일 경로(.pem)를 넣으세요. 인증서 확인 없이 암호화만 하려면 tls=skip-verify 를 쓰세요", err)
+	return fmt.Errorf("%w\n\n"+i18n.T("서버 인증서를 확인하지 못했습니다. 회사나 서버가 직접 만든 인증서라면 추가 옵션에 tls-ca=CA 인증서 파일 경로(.pem)를 넣으세요. 인증서 확인 없이 암호화만 하려면 tls=skip-verify 를 쓰세요"), err)
 }

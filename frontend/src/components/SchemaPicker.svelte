@@ -2,6 +2,7 @@
   // Picks the schemas a connection shows in the tree (DataGrip-style):
   // all of them, the session's default one, names one by one, or patterns.
   // Every change is saved with the connection right away.
+  import { t } from '../lib/i18n.svelte'
   import Icon from './Icon.svelte'
   import {
     app,
@@ -94,34 +95,34 @@
 
 <div class="picker" bind:this={el} style:left="{pos.left}px" style:top="{pos.top}px">
   <div class="head">
-    <span class="title">표시할 스키마</span>
+    <span class="title">{t('표시할 스키마')}</span>
     <span class="cnt">{shown}/{names.length}</span>
-    <button class="icon-btn small" title="서버에서 스키마 목록 다시 가져오기" onclick={refresh} disabled={refreshing}>
+    <button class="icon-btn small" title={t('서버에서 스키마 목록 다시 가져오기')} onclick={refresh} disabled={refreshing}>
       {#if refreshing}<span class="spin"></span>{:else}<Icon name="refresh" size={14} />{/if}
     </button>
   </div>
   <div class="search">
     <Icon name="filter" size={13} />
     <!-- svelte-ignore a11y_autofocus -->
-    <input bind:value={search} placeholder="스키마 검색" spellcheck="false" autofocus />
+    <input bind:value={search} placeholder={t('스키마 검색')} spellcheck="false" autofocus />
   </div>
 
   <div class="list">
     <label class="opt">
       <input type="checkbox" checked={f.all} onchange={(e) => setAll((e.currentTarget as HTMLInputElement).checked)} />
-      <span title="시스템 스키마 제외">전체 스키마</span>
+      <span title={t('시스템 스키마 제외')}>{t('전체 스키마')}</span>
     </label>
     <label class="opt">
       <input type="checkbox" checked={f.current} onchange={(e) => save({ current: (e.currentTarget as HTMLInputElement).checked })} />
-      <span>기본 스키마</span>
+      <span>{t('기본 스키마')}</span>
       {#if current}<span class="hint">({current})</span>{/if}
     </label>
     {#each f.patterns as p (p)}
       <div class="opt pat">
         <Icon name="filter" size={12} />
         <span class="mono">{p}</span>
-        <span class="hint">{names.filter((n) => globMatch(p, n)).length}개</span>
-        <button class="x-btn" title="패턴 지우기" onclick={() => save({ patterns: f.patterns.filter((x) => x !== p) })}>
+        <span class="hint">{t('{n}개', { n: names.filter((n) => globMatch(p, n)).length })}</span>
+        <button class="x-btn" title={t('패턴 지우기')} onclick={() => save({ patterns: f.patterns.filter((x) => x !== p) })}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -132,7 +133,7 @@
           class="pat-input mono"
           bind:this={patternEl}
           bind:value={pattern}
-          placeholder="예: HR_*, *_LOG"
+          placeholder={t('예: {x}', { x: 'HR_*, *_LOG' })}
           spellcheck="false"
           onkeydown={(e) => {
             if (e.key === 'Enter') addPattern()
@@ -142,7 +143,7 @@
         />
       </div>
     {:else}
-      <button class="link add" onclick={() => ((addingPattern = true), setTimeout(() => patternEl?.focus()))}>+ 패턴 추가</button>
+      <button class="link add" onclick={() => ((addingPattern = true), setTimeout(() => patternEl?.focus()))}>+ {t('패턴 추가')}</button>
     {/if}
 
     <div class="sep"></div>
@@ -151,22 +152,22 @@
       <label class="item" class:dim={s === 'off'}>
         <input type="checkbox" checked={s === 'on'} indeterminate={s === 'mixed'} onchange={() => toggle(n)} />
         <span class="name">{n}</span>
-        {#if n === current}<span class="hint">기본</span>{/if}
+        {#if n === current}<span class="hint">{t('기본')}</span>{/if}
       </label>
     {/each}
     {#if system.filter(q).length}
-      <div class="group">시스템 스키마</div>
+      <div class="group">{t('시스템 스키마')}</div>
       {#each system.filter(q) as n (n)}
         {@const s = stateOf(n)}
         <label class="item sys">
           <input type="checkbox" checked={s === 'on'} indeterminate={s === 'mixed'} onchange={() => toggle(n)} />
           <span class="name">{n}</span>
-          {#if n === current}<span class="hint">기본</span>{/if}
+          {#if n === current}<span class="hint">{t('기본')}</span>{/if}
         </label>
       {/each}
     {/if}
     {#if search && !names.some(q)}
-      <div class="empty">일치하는 스키마가 없습니다</div>
+      <div class="empty">{t('일치하는 스키마가 없습니다')}</div>
     {/if}
   </div>
 </div>
