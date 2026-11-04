@@ -6,7 +6,7 @@ A lightweight cross-platform multi-database SQL client written in Go.
 
 Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and there is also a [web version](#web-version) you run on a server and use from a browser.
 
-![Tablume](docs/screenshot-oracle.png)
+![Tablume](docs/screenshot-dark.png)
 
 - **Databases**: MySQL, MariaDB, Oracle, SQL Server, PostgreSQL, SQLite
 - **Size**: a single executable, about 35 MB. No bundled JVM or Chromium: it uses the web view that comes with the OS (WebView2 on Windows, WKWebView on macOS).
@@ -95,6 +95,9 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 - Dialogs can be moved by dragging their title bar; double-clicking it centers them again.
 - Language: English / 한국어 in the view options. The first time, the OS (browser) language is used. Error messages from the database server stay in the server's language.
 - Theme: Auto (follows the OS) / Dark / Light in the view options.
+
+  ![Light theme: a table tab with WHERE / ORDER BY](docs/screenshot-light.png)
+
 - Zoom: "Zoom (%)" `[−][100 ▾][+]` in the view options zooms the whole window by ±5%, a typed value, or a ▾ preset (100·110·125·150·175·200). `Ctrl/⌘`+`+`/`-`/`0` and `Ctrl/⌘`+wheel step through the presets (desktop app).
 - Hide the connection list: the button at the left of the tab strip or `Ctrl/⌘+B` hides it for a while (expanded nodes and the filter are kept).
 - Wide view: the button at the right of the tab strip, or right-click a tab → "Wide View", shows only the current tab across the window (no connection list or tab strip). "Exit Wide View" in the top bar or `Ctrl/⌘+B` goes back.
