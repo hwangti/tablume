@@ -14,6 +14,7 @@
     onstep,
     title = '',
     stepTitles = [t('축소'), t('확대')],
+    extra = [],
   }: {
     value: number // 1 = 100%
     min: number
@@ -23,6 +24,7 @@
     onstep: (dir: -1 | 1) => void
     title?: string
     stepTitles?: [string, string]
+    extra?: { label: string; run: () => void }[] // listed above the presets
   } = $props()
 
   let root: HTMLDivElement
@@ -65,6 +67,10 @@
     <button class="drop" class:on={open} title={t('배율 고르기')} onclick={() => (open = !open)}><Icon name="chevronDown" size={12} /></button>
     {#if open}
       <div class="list" role="listbox">
+        {#each extra as x (x.label)}
+          <button class="extra" onclick={() => (x.run(), (open = false))}>{x.label}</button>
+        {/each}
+        {#if extra.length}<div class="line"></div>{/if}
         {#each presets as p (p)}
           <button role="option" aria-selected={shown(p) === shown(value)} class:on={shown(p) === shown(value)} onclick={() => (onset(p), (open = false))}
             >{shown(p)}%</button
@@ -183,6 +189,14 @@
     font-variant-numeric: tabular-nums;
     text-align: right;
     cursor: pointer;
+  }
+  .list .extra {
+    text-align: left;
+    white-space: nowrap;
+  }
+  .list .line {
+    margin: 3px 0;
+    border-top: 1px solid var(--border);
   }
   .list button:hover {
     background: var(--bg-hover);

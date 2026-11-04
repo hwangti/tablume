@@ -288,9 +288,6 @@
     {#if L && L.nodes.size && !L.edges.length}
       <span class="warn" title={t('관계가 정말 없다기보다 제약을 걸지 않고\n애플리케이션 코드로만 관리하는 경우가 많습니다.')}>{t('FK 제약 없음')}</span>
     {/if}
-    <ZoomBox value={z} min={0.08} max={3} presets={[0.25, 0.5, 0.75, 1, 1.5, 2]} onset={(v) => zoomCenter(v / z)} onstep={(d) => zoomCenter(d > 0 ? 1.2 : 1 / 1.2)} />
-    <span class="sep"></span>
-    <button class="icon-btn" onclick={fit} disabled={!pos} title={t('화면 맞춤')}><Icon name="fit" size={14} /></button>
     <div class="dropdown">
       <button class="icon-btn split" class:changed class:open={!!menu} onclick={toggleMenu} title={t('보기 옵션')}
         ><Icon name="sliders" size={14} /><Icon name="chevronDown" size={10} /></button
@@ -313,6 +310,16 @@
     <button class="icon-btn" onclick={() => ((L = null), (error = ''), connected && load())} disabled={loading || !connected} title={t('스키마를 다시 읽습니다')}
       ><Icon name="refresh" size={14} /></button
     >
+    <span class="sep"></span>
+    <ZoomBox
+      value={z}
+      min={0.08}
+      max={3}
+      presets={[0.25, 0.5, 0.75, 1, 1.5, 2]}
+      onset={(v) => zoomCenter(v / z)}
+      onstep={(d) => zoomCenter(d > 0 ? 1.2 : 1 / 1.2)}
+      extra={pos ? [{ label: t('화면 맞춤'), run: fit }] : []}
+    />
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
