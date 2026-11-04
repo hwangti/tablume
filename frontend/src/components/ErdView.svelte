@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import Icon from './Icon.svelte'
+  import ZoomBox from './ZoomBox.svelte'
   import { t, num } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
   import { app, connect, type Tab } from '../lib/state.svelte'
@@ -158,7 +159,6 @@
   let px = $state(0)
   let py = $state(0)
   let fitted = false
-  let zoomText = $derived(String(Math.round(z * 1000) / 10))
 
   function fit() {
     if (!pos || !viewEl.clientWidth) return
@@ -193,13 +193,6 @@
     const r = viewEl.getBoundingClientRect()
     zoomAt(z * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX - r.left, e.clientY - r.top)
   }
-  function typedZoom(e: Event) {
-    const el = e.currentTarget as HTMLInputElement
-    const v = parseFloat(el.value)
-    if (Number.isFinite(v) && v > 0) zoomCenter(v / 100 / z)
-    el.value = zoomText
-  }
-
   let pan = $state<{ x: number; y: number; px: number; py: number } | null>(null)
   function down(e: PointerEvent) {
     if (e.button !== 0) return
@@ -295,16 +288,9 @@
     {#if L && L.nodes.size && !L.edges.length}
       <span class="warn" title={t('관계가 정말 없다기보다 제약을 걸지 않고\n애플리케이션 코드로만 관리하는 경우가 많습니다.')}>{t('FK 제약 없음')}</span>
     {/if}
-    <span class="grp">
-      <button onclick={() => zoomCenter(1 / 1.2)} title={t('축소')}>－</button>
-      <span class="zoom"
-        ><input type="number" min="8" max="300" step="any" value={zoomText} onchange={typedZoom} onfocus={(e) => e.currentTarget.select()} aria-label={t('확대 비율(%)')} />%</span
-      >
-      <button onclick={() => zoomCenter(1.2)} title={t('확대')}>＋</button>
-      <button onclick={() => zoomCenter(1 / z)}>100%</button>
-    </span>
+    <ZoomBox value={z} min={0.08} max={3} presets={[0.25, 0.5, 0.75, 1, 1.5, 2]} onset={(v) => zoomCenter(v / z)} onstep={(d) => zoomCenter(d > 0 ? 1.2 : 1 / 1.2)} />
     <div class="dropdown">
-      <button class:on={changed || !!menu} onclick={toggleMenu}>{t('보기 옵션')} <Icon name="chevronDown" size={10} /></button>
+      <button class:changed class:open={!!menu} onclick={toggleMenu}>{t('보기 옵션')} <Icon name="chevronDown" size={10} /></button>
       {#if menu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="menu" style:left="{menu.left}px" style:top="{menu.top}px" use:fitMenu={menu} onclick={(e) => e.stopPropagation()}>
@@ -463,8 +449,8 @@
     height: 24px;
     padding: 0 9px;
     border: 1px solid var(--border);
-    border-radius: 5px;
-    background: var(--bg-input);
+    border-radius: 4px;
+    background: var(--bg-elev);
     color: var(--text);
     cursor: pointer;
     display: inline-flex;
@@ -472,53 +458,31 @@
     gap: 4px;
   }
   .bar button:hover:not(:disabled),
-  .bar button.on {
-    border-color: var(--accent);
+  .bar button.open {
+    background: var(--bg-hover);
+  }
+  .bar button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  /* options off their defaults */
+  .bar button.changed {
     color: var(--accent);
   }
   .grp {
     display: inline-flex;
   }
-  .grp > :global(*) {
-    border-radius: 0 !important;
-    margin-left: -1px;
+  .grp > button {
+    border-radius: 0;
   }
-  .grp > :global(:first-child) {
-    border-radius: 5px 0 0 5px !important;
-    margin-left: 0;
+  .grp > button + button {
+    border-left: 0;
   }
-  .grp > :global(:last-child) {
-    border-radius: 0 5px 5px 0 !important;
+  .grp > button:first-child {
+    border-radius: 4px 0 0 4px;
   }
-  .grp > :global(:hover) {
-    position: relative;
-    z-index: 1;
-  }
-  .zoom {
-    display: inline-flex;
-    align-items: center;
-    height: 24px;
-    padding: 0 6px 0 2px;
-    border: 1px solid var(--border);
-    background: var(--bg-input);
-    color: var(--text-faint);
-    font-size: 11px;
-  }
-  .zoom input {
-    width: 42px;
-    border: 0;
-    background: none;
-    color: var(--text);
-    text-align: right;
-    font: inherit;
-    font-size: 12px;
-    appearance: textfield;
-  }
-  .zoom input:focus {
-    outline: 0;
-  }
-  .zoom input::-webkit-inner-spin-button {
-    appearance: none;
+  .grp > button:last-child {
+    border-radius: 0 4px 4px 0;
   }
   .dropdown .menu {
     position: fixed;

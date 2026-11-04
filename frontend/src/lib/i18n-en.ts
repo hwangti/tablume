@@ -406,7 +406,6 @@ export default {
   'FK 제약 없음': 'No FK constraints',
   '배치 전 교차 {n}개에서 줄인 결과입니다': 'Down from {n} {n|crossing|crossings} before the layout',
   '축소': 'Zoom out',
-  '확대 비율(%)': 'Zoom (%)',
   '확대': 'Zoom in',
   '화면 맞춤': 'Fit',
   '스키마를 다시 읽습니다': 'Reads the schema again',

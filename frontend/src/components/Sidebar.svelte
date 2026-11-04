@@ -4,6 +4,7 @@
   import { i18n, LANGS, locale, num, t as tr } from '../lib/i18n.svelte'
   import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import Icon from './Icon.svelte'
+  import ZoomBox from './ZoomBox.svelte'
   import {
     app,
     connect,
@@ -44,7 +45,6 @@
 
   let filter = $state('')
   let viewMenu = $state(false)
-  let zoomList = $state(false) // the zoom presets under the zoom field
   let version = $state('') // shown at the foot of the view menu
   api.Version().then((v) => (version = v), () => {})
 
@@ -100,9 +100,6 @@
   let menu = $state<null | { x: number; y: number; items: MenuItem[] }>(null)
   let picker = $state<null | { connId: string; x: number; y: number }>(null)
   $effect(() => onCloseMenus(() => ((menu = null), (picker = null), (viewMenu = false))))
-  $effect(() => {
-    if (!viewMenu) zoomList = false
-  })
 
   const blank = (): ConnConfig => ({
     id: '',
@@ -574,12 +571,6 @@
   function zoomStep(d: number) {
     setZoomLevel((Math.round(app.zoom * 100 / 5) * 5 + d) / 100)
   }
-  function zoomInput(e: Event) {
-    const el = e.currentTarget as HTMLInputElement
-    const v = parseFloat(el.value)
-    if (isFinite(v)) setZoomLevel(Math.round(v) / 100)
-    el.value = String(Math.round(app.zoom * 100)) // shows the clamped value
-  }
 </script>
 
 <svelte:window
@@ -703,7 +694,7 @@
       </button>
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="viewmenu" use:fitMenu={app.sidebarHidden} onclick={(e) => (e.stopPropagation(), (e.target as Element).closest('.zoom-mid') || (zoomList = false))}>
+        <div class="viewmenu" use:fitMenu={app.sidebarHidden} onclick={(e) => e.stopPropagation()}>
           <div class="vm-title">{tr('언어')}{i18n.lang === 'ko' ? ' · Language' : ''}</div>
           <div class="theme-seg" role="group">
             {#each LANGS as l (l.id)}
@@ -724,47 +715,23 @@
               >
             {/each}
           </div>
-          <!-- [−][150 ▾][+]: typed value, ±5% or a preset — not a slider:
-               the whole window (the slider too) rescales on every change, so
-               a drag can't be followed. (The browser build leaves zoom to
-               the browser.) -->
+          <!-- [−][150 %][+] [100% ▾]: typed value, ±5% or a preset — not a
+               slider: the whole window (the slider too) rescales on every
+               change, so a drag can't be followed. (The browser build
+               leaves zoom to the browser.) -->
           {#if !isWeb}
           <div class="vm-title sep">{tr('화면 배율 (%)')}</div>
-          <div class="zoom-box">
-            <button title={tr('5% 축소')} disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
-            <div class="zoom-mid">
-              <input
-                class="zoom-in"
-                size="1"
-                inputmode="numeric"
-                value={Math.round(app.zoom * 100)}
-                title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
-                onfocus={(e) => e.currentTarget.select()}
-                onchange={zoomInput}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur()
-                  if (e.key === 'Escape') {
-                    e.currentTarget.value = String(Math.round(app.zoom * 100))
-                    e.currentTarget.blur()
-                  }
-                  if (e.key === 'ArrowDown' && e.altKey) zoomList = true
-                }}
-              />
-              <button class="zoom-drop" class:on={zoomList} title={tr('배율 고르기')} onclick={() => (zoomList = !zoomList)}><Icon name="chevronDown" size={12} /></button>
-              {#if zoomList}
-                <div class="zoom-list" role="listbox">
-                  {#each ZOOM_PRESETS as z (z)}
-                    <button
-                      role="option"
-                      aria-selected={Math.round(app.zoom * 100) === z * 100}
-                      class:on={Math.round(app.zoom * 100) === Math.round(z * 100)}
-                      onclick={() => (setZoomLevel(z), (zoomList = false))}>{Math.round(z * 100)}</button
-                    >
-                  {/each}
-                </div>
-              {/if}
-            </div>
-            <button title={tr('5% 확대')} disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
+          <div class="zoom-row">
+            <ZoomBox
+              value={app.zoom}
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              presets={ZOOM_PRESETS}
+              onset={(v) => setZoomLevel(Math.round(v * 100) / 100)}
+              onstep={(d) => zoomStep(d * 5)}
+              stepTitles={[tr('5% 축소'), tr('5% 확대')]}
+              title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
+            />
           </div>
           {/if}
           <div class="vm-title sep">{tr('트리에 표시')}</div>
@@ -933,99 +900,8 @@
   .info {
     cursor: default;
   }
-  /* [−][150 ▾][+], 24px high */
-  .zoom-box {
-    display: flex;
-    height: 24px;
+  .zoom-row {
     margin: 2px 8px 4px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-  }
-  .zoom-box > button,
-  .zoom-drop {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    flex-shrink: 0;
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .zoom-box > button:first-child {
-    border-radius: 3px 0 0 3px;
-  }
-  .zoom-box > button:last-child {
-    border-radius: 0 3px 3px 0;
-  }
-  .zoom-box > button:hover:not(:disabled),
-  .zoom-drop:hover,
-  .zoom-drop.on {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-  .zoom-box > button:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .zoom-mid {
-    position: relative;
-    display: flex;
-    flex: 1;
-    min-width: 0;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    background: var(--bg);
-  }
-  .zoom-in {
-    flex: 1;
-    min-width: 0;
-    height: 100%;
-    padding: 0 0 0 22px; /* centred over the field with the ▾ */
-    border: none;
-    border-radius: 0;
-    background: none;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .zoom-in:focus {
-    outline: none;
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-  .zoom-drop {
-    width: 22px;
-  }
-  .zoom-list {
-    position: absolute;
-    top: calc(100% + 3px);
-    left: -1px;
-    right: -1px;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 3px;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-  }
-  .zoom-list button {
-    padding: 3px 8px;
-    border: none;
-    border-radius: 3px;
-    background: none;
-    color: var(--text);
-    font: inherit;
-    font-variant-numeric: tabular-nums;
-    text-align: center;
-    cursor: pointer;
-  }
-  .zoom-list button:hover {
-    background: var(--bg-hover);
-  }
-  .zoom-list button.on {
-    background: var(--bg-select);
   }
   .theme-seg {
     display: flex;
