@@ -268,7 +268,7 @@ wails3 package
 ```
 
 - `wails3 dev` runs with hot reload, `wails3 build` builds for the current OS into `build/bin/`, and `wails3 package` makes a release build (`Tablume.app` on macOS). The steps are in `Taskfile.yml`.
-- The Go functions the frontend calls (`frontend/bindings/`) are generated from `app.go` during the build. To generate them by hand, run `wails3 task bindings`.
+- The Go functions the frontend calls (`frontend/bindings/`) are generated from `internal/app/app.go` during the build. To generate them by hand, run `wails3 task bindings`.
 - Building on Linux needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev`. Wails v3 defaults to GTK4, so the Taskfile adds the `gtk3` tag.
 - A Windows `.exe` can be built on Linux or macOS too: `wails3 build GOOS=windows`.
 - Builds can include only the databases you need: list the ones to leave out in `EXTRA_TAGS` (`no_mysql`, `no_postgres`, `no_mssql`, `no_oracle`, `no_sqlite`). With only MySQL/MariaDB, for example, the Windows `.exe` shrinks from about 38 MB to about 14 MB. Left-out databases don't appear when creating a connection, and saved connections to them explain why when connecting. GitHub Actions always makes full builds.
@@ -278,7 +278,7 @@ wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
 ```
 
 - `wails3 task build:server` builds the [web version](#web-version). To try it locally, run it and register a passkey at the `http://localhost:8080/login?token=…` address in the log. Playwright tests use Chromium's virtual authenticator (CDP `WebAuthn.addVirtualAuthenticator`).
-- The macOS menu bar (Tablume / Edit / Window) is built in `menu.go` in the app's language and rebuilt when it changes. Items macOS adds itself (Services, Start Dictation, …) follow the OS language (`build/darwin/Info.plist` declares English and Korean).
+- The macOS menu bar (Tablume / Edit / Window) is built in `internal/app/menu.go` in the app's language and rebuilt when it changes. Items macOS adds itself (Services, Start Dictation, …) follow the OS language (`build/darwin/Info.plist` declares English and Korean).
 - The macOS app can only be built on macOS. If that's not at hand, use GitHub Actions below.
 
 ### Version
@@ -338,14 +338,18 @@ TABLUME_IT=1 go test ./internal/dbx/ -v
 ## Layout
 
 ```
-main.go, app.go            Wails entry point and the API exposed to the frontend (App service)
-platform_desktop.go        Desktop-only setup
-platform_web.go            Web version (-tags server): options, front door, session cleanup
-files.go                   Web version: server file browsing and path restrictions
-windowstate.go             Main window size, kept between runs
-version.go, VERSION        App version (build/version/ keeps the copies in step)
-menu.go                    macOS menu bar
+main.go                    Entry point: embeds the built frontend, the icon and VERSION
+VERSION                    App version (build/version/ keeps the copies in step)
 Taskfile.yml               Build steps (wails3 build / package / dev)
+internal/app/              The Wails app
+  run.go                   Options, main window, start
+  app.go                   API exposed to the frontend (App service)
+  platform_desktop.go      Desktop-only setup
+  platform_web.go          Web version (-tags server): options, front door, session cleanup
+  files.go                 Web version: server file browsing and path restrictions
+  tabwindows.go            Tabs opened in their own window
+  windowstate.go           Main window size, kept between runs
+  menu.go                  macOS menu bar
 internal/dbx/              Database layer
   dialect.go               Common database interface and registration
   dialect_<db>.go          Per-database connection strings, metadata, DDL, column and index changes (leave out with the no_<db> build tag)

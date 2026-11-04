@@ -1,6 +1,6 @@
 //go:build !server
 
-package main
+package app
 
 import "github.com/wailsapp/wails/v3/pkg/application"
 

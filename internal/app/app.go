@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -315,7 +315,7 @@ func loadLanguage() {
 }
 
 // Version is the app's release version (the VERSION file).
-func (a *App) Version() string { return appVersion() }
+func (a *App) Version() string { return version }
 
 // SetLanguage is the interface language chosen in the app ("ko" or "en"):
 // the backend's messages follow it.

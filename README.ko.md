@@ -266,7 +266,7 @@ wails3 package
 ```
 
 - `wails3 dev`는 핫 리로드로 실행하고, `wails3 build`는 지금 OS용으로 `build/bin/`에 빌드하며, `wails3 package`는 배포용 빌드(macOS는 `Tablume.app`)를 만듭니다. 단계는 `Taskfile.yml`에 있습니다.
-- 프런트엔드가 부르는 Go 함수(`frontend/bindings/`)는 빌드할 때 `app.go`에서 다시 만들어집니다. 직접 만들려면 `wails3 task bindings`를 실행합니다.
+- 프런트엔드가 부르는 Go 함수(`frontend/bindings/`)는 빌드할 때 `internal/app/app.go`에서 다시 만들어집니다. 직접 만들려면 `wails3 task bindings`를 실행합니다.
 - 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 합니다. Wails v3의 기본값은 GTK4라서 Taskfile이 `gtk3` 태그를 붙입니다.
 - Windows용 `.exe`는 리눅스나 macOS에서도 `wails3 build GOOS=windows`로 만들 수 있습니다.
 - 필요한 DB만 넣어 가볍게 빌드할 수 있습니다. 뺄 DB를 `EXTRA_TAGS`에 적습니다(`no_mysql`, `no_postgres`, `no_mssql`, `no_oracle`, `no_sqlite`). 예를 들어 MySQL/MariaDB만 넣으면 Windows `.exe`가 약 38MB에서 약 14MB로 줄어듭니다. 빠진 DB는 연결 만들기 화면에 나오지 않고, 이미 저장된 그 DB 연결은 접속할 때 안내가 뜹니다. GitHub Actions는 항상 전체 빌드만 만듭니다.
@@ -276,7 +276,7 @@ wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
 ```
 
 - `wails3 task build:server`는 [웹 버전](#웹-버전)을 만듭니다. 로컬에서 확인할 때는 그냥 실행한 뒤 로그에 나온 `http://localhost:8080/login?token=…` 주소로 패스키를 등록하면 됩니다. Playwright로 테스트할 때는 Chromium의 가상 인증기(CDP `WebAuthn.addVirtualAuthenticator`)를 씁니다.
-- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 앱 언어로 만들고, 언어를 바꾸면 다시 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 OS 언어를 따릅니다(`build/darwin/Info.plist`에 영어·한국어 지역화).
+- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `internal/app/menu.go`에서 앱 언어로 만들고, 언어를 바꾸면 다시 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 OS 언어를 따릅니다(`build/darwin/Info.plist`에 영어·한국어 지역화).
 - macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
 
 ### 버전
@@ -336,14 +336,18 @@ TABLUME_IT=1 go test ./internal/dbx/ -v
 ## 코드 구조
 
 ```
-main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API (App 서비스)
-platform_desktop.go        데스크톱 앱 전용 설정
-platform_web.go            웹 버전(-tags server): 옵션, 앞단 서버 시작, 세션 정리
-files.go                   웹 버전의 서버 파일 탐색과 경로 제한
-windowstate.go             메인 창 크기 기억
-version.go, VERSION        앱 버전 (build/version/이 사본들을 맞춤)
-menu.go                    macOS 메뉴 막대
+main.go                    진입점: 빌드된 프런트엔드, 아이콘, VERSION을 embed
+VERSION                    앱 버전 (build/version/이 사본들을 맞춤)
 Taskfile.yml               빌드 단계 (wails3 build / package / dev)
+internal/app/              Wails 앱
+  run.go                   옵션, 메인 창, 시작
+  app.go                   프런트엔드에 노출하는 API (App 서비스)
+  platform_desktop.go      데스크톱 앱 전용 설정
+  platform_web.go          웹 버전(-tags server): 옵션, 앞단 서버 시작, 세션 정리
+  files.go                 웹 버전의 서버 파일 탐색과 경로 제한
+  tabwindows.go            따로 창으로 연 탭
+  windowstate.go           메인 창 크기 기억
+  menu.go                  macOS 메뉴 막대
 internal/dbx/              DB 계층
   dialect.go               DB 공통 인터페이스와 등록
   dialect_<db>.go          DB별 접속 문자열, 메타데이터, DDL, 컬럼·인덱스 변경 (빌드 태그 no_<db>로 뺄 수 있음)

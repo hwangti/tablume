@@ -1,6 +1,6 @@
 //go:build server
 
-package main
+package app
 
 import (
 	"crypto/rand"
@@ -52,7 +52,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("Tablume", appVersion())
+		fmt.Println("Tablume", version)
 		os.Exit(0)
 	}
 
@@ -148,7 +148,7 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		if err != nil {
 			fail("listen %s: %v", *listen, err)
 		}
-		log.Printf(i18n.T("Tablume %s 웹: %s (listening on %s, data %s, files %s)"), appVersion(), pub, *listen, dir, svc.fileRoot)
+		log.Printf(i18n.T("Tablume %s 웹: %s (listening on %s, data %s, files %s)"), version, pub, *listen, dir, svc.fileRoot)
 		srv := &http.Server{Handler: front.Handler(), ReadHeaderTimeout: 15 * time.Second}
 		go func() {
 			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
