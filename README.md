@@ -1,139 +1,142 @@
 # Tablume
 
+**English** | [한국어](README.ko.md)
+
 A lightweight cross-platform multi-database SQL client written in Go.
 
-DataGrip보다 가볍게 쓰려고 만든 데이터베이스 클라이언트입니다. macOS와 Windows에서 동작하고, 서버에 띄워 브라우저로 쓰는 [웹 버전](#웹-버전)도 있습니다.
+Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and there is also a [web version](#web-version) you run on a server and use from a browser.
 
 ![Tablume](docs/screenshot-oracle.png)
 
-- **지원 DB**: MySQL, MariaDB, Oracle, SQL Server, PostgreSQL, SQLite
-- **크기**: 실행 파일 하나, 약 35MB. JVM이나 Chromium을 함께 넣지 않고 OS에 있는 웹뷰를 씁니다. (Windows는 WebView2, macOS는 WKWebView)
-- **Oracle Instant Client가 필요 없습니다.** 순수 Go 드라이버([go-ora](https://github.com/sijms/go-ora))를 씁니다.
+- **Databases**: MySQL, MariaDB, Oracle, SQL Server, PostgreSQL, SQLite
+- **Size**: a single executable, about 35 MB. No bundled JVM or Chromium: it uses the web view that comes with the OS (WebView2 on Windows, WKWebView on macOS).
+- **No Oracle Instant Client needed.** It uses a pure Go driver ([go-ora](https://github.com/sijms/go-ora)).
 
-## 기능
+## Features
 
-- 연결 관리: 연결별 색상 지정, 연결 테스트, 비밀번호는 OS 키체인에 저장 (macOS 키체인, Windows 자격 증명 관리자)
-- SSH 터널: 비밀번호 또는 키 파일(암호 걸린 키 포함)로 접속합니다. 처음 연결한 SSH 서버의 호스트 키를 저장해 두고, 키가 바뀌면 연결하지 않습니다. 연결이 끊기면 다음 쿼리 때 다시 붙습니다.
-- 스키마 트리: 스키마/DB → 테이블/뷰 → 컬럼 (PK, 타입, NOT NULL 표시)
-  - 표시할 스키마: 연결 이름 옆 `3/98`(표시 중/전체)을 누르면 트리에 보일 스키마를 고릅니다. 전체 스키마(시스템 스키마 제외), 기본 스키마(로그인 사용자·기본 DB), 개별 체크, `HR_*` 같은 패턴을 조합할 수 있고 연결마다 저장됩니다.
-  - 연결 순서: 연결을 끌어서 옮기거나 우클릭 → 맨 위로 / 위로 / 아래로 / 맨 아래로.
-  - 스크롤해도 지금 보고 있는 연결 이름이 트리 맨 위에 고정됩니다.
-- 프로시저·함수: 스키마 아래 "프로시저 · 함수"를 펼치면 목록이 나오고(Oracle은 패키지 포함, SQLite 제외), 누르면 소스(CREATE 문)가 콘솔 미리보기 탭에 열립니다. 소스는 그대로 다시 실행할 수 있게 MySQL은 `DELIMITER`, SQL Server는 `GO`, Oracle은 `/`로 감쌉니다.
-  - 테이블 필터
-  - 더블클릭하면 데이터 보기
-  - 우클릭 메뉴: SELECT 문 생성, 이름 복사 등
-- SQL 콘솔 (탭 여러 개, 탭마다 연결과 세션이 따로 유지됨)
-  - `Ctrl/⌘+Enter`: 커서가 있는 문장을 실행하고, 선택 영역이 있으면 선택 영역을 실행
-  - `Ctrl/⌘+Shift+Enter`: 전체 스크립트를 순서대로 실행하고, 오류가 나면 멈춤
-  - 실행 중인 쿼리 취소. 서버가 취소에 응답하지 않으면 3초 뒤 그 탭의 연결을 새로 엽니다.
-  - DB별 문법 하이라이트, 테이블/컬럼 자동완성
-  - 문장을 나누는 규칙은 DB별로 다릅니다.
-    - Oracle: PL/SQL 블록은 `/` 줄까지를 한 문장으로 봅니다.
-    - SQL Server: `GO`로 배치를 나눕니다.
-    - MySQL: `DELIMITER`를 지원하고, `BEGIN … END` 블록은 그대로 실행할 수 있습니다.
-    - PostgreSQL: `$$` 인용을 인식합니다.
-  - Oracle에서 PL/SQL을 CREATE했는데 컴파일 오류가 있으면 오류 내용을 보여줍니다. (SQL\*Plus의 "created with compilation errors"에 해당)
-  - 탭과 SQL은 앱을 다시 켜도 복원됩니다. `.sql` 파일을 열고 저장할 수 있습니다.
-- 결과 그리드
-  - 가상 스크롤이라 수만 행도 가볍게 표시됩니다.
-  - 처음에 500행(설정 가능)만 가져오고, 스크롤하면 이어서 가져옵니다.
-  - 셀과 범위 선택, 복사(TSV, 헤더 포함, `IN (…)` 목록)
-  - 컬럼 정렬과 너비 조절
-  - 값 보기·편집 창: JSON처럼 보이는 값(`{`나 `[`로 시작)은 색으로 구분하고 접기·괄호 짝 표시가 됩니다. JSON 정렬 버튼, `Ctrl`/`⌘`+`Enter`로 적용
-  - 외래 키 따라가기: FK 셀을 `⌘`+클릭(Mac) 또는 `Alt`/`Ctrl`+클릭(Windows)하면 참조하는 테이블이 `WHERE 컬럼 = 값` 조건으로 열립니다. 키를 누르고 있으면 FK 셀이 링크처럼 보이고, 셀 우클릭 메뉴의 "참조 행 열기"로도 됩니다. 원래 탭은 고정되어 남습니다.
-  - CSV/JSON으로 내보내기
-- 결과 그리드에서 바로 편집 (DataGrip 방식)
-  - 단일 테이블 SELECT 결과이고, 결과에 기본 키(PK)가 모두 들어 있을 때 편집할 수 있습니다. 조건이 안 맞으면 "읽기 전용" 표시와 함께 이유를 보여줍니다.
-  - PK가 없는 테이블도 행 추가는 됩니다. 기존 행의 수정·삭제만 막힙니다.
-  - 셀 수정, NULL로 설정, 행 추가, 행 삭제를 화면에 모아 두었다가 "적용"(`⌘`/`Ctrl`/`Alt`+`Enter`, `⌘`/`Ctrl`+`S`)을 누르면 한 트랜잭션으로 바로 실행합니다. 실행한 문장과 결과는 탭의 로그에 색 구분된 SQL로 남습니다(구조 탭의 컬럼·인덱스 변경, 테이블 이름 변경도 같음).
-  - 셀 우클릭의 "선택 셀 되돌리기"(`⌘`/`Ctrl`+`Z`)로 고친 셀만 원래대로 돌립니다. 새 행의 셀은 `<generated>`/`<default>` 상태로 돌아갑니다.
-  - 편집 중에 `Tab`/`Shift+Tab`을 누르면 옆 셀도 편집 상태로 열립니다(마지막 컬럼에서는 다음 행으로).
-  - 새 행에서 비워 둔 컬럼은 `<generated>`(AUTO_INCREMENT, IDENTITY, 시퀀스, 계산 컬럼)나 `<default>`(기본값)로 보이고 INSERT에서 빠집니다. 셀을 열었다가 아무것도 입력하지 않고 나가면 NULL은 NULL 그대로 남고, 입력했다가 다 지우면 빈 문자열(`''`)이 됩니다(Oracle은 빈 문자열을 NULL로 저장합니다).
-  - 변경이 예상한 행 수(1행)와 다르게 적용되면 전체를 롤백합니다.
-- 구조 탭: 테이블 탭의 "구조"는 `컬럼·인덱스 | DDL`로 전환합니다. 컬럼·인덱스는 컬럼 표 아래에 인덱스 표가 이어지는 한 화면입니다. 테이블을 우클릭해 "DDL 보기"를 누르면 CREATE 문이 새 콘솔 탭에 열립니다.
-  - 컬럼: 키, 타입, NULL, 기본값, FK, 코멘트를 표로 보여줍니다.
-  - 표에서 타입·기본값·코멘트를 더블클릭하거나 NULL 체크박스를 눌러 바꾸고 "적용"을 누르면, 실행할 `ALTER` 문을 먼저 보여준 뒤 실행합니다. PostgreSQL과 SQL Server는 한 트랜잭션으로 실행해 실패하면 모두 취소되고, MySQL/MariaDB와 Oracle은 DDL을 되돌릴 수 없어 실패한 문장 앞까지는 적용된 채로 남습니다(미리보기에 안내). MySQL은 `MODIFY`로 컬럼 정의 전체를 다시 쓰면서 문자셋·콜레이션·AUTO_INCREMENT·ON UPDATE를 유지합니다. SQLite와 뷰는 편집할 수 없습니다.
-  - 인덱스: 이름, 컬럼(순서·DESC), 유니크, 종류, 조건(부분 인덱스)·INCLUDE를 보여줍니다. "인덱스 추가"로 컬럼을 순서대로 골라 만들고(이름은 `idx_테이블_컬럼`으로 자동 제안), 연필 버튼이나 더블클릭으로 고치면 지우고 다시 만듭니다. 휴지통 버튼으로 지웁니다. 모아 둔 변경을 "적용"하면 실행할 SQL을 먼저 보여줍니다. 미리보기의 "콘솔에서 열기"는 실행하지 않고 그 SQL을 새 콘솔 탭에 옮깁니다(컬럼 변경도 같음). 기본 키는 지우거나 고칠 수 없고, UNIQUE 제약에 딸린 인덱스는 `DROP CONSTRAINT`로 지웁니다(SQLite는 불가). 식·길이 지정·조건·INCLUDE가 있는 인덱스는 지우기만 됩니다.
-  - DDL 문은 이렇게 가져옵니다.
+- Connections: a color per connection, connection test, passwords kept in the OS keychain (macOS Keychain, Windows Credential Manager)
+- SSH tunnels: password or key file (passphrase-protected keys included). The host key of an SSH server is saved on the first connection, and a server whose key has changed is refused. A dropped tunnel reconnects on the next query.
+- Schema tree: schema/database → tables/views → columns (PK, type, NOT NULL)
+  - Schemas to show: click `3/98` (shown/total) next to a connection to choose which schemas the tree shows. All schemas (system schemas excluded), the default schema (login user / default database), individual checks and patterns like `HR_*` can be combined; saved per connection.
+  - Connection order: drag a connection, or right-click → Move to Top / Up / Down / to Bottom.
+  - The name of the connection you are in stays pinned at the top of the tree while scrolling.
+- Procedures and functions: expand "Procedures · Functions" under a schema for the list (packages included on Oracle; not for SQLite). Clicking one opens its source (the CREATE statement) in a console preview tab, wrapped so it runs as is: `DELIMITER` on MySQL, `GO` on SQL Server, `/` on Oracle.
+  - Table filter
+  - Double-click to view data
+  - Context menu: generate SELECT, copy names, …
+- SQL console (any number of tabs, each with its own connection and session)
+  - `Ctrl/⌘+Enter`: run the statement at the cursor, or the selection if there is one
+  - `Ctrl/⌘+Shift+Enter`: run the whole script in order, stopping at an error
+  - Cancel a running query. If the server doesn't respond to the cancel, the tab's connection is reopened after 3 seconds.
+  - Syntax highlighting per database, table/column completion
+  - Statements are split by each database's rules:
+    - Oracle: a PL/SQL block runs up to the `/` line.
+    - SQL Server: batches are split at `GO`.
+    - MySQL: `DELIMITER` is supported, and `BEGIN … END` blocks run as written.
+    - PostgreSQL: `$$` quoting is recognized.
+  - On Oracle, PL/SQL created with compilation errors shows the errors (like SQL\*Plus's "created with compilation errors").
+  - Tabs and their SQL come back when the app restarts. `.sql` files can be opened and saved.
+- Result grid
+  - Virtual scrolling: tens of thousands of rows stay light.
+  - Fetches the first 500 rows (configurable) and more as you scroll.
+  - Cell and range selection; copy as TSV, with headers, or as an `IN (…)` list
+  - Column sorting and resizing
+  - Value viewer/editor: values that look like JSON (starting with `{` or `[`) are highlighted, with folding and bracket matching. A Format JSON button; `Ctrl`/`⌘`+`Enter` applies.
+  - Follow foreign keys: `⌘`+click (Mac) or `Alt`/`Ctrl`+click (Windows) on an FK cell opens the referenced table filtered by `WHERE column = value`. Holding the key shows FK cells as links; the cell menu's "Open Referenced Row" does the same. The original tab is kept.
+  - Export to CSV/JSON
+- Editing in the result grid (DataGrip style)
+  - A result can be edited when it comes from a single-table SELECT and includes the whole primary key. Otherwise it is marked "Read-only" with the reason.
+  - Tables without a primary key still take new rows; only changing or deleting existing rows is blocked.
+  - Cell edits, Set to NULL, added and deleted rows are collected on screen and run in one transaction with "Apply" (`⌘`/`Ctrl`/`Alt`+`Enter`, `⌘`/`Ctrl`+`S`). The statements and their results are logged in the tab's log as highlighted SQL (so are column and index changes in the Structure tab, and table renames).
+  - "Revert Selected Cells" in the cell menu (`⌘`/`Ctrl`+`Z`) undoes only the edited cells. Cells of a new row go back to `<generated>`/`<default>`.
+  - While editing, `Tab`/`Shift+Tab` opens the next cell for editing too (from the last column, the next row).
+  - In a new row, columns left empty show `<generated>` (AUTO_INCREMENT, IDENTITY, sequences, computed columns) or `<default>` (a default value) and are left out of the INSERT. Opening a cell and leaving it without typing keeps NULL as NULL; typing and then clearing it gives an empty string (`''`; Oracle stores that as NULL).
+  - If a change affects a different number of rows than expected (one), everything is rolled back.
+- Structure tab: a table tab's "Structure" switches between `Columns · Indexes | DDL`. Columns · Indexes is one page with the column table followed by the index table. Right-click a table → "View DDL" opens its CREATE statement in a new console tab.
+  - Columns: key, type, NULL, default, FK and comment in a table.
+  - Double-click type, default or comment, or click the NULL checkbox, then "Apply": the `ALTER` statements are shown before they run. PostgreSQL and SQL Server run them in one transaction, so a failure rolls everything back; MySQL/MariaDB and Oracle can't roll back DDL, so statements before a failure stay applied (the preview says so). On MySQL, `MODIFY` rewrites the whole column definition, keeping its character set, collation, AUTO_INCREMENT and ON UPDATE. SQLite tables and views can't be edited.
+  - Indexes: name, columns (order, DESC), unique, kind, condition (partial indexes) and INCLUDE. "Add Index" builds one from columns picked in order (named `idx_table_column` by default); the pencil button or a double-click changes one by dropping and creating it again; the trash button drops it. "Apply" shows the SQL first. "Open in Console" in the preview puts that SQL in a new console tab without running it (column changes too). The primary key can't be dropped or changed, and an index belonging to a UNIQUE constraint is dropped with `DROP CONSTRAINT` (not on SQLite). Indexes with expressions, prefix lengths, conditions or INCLUDE can only be dropped.
+  - Where the DDL comes from:
   - MySQL: `SHOW CREATE TABLE`
   - Oracle: `DBMS_METADATA`
-  - PostgreSQL, SQL Server: 시스템 카탈로그로 조립합니다(제약조건, 인덱스 포함).
+  - PostgreSQL, SQL Server: assembled from the system catalogs (constraints and indexes included)
   - SQLite: `sqlite_master`
-- 트리 보기 옵션: 테이블·컬럼 코멘트, 행 수, 크기를 트리에 표시할 수 있습니다. 행 수와 크기는 `COUNT(*)`가 아니라 DB 통계에서 가져오는 추정값이고, 테이블 목록과 따로, 옵션을 켜 둔 동안만 조회합니다(테이블이 많으면 느릴 수 있어서). Oracle 크기는 통계의 블록 수 × 블록 크기(테이블 데이터만)입니다. 테이블 탭에서 WHERE 없이 전체 행 수를 셌거나 모든 행을 불러오면 트리의 행 수도 그 값으로 바뀝니다.
-- 콘솔에서 `CREATE`/`ALTER`/`DROP`/`RENAME` 같은 DDL을 실행하면 관련 스키마의 테이블 목록과, 열어 둔 테이블의 컬럼을 트리에서 다시 읽습니다. `CREATE DATABASE`/`SCHEMA`는 스키마 목록까지 다시 읽습니다.
-- 테이블 이름 바꾸기: 트리에서 테이블을 우클릭해 "이름 바꾸기"를 누르거나 `F2`를 누릅니다. 그 테이블을 열어 둔 탭도 새 이름을 따라갑니다.
-- 트리 조작
-  - 테이블을 클릭하면 미리보기 탭으로 열리고(다음 클릭이 같은 탭을 재사용), 더블클릭하면 탭이 고정됩니다. Enter로도 열 수 있습니다. 이미 열린 테이블이면 그 탭으로 이동합니다.
-  - 연결과 스키마는 ▸ 버튼이나 더블클릭으로 펼칩니다(클릭은 선택만).
-  - ↑↓로 이동, →로 펼치기, ←로 접기를 할 수 있습니다.
-  - 열려 있는 테이블은 트리에서 강조 표시됩니다. 트리 위의 ⌖ 버튼을 누르면 그 위치로 펼쳐서 이동합니다.
-  - 테이블이나 컬럼에 마우스를 올리면 코멘트 전체와 행 수, 크기가 보입니다.
-  - 보기 옵션의 "기본 정렬: PK 내림차순"을 켜면 테이블을 열 때 PK 내림차순으로 정렬합니다.
-- 탭은 드래그해서 순서를 바꿀 수 있습니다.
-- 테이블 데이터 탭: 트리에서 테이블을 더블클릭하면 에디터 없이 결과만 보이는 탭이 열립니다. 위쪽의 `데이터 | 구조 | 로그`로 전환할 수 있고, 콘솔 아이콘을 누르면 같은 SELECT를 SQL 콘솔에서 엽니다.
-  - 결과는 콘솔과 테이블 탭 모두 페이지 단위로 가져옵니다. 단순 SELECT에는 `LIMIT/OFFSET`(SQL Server·Oracle 12c+는 `OFFSET … FETCH`)을 붙여 페이지마다 따로 실행하므로, 커서를 열어 둔 채 테이블 잠금을 잡지 않습니다. 이미 `LIMIT`/`TOP`/`FOR UPDATE` 등이 있는 쿼리나 Oracle 11g는 커서로 이어 읽고, 30초 동안 더 읽지 않으면 커서를 닫습니다.
-  - 아래로 스크롤하면 다음 페이지를 붙이고, 위쪽 행은 맨 위의 "이전 행 불러오기"를 눌러 붙입니다. 메모리를 아끼려고 한 번에 최대 1만 행(페이지 크기가 크면 그 두 배)만 들고 있습니다.
-  - 결과 막대: ⏮ 처음 · ◀ ▶ 한 페이지씩 이동(버튼은 쌓지 않고 그 페이지를 새로 불러옵니다) · `1–1,000 ▾`(누르면 페이지 크기 100~10,000 선택) · `1,001+`(누르면 `COUNT(*)`로 전체 행 수) · ⏭ 마지막.
-- 결과 표 컬럼
-  - 헤더를 드래그하면 컬럼 순서가 바뀌고, 헤더 우클릭이나 표 왼쪽 위 모서리 버튼으로 컬럼을 숨기거나 다시 보일 수 있습니다. 테이블 탭은 다시 조회해도 순서와 숨김이 유지됩니다.
-  - 보기 옵션의 "컬럼 번호 표시"를 켜면 헤더에 컬럼 번호가 붙습니다.
-  - 셀 하나를 선택하면 같은 컬럼에서 값이 같은 셀이 노랗게 강조되고, 문자 셀을 편집하는 중에는 입력칸 오른쪽의 `…` 버튼으로 큰 창에서 이어서 편집합니다.
-- 그리드 표시
-  - 숫자, 날짜, 불리언 값을 색으로 구분합니다. FLOAT/DOUBLE은 지수 표기(`2.6e+25`) 없이 그대로 보여줍니다.
-  - 헤더와 트리의 컬럼에 PK(🔑), UNIQUE(☆), FK(🔗) 아이콘을 붙이고, FK는 참조 대상을 툴팁으로 보여줍니다.
-- 내보내기: CSV, TSV, JSON, INSERT 문(.sql)
-- 테이블 필터를 입력하면 일치하는 테이블이 있는 스키마만, 펼친 상태로 보여줍니다. 이미 펼쳐서 목록을 가져온 스키마 안에서만 찾고, 펼친 적 없는 스키마는 새로 조회하지 않습니다.
-- 테이블 데이터 필터 (DataGrip 방식)
-  - 테이블 데이터 탭 위의 `WHERE` / `ORDER BY` 칸에 조건을 넣고 Enter를 누르면 DB에서 다시 조회합니다. 두 칸 모두 컬럼명과 키워드를 자동완성합니다(`Ctrl+Space`로 직접 띄울 수도 있습니다).
-  - 행 수 제한 없이, 스크롤하면 끝까지 이어서 불러옵니다.
-  - 컬럼 헤더를 클릭하면 DB 쪽 `ORDER BY`로 정렬합니다. 오름차순 → 내림차순 → 해제 순으로 바뀝니다.
-  - 일반 쿼리 결과에서 헤더를 클릭하면 이미 불러온 행만 화면에서 정렬합니다.
-- 결과만 크게 보기: 결과 탭 줄의 확대 버튼을 누르거나 구분선을 더블클릭하면 에디터를 숨기고 그리드만 크게 봅니다. 테이블 데이터 탭은 이 모드로 열립니다.
-- 팝업 창은 제목 줄을 드래그해서 옮길 수 있습니다. 제목 줄을 더블클릭하면 가운데로 돌아옵니다.
-- 언어: 보기 옵션에서 한국어 / English를 고릅니다. 처음에는 OS(브라우저) 언어를 따릅니다. DB 서버가 보내는 오류 메시지는 서버 설정 언어 그대로입니다.
-- 테마: 보기 옵션에서 자동(OS 설정 따름) / 다크 / 라이트를 고를 수 있습니다.
-- 화면 배율: 보기 옵션의 "화면 배율 (%)" `[−][100 ▾][+]`에서 ±5%, 직접 입력, 또는 ▾ 프리셋(100·110·125·150·175·200)으로 창 전체를 확대합니다. `Ctrl/⌘`+`+`/`-`/`0`, `Ctrl/⌘`+휠은 프리셋 단위로 움직입니다(데스크톱 앱).
-- 연결 목록 접기: 탭 줄 왼쪽 버튼이나 `Ctrl/⌘+B`로 왼쪽 연결 목록을 잠시 숨깁니다(펼친 트리와 필터는 그대로 남음).
-- 넓게 보기: 탭 줄 오른쪽 버튼이나 탭 우클릭 → "넓게 보기"로 지금 탭만 창 가득 봅니다(연결 목록과 탭 줄을 숨김). 위쪽 막대의 "넓게 보기 종료"이나 `Ctrl/⌘+B`로 돌아옵니다.
+- Tree view options: table and column comments, row counts and sizes can be shown in the tree. Row counts and sizes are estimates from the database's statistics, not `COUNT(*)`, fetched separately from the table list and only while the option is on (they can be slow with many tables). Oracle sizes are blocks × block size from the statistics (table data only). When a table tab counts all rows without WHERE, or loads every row, the tree's count is updated to that number.
+- Running DDL such as `CREATE`/`ALTER`/`DROP`/`RENAME` in a console reloads the table list of the schemas involved and the columns of expanded tables. `CREATE DATABASE`/`SCHEMA` reloads the schema list too.
+- Rename a table: right-click it in the tree → "Rename", or press `F2`. Tabs showing the table follow the new name.
+- Tree
+  - Clicking a table opens it in a preview tab (the next click reuses it); double-clicking keeps the tab. Enter opens it too. A table that is already open switches to its tab.
+  - Connections and schemas expand with the ▸ button or a double-click (a click only selects).
+  - ↑↓ to move, → to expand, ← to collapse.
+  - Open tables are highlighted in the tree. The ⌖ button above the tree expands to and scrolls to the open table.
+  - Hovering a table or column shows its full comment, row count and size.
+  - "Default order: PK descending" in the view options opens tables sorted by primary key, descending.
+- Tabs can be reordered by dragging.
+- Table data tabs: double-clicking a table in the tree opens a tab with results only, no editor. Switch with `Data | Structure | Log` at the top; the console icon opens the same SELECT in an SQL console.
+  - Consoles and table tabs both fetch results page by page. A plain SELECT gets `LIMIT/OFFSET` (`OFFSET … FETCH` on SQL Server and Oracle 12c+) and each page runs on its own, so no cursor stays open holding table locks. Queries that already have `LIMIT`/`TOP`/`FOR UPDATE` and the like, and Oracle 11g, read on from a cursor, which is closed after 30 seconds without reading.
+  - Scrolling down appends the next page; rows above are added with "Load previous rows" at the top. To save memory at most 10,000 rows (twice the page size if that is larger) are held at once.
+  - Result bar: ⏮ first · ◀ ▶ one page at a time (buttons load that page instead of appending) · `1–1,000 ▾` (click to pick a page size from 100 to 10,000) · `1,001+` (click to count all rows with `COUNT(*)`) · ⏭ last.
+- Result columns
+  - Drag a header to reorder columns; hide or show them from the header menu or the button in the grid's top-left corner. Table tabs keep the order and hidden columns when reloaded.
+  - "Show column numbers" in the view options numbers the headers.
+  - Selecting a cell highlights cells with the same value in that column in yellow. While editing a text cell, the `…` button at the right of the input continues in a large editor.
+- Grid display
+  - Numbers, dates and booleans are colored. FLOAT/DOUBLE values are shown as they are, without exponent notation (`2.6e+25`).
+  - Columns in headers and the tree get PK (🔑), UNIQUE (☆) and FK (🔗) icons; an FK's target is shown in a tooltip.
+- Export: CSV, TSV, JSON, INSERT statements (.sql)
+- Typing in the table filter shows only schemas with matching tables, expanded. It searches schemas whose tables were already loaded; schemas never expanded aren't queried.
+- Table data filter (DataGrip style)
+  - Type a condition in the `WHERE` / `ORDER BY` fields above a table data tab and press Enter to query the database again. Both fields complete column names and keywords (`Ctrl+Space` opens the list).
+  - No row limit: scrolling keeps loading to the end.
+  - Clicking a column header sorts in the database with `ORDER BY`: ascending → descending → off.
+  - In a plain query result, clicking a header sorts the loaded rows on screen.
+- Results only: the maximize button in the result tab row, or a double-click on the divider, hides the editor and shows only the grid. Table data tabs open this way.
+- Dialogs can be moved by dragging their title bar; double-clicking it centers them again.
+- Language: English / 한국어 in the view options. The first time, the OS (browser) language is used. Error messages from the database server stay in the server's language.
+- Theme: Auto (follows the OS) / Dark / Light in the view options.
+- Zoom: "Zoom (%)" `[−][100 ▾][+]` in the view options zooms the whole window by ±5%, a typed value, or a ▾ preset (100·110·125·150·175·200). `Ctrl/⌘`+`+`/`-`/`0` and `Ctrl/⌘`+wheel step through the presets (desktop app).
+- Hide the connection list: the button at the left of the tab strip or `Ctrl/⌘+B` hides it for a while (expanded nodes and the filter are kept).
+- Wide view: the button at the right of the tab strip, or right-click a tab → "Wide View", shows only the current tab across the window (no connection list or tab strip). "Exit Wide View" in the top bar or `Ctrl/⌘+B` goes back.
+- The desktop app reopens at the window size it was closed at (maximized if it was).
 
-## 단축키
+## Shortcuts
 
-| 키 | 동작 |
+| Key | Action |
 |---|---|
-| `Ctrl/⌘ + Enter` | 현재 문장(또는 선택 영역) 실행 |
-| `Ctrl/⌘ + Shift + Enter` | 전체 실행 |
-| `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | 새 콘솔 / 탭 닫기 |
-| `Ctrl/⌘ + B` | 연결 목록 숨기기 / 보이기 (넓게 보기에서는 원래 화면으로) |
-| `Ctrl/⌘ + 1…9` | 탭 이동 (탭 우클릭: 닫기 · 다른/왼쪽/오른쪽/같은 연결/모든 탭 닫기 · 복제 · 이름 바꾸기) |
-| `Ctrl + Tab` / `Ctrl + Shift + Tab` | 다음 / 이전 탭 (`Ctrl + PageDown/PageUp`, macOS는 `⌘ + Shift + ]/[`도 됨) |
-| `Ctrl/⌘ + /` | 주석 토글 |
-| `Ctrl + Alt + L` / `⌘ + ⌥ + L` | SQL 정렬 (선택 영역 또는 전체, 한 줄 SQL을 여러 줄로) |
-| `Ctrl/⌘ + F` | 에디터에서 찾기/바꾸기 |
-| 그리드에서 `Enter` / `F2` / 더블클릭 | 셀 편집 (편집할 수 없으면 값 보기) |
-| 그리드에서 바로 타이핑 | 셀 값을 새 값으로 덮어쓰며 편집 시작 |
-| 그리드에서 `Shift + Enter` | 셀 값 보기 |
-| 셀 편집 중 `F2` | 입력하던 값을 큰 편집 창에서 이어서 편집 |
-| 그리드에서 `Delete` | 선택한 행 삭제 / 복원 (적용 전까지 보류) |
-| 그리드에서 `Ctrl/⌘ + S` | 변경 적용 |
-| 탭 더블클릭 / 가운데 클릭 | 이름 바꾸기 / 닫기 |
+| `Ctrl/⌘ + Enter` | Run the current statement (or the selection) |
+| `Ctrl/⌘ + Shift + Enter` | Run all |
+| `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | New console / close tab |
+| `Ctrl/⌘ + B` | Hide / show the connection list (in wide view: back to the normal view) |
+| `Ctrl/⌘ + 1…9` | Go to tab (right-click a tab: close · close other/left/right/same-connection/all tabs · duplicate · rename) |
+| `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / previous tab (also `Ctrl + PageDown/PageUp`, and `⌘ + Shift + ]/[` on macOS) |
+| `Ctrl/⌘ + /` | Toggle comment |
+| `Ctrl + Alt + L` / `⌘ + ⌥ + L` | Format SQL (selection or everything; one-line SQL becomes several lines) |
+| `Ctrl/⌘ + F` | Find/replace in the editor |
+| `Enter` / `F2` / double-click in the grid | Edit the cell (view the value if it can't be edited) |
+| Typing in the grid | Start editing, replacing the cell's value |
+| `Shift + Enter` in the grid | View the cell value |
+| `F2` while editing a cell | Continue in the large editor |
+| `Delete` in the grid | Delete / restore the selected rows (pending until applied) |
+| `Ctrl/⌘ + S` in the grid | Apply changes |
+| Double-click / middle-click a tab | Rename / close |
 
-## DB별 참고
+## Notes per database
 
-- **Oracle**: "서비스 이름"(예: `ORCL`, `FREEPDB1`, `XEPDB1`)으로 접속하고, 필요하면 "SID 사용"을 체크하세요. 11g도 지원합니다. 테이블 미리보기는 `ROWNUM`을 씁니다. 스키마 목록은 12c 이상에서 Oracle 내부 계정(SYS, XDB 등)을 숨깁니다.
-- **SQL Server**: 트리의 첫 단계는 데이터베이스입니다. 이름 있는 인스턴스는 호스트에 `host\SQLEXPRESS`처럼 적으면 됩니다. 기본값은 `TrustServerCertificate=true`입니다.
-- **MySQL/MariaDB**: 영향받은 행 수는 실제로 바뀐 행이 아니라 조건에 맞은 행 기준입니다(`clientFoundRows`).
-- **MySQL/MariaDB TLS**: 추가 옵션에 `tls=true`를 넣으면 서버 인증서를 OS가 확인합니다. 회사나 서버가 직접 만든 인증서라서 확인에 실패하면(macOS는 "표준을 준수하지 않음"으로 더 엄격하게 거부합니다) `tls-ca=/경로/ca.pem`으로 그 CA를 지정하세요. 이때는 Go가 그 CA로 직접 확인합니다. 확인 없이 암호화만 하려면 `tls=skip-verify`를 씁니다(DataGrip의 기본 SSL 동작과 같습니다). SSH 터널을 거칠 때도 인증서는 DB 호스트 이름으로 확인합니다.
-- **추가 옵션** 칸에 드라이버 옵션을 `key=value&key2=value2` 형식으로 넣을 수 있습니다. 예: `tls=true`, `sslmode=require`, `encrypt=true`
-- 트랜잭션: 기본은 autocommit입니다. 탭마다 연결이 하나로 고정되어 있어서 `BEGIN`/`START TRANSACTION` … `COMMIT`/`ROLLBACK`을 직접 실행해도 같은 세션에서 처리됩니다.
+- **Oracle**: connect with a "Service name" (e.g. `ORCL`, `FREEPDB1`, `XEPDB1`), or check "Use SID". 11g is supported; table previews use `ROWNUM`. On 12c and later the schema list hides Oracle's internal accounts (SYS, XDB, …).
+- **SQL Server**: the tree's first level is databases. For a named instance, write the host as `host\SQLEXPRESS`. `TrustServerCertificate=true` is the default.
+- **MySQL/MariaDB**: affected row counts are rows matched, not rows actually changed (`clientFoundRows`).
+- **MySQL/MariaDB TLS**: `tls=true` in the extra options has the OS verify the server certificate. If that fails because the certificate was issued by your company or the server itself (macOS rejects such certificates more strictly, as "not standards compliant"), name that CA with `tls-ca=/path/ca.pem`; Go then verifies against it directly. To encrypt without verifying, use `tls=skip-verify` (DataGrip's default SSL behavior). Through an SSH tunnel, the certificate is still checked against the database host name.
+- **Extra options** take driver options as `key=value&key2=value2`, e.g. `tls=true`, `sslmode=require`, `encrypt=true`.
+- Transactions: autocommit by default. Each tab keeps one connection, so `BEGIN`/`START TRANSACTION` … `COMMIT`/`ROLLBACK` typed by hand run in the same session.
 
-## 웹 버전
+## Web version
 
-같은 앱을 서버에 띄워 브라우저로 씁니다(dbgate 웹 버전 같은 용도). 로그인은 패스키로 합니다. Mac/iPhone은 Touch ID·Face ID, Windows는 Windows Hello(PIN·지문·얼굴)를 씁니다.
+The same app, run on a server and used from a browser (like dbgate's web version). Sign-in is with passkeys: Touch ID / Face ID on Mac and iPhone, Windows Hello (PIN, fingerprint, face) on Windows.
 
-- 계정은 하나입니다. 어느 기기에서 로그인해도 같은 연결 목록과 작업 공간(열린 탭, SQL)이 보입니다.
-- DB 접속은 서버가 합니다. 서버에서 닿는 DB만 쓸 수 있습니다.
+- There is one account. Every device signed in sees the same connection list and workspace (open tabs, SQL).
+- The server connects to the databases, so only databases the server can reach are available.
 
-### 실행
+### Running
 
 Docker:
 
@@ -145,7 +148,7 @@ docker build -t tablume .
 docker run -d --name tablume --restart unless-stopped -p 127.0.0.1:8080:8080 -v tablume:/data -e TABLUME_URL=https://db.example.com tablume
 ```
 
-실행 파일로 직접 띄울 수도 있습니다. `build/bin/Tablume-server`가 만들어집니다.
+Or run the executable directly. This builds `build/bin/Tablume-server`:
 
 ```bash
 wails3 task build:server
@@ -155,33 +158,53 @@ wails3 task build:server
 ./build/bin/Tablume-server -url https://db.example.com
 ```
 
-| 옵션 | 환경 변수 | 기본값 | 설명 |
+| Option | Environment variable | Default | Description |
 |---|---|---|---|
-| `-url` | `TABLUME_URL` | (localhost면 생략 가능) | 브라우저에 치는 주소. 패스키가 이 도메인에 묶입니다. HTTPS여야 합니다(localhost만 예외). |
-| `-listen` | `TABLUME_LISTEN` | `127.0.0.1:8080` (Docker는 `:8080`) | 서버가 받을 주소 |
-| `-data` | `TABLUME_DATA` | OS 설정 폴더 (Docker는 `/data`) | 연결 목록, 작업 공간, 패스키, 암호화 키 |
-| `-files` | `TABLUME_FILES` | `<data>/files` | SQLite 파일과 SSH 키를 읽을 수 있는 유일한 폴더 |
-| `-reset-passkeys` | | | 패스키를 모두 지우고 모든 기기를 로그아웃시킨 뒤 새 등록 링크를 출력 |
+| `-url` | `TABLUME_URL` | (optional on localhost) | The address typed in the browser. Passkeys are bound to its domain. Must be HTTPS (except localhost). |
+| `-listen` | `TABLUME_LISTEN` | `127.0.0.1:8080` (Docker: `:8080`) | Address the server listens on |
+| `-data` | `TABLUME_DATA` | the OS config folder (Docker: `/data`) | Connection list, workspace, passkeys, encryption key |
+| `-files` | `TABLUME_FILES` | `<data>/files` | The only folder SQLite files and SSH keys are read from |
+| `-reset-passkeys` | | | Remove every passkey, sign every device out and print a new setup link |
 
-### 첫 로그인
+The executable is statically linked and needs nothing else installed. With systemd, a unit like this works:
 
-1. 처음 띄우면 등록된 패스키가 없어서 서버 로그에 등록 주소가 나옵니다(`docker logs tablume`). 주소는 `https://…/login?token=…` 형태이고, 서버를 다시 시작하면 바뀝니다.
-2. 그 주소를 열고 "이 기기에 패스키 등록"을 누릅니다.
-3. 다른 기기는 이렇게 로그인합니다.
-   - Apple 기기끼리는 iCloud 키체인으로 패스키가 동기화되어 바로 로그인됩니다.
-   - Windows PC에서는 로그인 화면에서 휴대폰으로 QR 코드를 찍어 휴대폰의 패스키로 로그인할 수 있습니다.
-   - 그 PC 자체에 패스키(Windows Hello)를 만들려면, 로그인된 기기의 보기 옵션 → 계정 → "패스키 관리" → "등록 링크 만들기"로 일회용 링크(15분)를 만들어 그 PC에서 엽니다.
-4. "패스키 관리"에서 패스키 이름 바꾸기와 지우기를 합니다. 지운 패스키로 로그인한 기기는 로그아웃됩니다. 마지막 하나는 지울 수 없습니다.
-5. 로그인은 마지막 사용부터 30일 동안 유지됩니다.
+```ini
+[Unit]
+Description=Tablume
+After=network-online.target
+Wants=network-online.target
 
-### 리버스 프록시
+[Service]
+User=tablume
+Environment=TABLUME_URL=https://db.example.com
+Environment=TABLUME_LISTEN=127.0.0.1:8080
+Environment=TABLUME_DATA=/var/lib/tablume
+ExecStart=/usr/local/bin/tablume-server
+Restart=on-failure
 
-HTTPS는 앞단의 리버스 프록시(nginx, Caddy 등)가 맡습니다. 두 가지를 꼭 설정하세요.
+[Install]
+WantedBy=multi-user.target
+```
 
-- 이벤트용 WebSocket(`/wails/events`)이 통과해야 합니다.
-- 긴 쿼리는 응답이 늦게 오므로 읽기 타임아웃을 넉넉하게 둡니다(nginx 기본 60초).
+### First sign-in
 
-Caddy는 따로 설정할 것이 없습니다.
+1. With no passkeys yet, the server prints a setup address in its log (`docker logs tablume`, `journalctl -u tablume`). It looks like `https://…/login?token=…` and changes when the server restarts.
+2. Open it and click "Register a Passkey on This Device".
+3. Other devices:
+   - Apple devices share passkeys through iCloud Keychain and can sign in right away.
+   - On a Windows PC, the sign-in page can use your phone's passkey by scanning a QR code.
+   - To create a passkey (Windows Hello) on the PC itself, open View options → Account → "Manage Passkeys" → "Create Setup Link" on a signed-in device and open the one-time link (15 minutes) on the PC.
+4. "Manage Passkeys" renames and deletes passkeys. Devices signed in with a deleted passkey are signed out. The last one can't be deleted.
+5. A sign-in lasts 30 days from its last use.
+
+### Reverse proxy
+
+HTTPS is handled by a reverse proxy in front (nginx, Caddy, …). Two things must be set:
+
+- The events WebSocket (`/wails/events`) has to pass through.
+- Long queries answer late, so allow a generous read timeout (nginx's default is 60 seconds).
+
+Caddy needs nothing extra:
 
 ```
 db.example.com {
@@ -210,39 +233,39 @@ server {
 }
 ```
 
-### 데스크톱 앱과 다른 점
+### Differences from the desktop app
 
-- **파일**
-  - SQLite 파일과 SSH 키는 서버의 파일 폴더(`-files`) 안에서만 고릅니다. "찾기…"를 누르면 그 폴더를 탐색하는 창이 열립니다. 그 밖의 경로는 연결할 때 거부됩니다.
-  - SQLite는 없는 파일 이름을 적으면 새 데이터베이스를 만듭니다.
-  - SQL로도 다른 파일에 닿지 못하게 SQLite 엔진 수준에서 막습니다. `ATTACH`(`:memory:` 제외), `VACUUM INTO`, `PRAGMA temp_store_directory`/`data_store_directory`는 거부되고, 확장 로드(`load_extension`)는 처음부터 꺼져 있습니다. SQLite 추가 옵션도 다른 파일을 열지 않는 것만 받습니다(`_pragma`, `_txlock`, `_time_format`, `_timezone`, `mode`, `cache`, `immutable`, `nolock`, `psow`).
-  - SSH 키 파일은 비워 둘 수 없습니다. 데스크톱 앱처럼 `~/.ssh`를 쓰면 서버의 키를 쓰게 되기 때문입니다.
-  - `.sql` 저장과 결과 내보내기는 다운로드로, `.sql` 열기는 업로드로 합니다.
-- **화면**
-  - 탭을 새 창으로 여는 기능 대신 "넓게 보기"를 씁니다.
-  - 화면 배율은 브라우저 확대/축소(`Ctrl/⌘ + +/-`)를 씁니다.
-  - 브라우저가 먼저 가져가는 단축키(`Ctrl/⌘+T`, `Ctrl/⌘+W`, `Ctrl/⌘+1…9`, `Ctrl+Tab` 등)는 메뉴와 안내에 표시하지 않습니다.
-- **비밀번호**
-  - 저장한 DB·SSH 비밀번호는 OS 키체인 대신 데이터 폴더의 `connections.json`에 AES-GCM으로 암호화해 저장합니다. 키는 같은 폴더의 `secret.key`에 있습니다.
-  - 따라서 데이터 폴더 전체를 가진 사람은 비밀번호를 풀 수 있습니다. 데이터 폴더를 백업할 때 주의하세요.
-- **DB 세션**
-  - 브라우저 탭(기기)마다 DB 세션이 따로 잡힙니다. 휴대폰과 PC를 동시에 열어도 서로의 트랜잭션이 섞이지 않습니다.
-  - 페이지를 닫으면 그 페이지의 DB 세션을 바로 닫습니다(열린 트랜잭션은 롤백). 닫혔다는 신호가 오지 않아도 30분 동안 소식이 없으면 서버가 정리합니다.
-  - 작업 공간(열린 탭, SQL)은 마지막에 저장한 기기 기준으로 남습니다.
-- **로그인 만료**
-  - 로그인이 만료되면 다음 동작 때 로그인 화면으로 돌아갑니다.
+- **Files**
+  - SQLite files and SSH keys are picked only inside the server's files folder (`-files`). "Browse…" opens a browser of that folder. Other paths are refused when connecting.
+  - For SQLite, a file name that doesn't exist creates a new database.
+  - SQL can't reach other files either; this is enforced in the SQLite engine. `ATTACH` (except `:memory:`), `VACUUM INTO` and `PRAGMA temp_store_directory`/`data_store_directory` are refused, and extension loading (`load_extension`) is off. Only SQLite options that open no other file are accepted (`_pragma`, `_txlock`, `_time_format`, `_timezone`, `mode`, `cache`, `immutable`, `nolock`, `psow`).
+  - The SSH key file can't be left empty: as in the desktop app that would mean `~/.ssh`, which here is the server's keys.
+  - Saving `.sql` files and exporting results are downloads; opening `.sql` files is an upload.
+- **Screen**
+  - "Wide View" takes the place of opening a tab in a new window.
+  - Zoom is the browser's zoom (`Ctrl/⌘ + +/-`).
+  - Shortcuts the browser takes first (`Ctrl/⌘+T`, `Ctrl/⌘+W`, `Ctrl/⌘+1…9`, `Ctrl+Tab`, …) aren't shown in menus and hints.
+- **Passwords**
+  - Saved database and SSH passwords are stored AES-GCM encrypted in `connections.json` in the data folder instead of an OS keychain. The key is `secret.key` in the same folder.
+  - So whoever has the whole data folder can decrypt them. Take care with backups of it.
+- **Database sessions**
+  - Each browser tab (device) gets its own database sessions. A phone and a PC open at once don't share transactions.
+  - Closing a page closes its database sessions right away (open transactions are rolled back). If no close signal arrives, the server cleans them up after 30 minutes without contact.
+  - The workspace (open tabs, SQL) is the one last saved, from whichever device.
+- **Sign-in expiry**
+  - When the sign-in expires, the next action returns to the sign-in page.
 
-### 보안 구조
+### Security design
 
-- 앱 본체는 `127.0.0.1`의 임의 포트에서 돕니다. 바깥으로 열린 포트는 로그인을 확인하는 앞단 하나뿐입니다.
-- 앱 본체는 앞단이 붙이는 비밀 헤더가 없는 요청을 거부합니다.
-- 다른 사이트에서 오는 요청(Origin이 다른 POST, WebSocket)은 쿠키가 있어도 막습니다.
-- 로그인한 사람은 서버에서 닿는 어느 호스트·포트로든 연결(테스트)하거나 SSH 터널을 열 수 있습니다. DB 접속을 서버가 하기 때문입니다. 오류 메시지로 내부망 포트가 열렸는지도 알 수 있으므로, 서버(컨테이너)의 나가는 방향 방화벽을 필요한 DB 주소로만 제한해 두는 것을 권합니다.
-- 다만 같은 서버의 다른 프로그램은 앱 본체의 이벤트 WebSocket(연결 상태 알림 등)을 엿볼 수 있습니다. Wails가 그 경로에는 검사를 걸 수 없게 되어 있기 때문입니다. Docker 컨테이너로 띄우면(`--network host` 제외) 해당하지 않습니다.
+- The app itself runs on a random port on `127.0.0.1`. The only port open to the outside is the front door that checks sign-in.
+- The app refuses requests without the secret header the front door adds.
+- Requests from other sites (POSTs and WebSockets with another Origin) are refused even with the cookie.
+- A signed-in user can connect (or test a connection) to any host and port the server can reach, and open SSH tunnels, because the server makes the database connections. Error messages also reveal whether ports on the internal network are open, so limiting the server's (container's) outbound firewall to the databases it needs is recommended.
+- Other programs on the same server can, however, listen in on the app's events WebSocket (connection status notifications and the like), because Wails offers no way to check that path. This doesn't apply in a Docker container (other than with `--network host`).
 
-## 개발
+## Development
 
-필요한 것: Go 1.26 이상, Node 20 이상, [Wails v3](https://v3.wails.io) CLI
+Requirements: Go 1.26+, Node 20+, the [Wails v3](https://v3.wails.io) CLI
 
 ```bash
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
@@ -260,39 +283,43 @@ wails3 build
 wails3 package
 ```
 
-- `wails3 dev`: 핫 리로드로 개발합니다. Go 코드를 고치면 다시 빌드하고, 프런트엔드는 Vite가 바로 반영합니다.
-- `wails3 build`: 지금 쓰는 OS용으로 빌드합니다. 결과물은 `build/bin/`에 생깁니다. 빌드 단계는 `Taskfile.yml`에 있습니다.
-- `wails3 package`: 배포용 빌드입니다. macOS에서는 `build/bin/Tablume.app`까지 만듭니다.
-- 프런트엔드가 부르는 Go 함수(`frontend/bindings/`)는 빌드할 때 `app.go`에서 다시 만들어집니다. 직접 만들려면 `wails3 task bindings`를 실행합니다.
-- 리눅스에서 빌드하려면 `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`가 있어야 합니다. Wails v3의 기본값은 GTK4라서 Taskfile이 `gtk3` 태그를 붙입니다.
-- Windows용 `.exe`는 리눅스나 macOS에서도 `wails3 build GOOS=windows`로 만들 수 있습니다.
-- 필요한 DB만 넣어 가볍게 빌드할 수 있습니다. 뺄 DB를 `EXTRA_TAGS`에 적습니다(`no_mysql`, `no_postgres`, `no_mssql`, `no_oracle`, `no_sqlite`). 예를 들어 MySQL/MariaDB만 넣으면 Windows `.exe`가 약 38MB에서 약 14MB로 줄어듭니다. 빠진 DB는 연결 만들기 화면에 나오지 않고, 이미 저장된 그 DB 연결은 접속할 때 안내가 뜹니다. GitHub Actions는 항상 전체 빌드만 만듭니다.
+- `wails3 dev`: development with hot reload. Go changes rebuild; Vite applies frontend changes immediately.
+- `wails3 build`: builds for the current OS into `build/bin/`. The build steps are in `Taskfile.yml`.
+- `wails3 package`: a release build. On macOS it also makes `build/bin/Tablume.app`.
+- The Go functions the frontend calls (`frontend/bindings/`) are generated from `app.go` during the build. To generate them by hand, run `wails3 task bindings`.
+- Building on Linux needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev`. Wails v3 defaults to GTK4, so the Taskfile adds the `gtk3` tag.
+- A Windows `.exe` can be built on Linux or macOS too: `wails3 build GOOS=windows`.
+- Builds can include only the databases you need: list the ones to leave out in `EXTRA_TAGS` (`no_mysql`, `no_postgres`, `no_mssql`, `no_oracle`, `no_sqlite`). With only MySQL/MariaDB, for example, the Windows `.exe` shrinks from about 38 MB to about 14 MB. Left-out databases don't appear when creating a connection, and saved connections to them explain why when connecting. GitHub Actions always makes full builds.
 
 ```bash
 wails3 package EXTRA_TAGS=no_postgres,no_mssql,no_oracle,no_sqlite
 ```
 
-- `wails3 task build:server`는 [웹 버전](#웹-버전)을 만듭니다. 로컬에서 확인할 때는 그냥 실행한 뒤 로그에 나온 `http://localhost:8080/login?token=…` 주소로 패스키를 등록하면 됩니다. Playwright로 테스트할 때는 Chromium의 가상 인증기(CDP `WebAuthn.addVirtualAuthenticator`)를 씁니다.
-- macOS 메뉴 막대(Tablume / 편집 / 윈도우)는 `menu.go`에서 한국어로 만듭니다. macOS가 직접 넣는 항목(서비스, 받아쓰기 시작 등)은 `build/darwin/Info.plist`의 한국어 지역화 설정으로 한국어가 됩니다.
-- macOS 앱은 macOS에서만 빌드할 수 있습니다. 직접 빌드하기 어렵다면 아래 GitHub Actions를 쓰세요.
+- `wails3 task build:server` builds the [web version](#web-version). To try it locally, run it and register a passkey at the `http://localhost:8080/login?token=…` address in the log. Playwright tests use Chromium's virtual authenticator (CDP `WebAuthn.addVirtualAuthenticator`).
+- The macOS menu bar (Tablume / Edit / Window) is built in `menu.go` in the app's language and rebuilt when it changes. Items macOS adds itself (Services, Start Dictation, …) follow the OS language (`build/darwin/Info.plist` declares English and Korean).
+- The macOS app can only be built on macOS. If that's not at hand, use GitHub Actions below.
 
-### GitHub Actions로 배포 파일 만들기
+### Release builds with GitHub Actions
 
-`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(Apple Silicon) `.app` zip과 Windows `.exe`를 만들어 아티팩트로 올립니다.
+`.github/workflows/build.yml` runs when a `v*` tag is pushed, or by hand from the Actions tab. It builds a macOS (Apple Silicon) `.app` zip and a Windows `.exe` and uploads them as artifacts.
 
-macOS 빌드는 서명되지 않았기 때문에 처음 실행할 때 Finder에서 우클릭 → 열기를 하거나, 다음 명령을 실행해야 합니다.
+The macOS build isn't signed, so the first launch needs right-click → Open in Finder, or:
 
 ```bash
 xattr -dr com.apple.quarantine Tablume.app
 ```
 
-### 테스트
+### Tests
 
 ```bash
 go test ./internal/...
 ```
 
-이 명령은 SQL 문장 분리기만 단위 테스트합니다. 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
+```bash
+CGO_ENABLED=0 go test -tags server .
+```
+
+These are unit tests (statement splitting, SQLite, translations, the web front door, file restrictions). Integration tests against the five databases run like this. First start test databases with Docker:
 
 ```bash
 docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
@@ -310,48 +337,49 @@ docker run -d --name t-ora -e ORACLE_PASSWORD=pw -e APP_USER=app -e APP_USER_PAS
 docker run -d --name t-mssql -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=Passw0rd!' -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
 ```
 
-DB가 모두 뜨면 통합 테스트를 실행합니다.
+When they are all up, run the integration tests:
 
 ```bash
 TABLUME_IT=1 go test ./internal/dbx/ -v
 ```
 
-## 구조
+## Layout
 
 ```
-main.go, app.go            Wails 진입점과 프론트엔드에 노출하는 API (App 서비스)
-platform_desktop.go        데스크톱 앱 전용 설정
-platform_web.go            웹 버전(-tags server): 옵션, 앞단 서버 시작, 세션 정리
-files.go                   웹 버전의 서버 파일 탐색과 경로 제한
-menu.go                    macOS 메뉴 막대
-Taskfile.yml               빌드 단계 (wails3 build / package / dev)
-internal/dbx/              DB 계층
-  dialect.go               DB 공통 인터페이스와 등록
-  dialect_<db>.go          DB별 접속 문자열, 메타데이터, DDL, 컬럼·인덱스 변경 (빌드 태그 no_<db>로 뺄 수 있음)
-  manager.go               연결 풀, 탭별 세션, 실행/취소/커서
-  split.go                 SQL 스크립트를 문장 단위로 나누기 (DB별 규칙)
-internal/store/            연결 목록(JSON)과 키체인 연동 (키체인이 없으면 암호화해 파일에)
-internal/web/              웹 버전 앞단: 패스키 로그인(WebAuthn), 세션, 앱으로 프록시
-internal/i18n/             백엔드 메시지 번역 (en.go: 영어 표)
+main.go, app.go            Wails entry point and the API exposed to the frontend (App service)
+platform_desktop.go        Desktop-only setup
+platform_web.go            Web version (-tags server): options, front door, session cleanup
+files.go                   Web version: server file browsing and path restrictions
+windowstate.go             Main window size, kept between runs
+menu.go                    macOS menu bar
+Taskfile.yml               Build steps (wails3 build / package / dev)
+internal/dbx/              Database layer
+  dialect.go               Common database interface and registration
+  dialect_<db>.go          Per-database connection strings, metadata, DDL, column and index changes (leave out with the no_<db> build tag)
+  manager.go               Connection pools, per-tab sessions, run/cancel/cursors
+  split.go                 Splitting SQL scripts into statements (per-database rules)
+internal/store/            Connection list (JSON) and keychain (encrypted in a file without one)
+internal/web/              Web version front door: passkey sign-in (WebAuthn), sessions, proxy to the app
+internal/i18n/             Backend message translations (en.go: English table)
 frontend/                  Svelte 5 + CodeMirror 6 UI
-  src/lib/i18n*.ts         화면 문구 번역 (i18n-en.ts: 영어 표)
+  src/lib/i18n*.ts         Interface translations (i18n-en.ts: English table)
 ```
 
-번역: 한국어 문구가 그대로 키입니다. 화면은 `t('새 콘솔')`, Go는 `i18n.T("…")` / `i18n.Errorf("…", …)`로 쓰고, 영어 표(`frontend/src/lib/i18n-en.ts`, `internal/i18n/en.go`)에 같은 문구를 키로 영어를 넣습니다. 빠진 항목은 `npm run check`(프런트엔드)와 `go test ./internal/i18n`(백엔드)이 알려 줍니다.
+Translations: the Korean text is the key. The UI writes `t('새 콘솔')` and Go `i18n.T("…")` / `i18n.Errorf("…", …)`, and the English tables (`frontend/src/lib/i18n-en.ts`, `internal/i18n/en.go`) map the same text to English. `npm run check` (frontend) and `go test ./internal/i18n` (backend) list missing entries.
 
-설정 파일 위치:
+Settings are stored in:
 
 - macOS: `~/Library/Application Support/Tablume/`
 - Windows: `%AppData%\Tablume\`
-- 웹 버전: `-data`로 지정한 폴더
+- Web version: the folder given with `-data`
 
-## 다음에 하면 좋을 것
+## Ideas for later
 
-- 수동 커밋 모드 토글
-- 쿼리 히스토리
-- 인덱스/제약조건 트리
-- 여러 컬럼으로 된 외래 키 따라가기 (지금은 셀 하나의 값으로만 찾습니다)
+- A manual-commit mode toggle
+- Query history
+- Indexes/constraints in the tree
+- Following multi-column foreign keys (today a single cell's value is looked up)
 
-## 라이선스
+## License
 
 [MIT](LICENSE)

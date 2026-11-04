@@ -2,12 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
     <dict>
-        <!-- Korean only: AppKit then localizes the menu items it adds itself
-             (Services, Start Dictation, Emoji & Symbols, window tiling …). -->
+        <!-- English and Korean: AppKit localizes the menu items it adds itself
+             (Services, Start Dictation, Emoji & Symbols, window tiling …) in
+             the OS language when it is one of these. -->
         <key>CFBundleDevelopmentRegion</key>
-        <string>ko</string>
+        <string>en</string>
         <key>CFBundleLocalizations</key>
         <array>
+            <string>en</string>
             <string>ko</string>
         </array>
         <key>CFBundlePackageType</key>
