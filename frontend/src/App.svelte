@@ -343,7 +343,7 @@
     {#if app.wide}
       {@const t = activeTab()}
       {@const c = t ? connById(t.connId) : undefined}
-      <div class="tw-bar" style:--conn-color={c?.color || 'transparent'}>
+      <div class="tw-bar wide" style:--conn-color={c?.color || 'transparent'}>
         {#if t}
           <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
           <span class="tw-title">{t.title}</span>
@@ -532,6 +532,10 @@
   }
   .tw-fill {
     flex: 1;
+  }
+  /* the end button where the wide-view button was (the strip has no padding) */
+  .tw-bar.wide {
+    padding-right: 0;
   }
   .tw-bar .btn {
     display: inline-flex;

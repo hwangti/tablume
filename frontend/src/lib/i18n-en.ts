@@ -44,7 +44,7 @@ export default {
   '다크': 'Dark',
   '라이트': 'Light',
   'OS 설정을 따릅니다': 'Follows the OS setting',
-  '화면 배율': 'Zoom',
+  '화면 배율 (%)': 'Zoom (%)',
   '5% 축소': 'Zoom out 5%',
   '5% 확대': 'Zoom in 5%',
   'Enter로 적용': 'Enter to apply',

@@ -563,7 +563,7 @@
     const el = e.currentTarget as HTMLInputElement
     const v = parseFloat(el.value)
     if (isFinite(v)) setZoomLevel(Math.round(v) / 100)
-    el.value = Math.round(app.zoom * 100) + '%' // shows the clamped value
+    el.value = String(Math.round(app.zoom * 100)) // shows the clamped value
   }
 </script>
 
@@ -610,12 +610,12 @@
               >
             {/each}
           </div>
-          <!-- [−][150% ▾][+]: typed value, ±5% or a preset — not a slider:
+          <!-- [−][150 ▾][+]: typed value, ±5% or a preset — not a slider:
                the whole window (the slider too) rescales on every change, so
                a drag can't be followed. (The browser build leaves zoom to
                the browser.) -->
           {#if !isWeb}
-          <div class="vm-title sep">{tr('화면 배율')}</div>
+          <div class="vm-title sep">{tr('화면 배율 (%)')}</div>
           <div class="zoom-box">
             <button title={tr('5% 축소')} disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
             <div class="zoom-mid">
@@ -623,14 +623,14 @@
                 class="zoom-in"
                 size="1"
                 inputmode="numeric"
-                value={Math.round(app.zoom * 100) + '%'}
+                value={Math.round(app.zoom * 100)}
                 title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
                 onfocus={(e) => e.currentTarget.select()}
                 onchange={zoomInput}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur()
                   if (e.key === 'Escape') {
-                    e.currentTarget.value = Math.round(app.zoom * 100) + '%'
+                    e.currentTarget.value = String(Math.round(app.zoom * 100))
                     e.currentTarget.blur()
                   }
                   if (e.key === 'ArrowDown' && e.altKey) zoomList = true
@@ -644,7 +644,7 @@
                       role="option"
                       aria-selected={Math.round(app.zoom * 100) === z * 100}
                       class:on={Math.round(app.zoom * 100) === Math.round(z * 100)}
-                      onclick={() => (setZoomLevel(z), (zoomList = false))}>{Math.round(z * 100)}%</button
+                      onclick={() => (setZoomLevel(z), (zoomList = false))}>{Math.round(z * 100)}</button
                     >
                   {/each}
                 </div>
@@ -899,7 +899,7 @@
   .info {
     cursor: default;
   }
-  /* [−][150% ▾][+], 24px high */
+  /* [−][150 ▾][+], 24px high */
   .zoom-box {
     display: flex;
     height: 24px;
