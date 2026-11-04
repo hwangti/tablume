@@ -789,6 +789,7 @@
     </div>
     <button class="icon-btn" title={tr('새 연결')} onclick={() => (app.editing = blank())}><Icon name="plus" /></button>
   </div>
+  <div class="tree-edge"></div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div class="tree" bind:this={treeEl} tabindex="0" role="tree" onkeydown={treeKey} onscroll={() => (tip = null)}>
@@ -872,6 +873,19 @@
     overflow: auto;
     padding-bottom: 20px;
     outline: none;
+  }
+  /* When the tree's top edge falls between device pixels (zoom 125% on a
+     1x display), WebKit rounds the scrolled rows and the stuck connection
+     row apart and one pixel row of the rows under it shows. A cover inside
+     the tree can't reach that row, so this band outside it lies over the
+     edge, 1px on each side, above the sticky rows. */
+  .tree-edge {
+    position: relative;
+    z-index: 3;
+    flex-shrink: 0;
+    height: 2px;
+    margin: -1px 0;
+    background: var(--bg-panel);
   }
   .node.cursor {
     background: var(--bg-hover);
