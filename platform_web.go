@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	"tablume/internal/dbx"
 	"tablume/internal/i18n"
 	"tablume/internal/store"
 	"tablume/internal/web"
@@ -59,6 +60,8 @@ func setupPlatform(svc *App, o *application.Options) func() {
 		store.DirOverride = *dataDir
 	}
 	store.NoKeyring = true
+	// SQL can't reach files outside the files folder (ATTACH, VACUUM INTO)
+	dbx.SQLiteSandbox = true
 	loadLanguage()
 	dir, err := store.Dir()
 	if err != nil {

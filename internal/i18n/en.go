@@ -94,9 +94,12 @@ var en = map[string]string{
 	"%s의 소스를 볼 수 없습니다 (권한이 없을 수 있습니다)":                        "Cannot show the source of %s (you may lack the privilege)",
 
 	// browser build: files
-	"서버 파일 탐색은 웹 버전에서만 쓸 수 있습니다":             "Server files can only be browsed in the web version",
-	"웹 버전에서는 파일 폴더(%s) 안의 파일만 쓸 수 있습니다":      "The web version can only use files in the files folder (%s)",
-	"SSH 키 파일을 고르세요 (웹 버전은 파일 폴더 안의 키만 씁니다)": "Choose an SSH key file (the web version only uses keys in the files folder)",
+	"웹 버전에서는 SQL로 다른 파일을 열거나 만들 수 없습니다 (ATTACH, VACUUM INTO 등)": "The web version doesn't let SQL open or create other files (ATTACH, VACUUM INTO, …)",
+	"SQLite 접근 제한을 걸 수 없습니다":                                    "Cannot restrict SQLite access",
+	"웹 버전에서는 SQLite 추가 옵션 %s를 쓸 수 없습니다":                         "The web version doesn't allow the SQLite option %s",
+	"서버 파일 탐색은 웹 버전에서만 쓸 수 있습니다":                                "Server files can only be browsed in the web version",
+	"웹 버전에서는 파일 폴더(%s) 안의 파일만 쓸 수 있습니다":                         "The web version can only use files in the files folder (%s)",
+	"SSH 키 파일을 고르세요 (웹 버전은 파일 폴더 안의 키만 씁니다)":                    "Choose an SSH key file (the web version only uses keys in the files folder)",
 
 	// browser build: server
 	"패스키를 모두 지웠습니다.":                                     "All passkeys were removed.",

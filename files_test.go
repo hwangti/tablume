@@ -51,3 +51,17 @@ func TestFilesStayInTheFilesFolder(t *testing.T) {
 		t.Error("desktop BrowseFiles should fail")
 	}
 }
+
+// SQLite options that would open or point at other files are refused.
+func TestSQLiteParamsInBrowserBuild(t *testing.T) {
+	for _, p := range []string{"", "_pragma=foreign_keys(1)", "mode=ro&cache=shared", "_pragma=busy_timeout(5000)\n_txlock=immediate"} {
+		if err := checkSQLiteParams(p); err != nil {
+			t.Errorf("%q: %v", p, err)
+		}
+	}
+	for _, p := range []string{"vfs=unix-none", "modeof=/etc/passwd", "_pragma=temp_store_directory('/tmp')", "_pragma=DATA_STORE_DIRECTORY=x"} {
+		if err := checkSQLiteParams(p); err == nil {
+			t.Errorf("%q: allowed", p)
+		}
+	}
+}

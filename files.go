@@ -126,18 +126,48 @@ func (a *App) BrowseFiles(dir string) (FileList, error) {
 	return out, nil
 }
 
+// SQLite options the browser build passes on: none of them opens other files
+// (vfs, and modeof= which reads another file's owner, are left out).
+var sqliteParams = map[string]bool{
+	"_pragma": true, "_txlock": true, "_time_format": true, "_timezone": true,
+	"mode": true, "cache": true, "immutable": true, "nolock": true, "psow": true,
+}
+
+func checkSQLiteParams(s string) error {
+	for k, vs := range dbx.ParseParams(s) {
+		if !sqliteParams[k] {
+			return i18n.Errorf("웹 버전에서는 SQLite 추가 옵션 %s를 쓸 수 없습니다", k)
+		}
+		if k == "_pragma" {
+			for _, v := range vs {
+				name, _, _ := strings.Cut(v, "=")
+				name, _, _ = strings.Cut(name, "(")
+				if dbx.SQLiteDirPragma(name) {
+					return i18n.Errorf("웹 버전에서는 SQLite 추가 옵션 %s를 쓸 수 없습니다", "_pragma="+strings.TrimSpace(name))
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // checkFiles keeps the server files a connection reads (SQLite database,
 // SSH key) inside the files folder in the browser build.
 func (a *App) checkFiles(c *dbx.ConnConfig) error {
 	if a.fileRoot == "" {
 		return nil
 	}
-	if c.Driver == "sqlite" && c.Database != "" && c.Database != ":memory:" {
-		p, err := a.inRoot(c.Database)
-		if err != nil {
+	if c.Driver == "sqlite" {
+		if c.Database != "" && c.Database != ":memory:" {
+			p, err := a.inRoot(c.Database)
+			if err != nil {
+				return err
+			}
+			c.Database = p
+		}
+		if err := checkSQLiteParams(c.Params); err != nil {
 			return err
 		}
-		c.Database = p
 	}
 	if c.SSH && c.SSHAuth == "key" {
 		// (the desktop app falls back to ~/.ssh/id_*: the server's own keys)

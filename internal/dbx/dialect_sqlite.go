@@ -13,10 +13,50 @@ import (
 	"strings"
 	"tablume/internal/i18n"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
-func init() { register(sqliteDialect{}, "sqlite") }
+func init() {
+	register(sqliteDialect{}, "sqlite")
+	sqlite.RegisterConnectionHook(func(c sqlite.ExecQuerierContext, _ string) error {
+		if !SQLiteSandbox {
+			return nil
+		}
+		a, ok := c.(sqlite.AuthorizerRegisterer)
+		if !ok {
+			return i18n.Error("SQLite 접근 제한을 걸 수 없습니다")
+		}
+		return a.RegisterAuthorizer(sandboxAuth)
+	})
+}
+
+// sandboxAuth refuses what reads or writes other files: ATTACH (VACUUM INTO
+// comes as an ATTACH of its target too) and the pragmas that move temporary
+// files. load_extension is off in the driver already.
+func sandboxAuth(action sqlite.AuthorizerActionCode, arg1, _, _, _ string) sqlite.AuthorizerReturnCode {
+	switch action {
+	case sqlite.AuthAttach:
+		if arg1 == "" || arg1 == ":memory:" {
+			return sqlite.AuthorizerOK
+		}
+		return sqlite.AuthorizerDeny
+	case sqlite.AuthPragma:
+		if SQLiteDirPragma(arg1) {
+			return sqlite.AuthorizerDeny
+		}
+	}
+	return sqlite.AuthorizerOK
+}
+
+// SQLiteDirPragma reports a pragma that points SQLite at another directory.
+func SQLiteDirPragma(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	return n == "temp_store_directory" || n == "data_store_directory"
+}
+
+// sqlitePath escapes what a file: URI would read as more than the path:
+// ? and # end it and %XX is decoded (%2e%2e would be ..).
+var sqlitePath = strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23")
 
 type sqliteDialect struct{}
 
@@ -25,10 +65,11 @@ func (sqliteDialect) Style() string      { return "sqlite" }
 
 func (sqliteDialect) DSN(c ConnConfig) string {
 	p := parseParams(c.Params)
-	if len(p) == 0 {
+	// The driver takes anything after ? as options, file: URI or not.
+	if len(p) == 0 && !strings.ContainsAny(c.Database, "?") {
 		return c.Database
 	}
-	return "file:" + c.Database + "?" + p.Encode()
+	return "file:" + sqlitePath.Replace(c.Database) + "?" + p.Encode()
 }
 
 func (sqliteDialect) ListSchemas(ctx context.Context, q Querier) (SchemaList, error) {

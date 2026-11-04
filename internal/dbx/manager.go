@@ -643,6 +643,9 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		}
 		if out.err != nil {
 			r.Error = out.err.Error()
+			if SQLiteSandbox && p.d.Style() == "sqlite" && strings.Contains(r.Error, "authoriz") {
+				r.Error += "\n" + i18n.T("웹 버전에서는 SQL로 다른 파일을 열거나 만들 수 없습니다 (ATTACH, VACUUM INTO 등)")
+			}
 		}
 		if out.rows != nil {
 			r.Source = DetectSource(st.SQL, p.d.Style())

@@ -82,6 +82,15 @@ func SupportedDrivers() []string {
 // msq quotes a SQL Server identifier (also used for the generic quoting).
 func msq(s string) string { return quoteWith(s, "[", "]") }
 
+// SQLiteSandbox keeps SQLite connections to the database file they opened
+// (the browser build, where only files in the files folder may be used).
+// Set before any connection is opened.
+var SQLiteSandbox bool
+
+// ParseParams reads the extra options of a connection (a=1&b=2, also one
+// per line or ;-separated).
+func ParseParams(s string) url.Values { return parseParams(s) }
+
 func parseParams(s string) url.Values {
 	v := url.Values{}
 	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '&' || r == '\n' || r == ';' }) {
