@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,10 @@ func TestSQLiteDSNPath(t *testing.T) {
 		{Database: filepath.Join(root, "b?mode=memory.db")},
 		{Database: filepath.Join(root, "c#d.db"), Params: "cache=shared"},
 	} {
+		// Windows file names can't hold '?' at all.
+		if runtime.GOOS == "windows" && strings.Contains(filepath.Base(c.Database), "?") {
+			continue
+		}
 		db, err := sql.Open("sqlite", sqliteDialect{}.DSN(c))
 		if err == nil {
 			_, err = db.Exec("CREATE TABLE t(a)")
