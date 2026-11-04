@@ -222,6 +222,16 @@
     return out
   })
 
+  // rows split per connection (each starts with its connection row)
+  const groups = $derived.by(() => {
+    const out: Row[][] = []
+    for (const r of rows) {
+      if (r.kind === 'conn' || !out.length) out.push([r])
+      else out[out.length - 1].push(r)
+    }
+    return out
+  })
+
   // Table of the active tab, highlighted in the tree.
   let activeKey = $derived.by(() => {
     const tab = activeTab()
@@ -576,6 +586,101 @@
   onkeydown={(e) => e.key === 'Escape' && connDrag && (connDrag = null)}
 />
 
+{#snippet treeRow(r: Row)}
+  {#if r.kind === 'info'}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="node info {r.cls}" style:padding-left="{8 + r.depth * 16 + 18}px" title={r.text} onclick={() => r.run?.()}>
+      <span class="label">{r.text}</span>
+    </div>
+  {:else}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div
+      class="node {r.kind}"
+      class:cursor={cursor === r.key}
+      class:active={r.key === activeKey}
+      class:dragging={r.kind === 'conn' && connDrag?.active && connDrag.id === r.c.id}
+      class:drop-before={r.kind === 'conn' && connDrag?.active && connDrag.to === app.connections.indexOf(r.c)}
+      class:drop-after={r.kind === 'conn' &&
+        connDrag?.active &&
+        connDrag.to === app.connections.length &&
+        app.connections.indexOf(r.c) === app.connections.length - 1}
+      onpointerdown={(e) => r.kind === 'conn' && connDown(e, r.c)}
+      data-key={r.key}
+      style:padding-left="{8 + r.depth * 16}px"
+      style:--conn-color={r.kind === 'conn' ? r.c.color || 'transparent' : null}
+      onclick={() => rowClick(r)}
+      ondblclick={() => rowDblClick(r)}
+      oncontextmenu={(e) => rowMenu(e, r)}
+      onmouseenter={(e) => rowEnter(e, r)}
+      onmouseleave={rowLeave}
+      title={r.kind === 'conn' ? `${driverLabel(r.c.driver)}${app.conn[r.c.id]?.version ? ' · ' + app.conn[r.c.id]?.version : ''}` : undefined}
+    >
+      {#if r.kind === 'col' || r.kind === 'routine'}
+        <span class="chev-slot"></span>
+      {:else}
+        <button
+          class="chev-slot chev"
+          class:open={isOpen(r)}
+          tabindex="-1"
+          aria-label={tr('펼치기')}
+          onclick={(e) => (e.stopPropagation(), (cursor = r.key), toggle(r))}
+          ondblclick={(e) => e.stopPropagation()}
+        >
+          <Icon name="chevron" size={12} />
+        </button>
+      {/if}
+
+      {#if r.kind === 'conn'}
+        {@const st = app.conn[r.c.id]}
+        <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
+        <span class="label">{r.c.name}</span>
+        {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
+        {#if st?.status === 'connected' && r.c.driver !== 'sqlite' && st.schemas.length}
+          <button
+            class="pick-btn"
+            class:on={picker?.connId === r.c.id}
+            title={tr('표시할 스키마 고르기')}
+            onclick={(e) => (e.stopPropagation(), picker?.connId === r.c.id ? (picker = null) : openPicker(r.c.id, null))}
+            ondblclick={(e) => e.stopPropagation()}
+            >{visibleSchemas(r.c.id).length}/{st.schemas.length}</button
+          >
+        {/if}
+        <span class="drv">{driverLabel(r.c.driver)}</span>
+        <button class="icon-btn small act" title={tr('새 콘솔')} onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
+          <Icon name="console" size={16} />
+        </button>
+      {:else if r.kind === 'schema'}
+        <Icon name="schema" size={15} color="var(--warn)" />
+        <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
+        {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : tr('행 수 · 크기 가져오는 중')}></span>{/if}
+        {#if r.s.tables && app.treeView.tableCount}<span class="count">{num(r.s.tables.length)}</span>{/if}
+      {:else if r.kind === 'table'}
+        <Icon name={r.t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
+        <span class="label">{tableLabel(r.t, r.c.driver)}</span>
+        {#if app.treeView.comment && r.t.t.comment}<span class="cmt">{r.t.t.comment}</span>{/if}
+        {#if r.t.loading}<span class="spin"></span>{/if}
+        {#if tableMeta(r.t)}<span class="tmeta">{tableMeta(r.t)}</span>{/if}
+      {:else if r.kind === 'rgroup'}
+        <Icon name="fn" size={15} color="var(--syn-type)" />
+        <span class="label">{tr('프로시저 · 함수')}</span>
+        {#if r.s.routinesLoading}<span class="spin"></span>{/if}
+        {#if r.s.routines && app.treeView.tableCount}<span class="count">{num(r.s.routines.length)}</span>{/if}
+      {:else if r.kind === 'routine'}
+        <span class="rbadge" class:f={r.r.type === 'FUNCTION'} class:k={r.r.type === 'PACKAGE'} title={routineLabel(r.r.type)}
+          >{r.r.type === 'FUNCTION' ? 'F' : r.r.type === 'PACKAGE' ? 'K' : 'P'}</span
+        >
+        <span class="label">{r.c.driver === 'mssql' && r.r.schema !== 'dbo' ? r.r.schema + '.' : ''}{r.r.name}</span>
+        {#if r.r.args}<span class="cmt">({r.r.args})</span>{/if}
+      {:else if r.kind === 'col'}
+        <Icon name={keyIcon(r.col).name} size={13} color={keyIcon(r.col).color} />
+        <span class="label">{r.col.name}</span>
+        {#if app.treeView.comment && r.col.comment}<span class="cmt">{r.col.comment}</span>{/if}
+        <span class="ctype">{r.col.type.toLowerCase()}{r.col.nullable ? '' : ' !'}</span>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 <aside>
   <div class="top">
     <div class="filter">
@@ -694,99 +799,12 @@
       </div>
     {/if}
 
-    {#each rows as r (r.key)}
-      {#if r.kind === 'info'}
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="node info {r.cls}" style:padding-left="{8 + r.depth * 16 + 18}px" title={r.text} onclick={() => r.run?.()}>
-          <span class="label">{r.text}</span>
-        </div>
-      {:else}
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div
-          class="node {r.kind}"
-          class:cursor={cursor === r.key}
-          class:active={r.key === activeKey}
-          class:dragging={r.kind === 'conn' && connDrag?.active && connDrag.id === r.c.id}
-          class:drop-before={r.kind === 'conn' && connDrag?.active && connDrag.to === app.connections.indexOf(r.c)}
-          class:drop-after={r.kind === 'conn' &&
-            connDrag?.active &&
-            connDrag.to === app.connections.length &&
-            app.connections.indexOf(r.c) === app.connections.length - 1}
-          onpointerdown={(e) => r.kind === 'conn' && connDown(e, r.c)}
-          data-key={r.key}
-          style:padding-left="{8 + r.depth * 16}px"
-          style:--conn-color={r.kind === 'conn' ? r.c.color || 'transparent' : null}
-          onclick={() => rowClick(r)}
-          ondblclick={() => rowDblClick(r)}
-          oncontextmenu={(e) => rowMenu(e, r)}
-          onmouseenter={(e) => rowEnter(e, r)}
-          onmouseleave={rowLeave}
-          title={r.kind === 'conn' ? `${driverLabel(r.c.driver)}${app.conn[r.c.id]?.version ? ' · ' + app.conn[r.c.id]?.version : ''}` : undefined}
-        >
-          {#if r.kind === 'col' || r.kind === 'routine'}
-            <span class="chev-slot"></span>
-          {:else}
-            <button
-              class="chev-slot chev"
-              class:open={isOpen(r)}
-              tabindex="-1"
-              aria-label={tr('펼치기')}
-              onclick={(e) => (e.stopPropagation(), (cursor = r.key), toggle(r))}
-              ondblclick={(e) => e.stopPropagation()}
-            >
-              <Icon name="chevron" size={12} />
-            </button>
-          {/if}
-
-          {#if r.kind === 'conn'}
-            {@const st = app.conn[r.c.id]}
-            <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
-            <span class="label">{r.c.name}</span>
-            {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
-            {#if st?.status === 'connected' && r.c.driver !== 'sqlite' && st.schemas.length}
-              <button
-                class="pick-btn"
-                class:on={picker?.connId === r.c.id}
-                title={tr('표시할 스키마 고르기')}
-                onclick={(e) => (e.stopPropagation(), picker?.connId === r.c.id ? (picker = null) : openPicker(r.c.id, null))}
-                ondblclick={(e) => e.stopPropagation()}
-                >{visibleSchemas(r.c.id).length}/{st.schemas.length}</button
-              >
-            {/if}
-            <span class="drv">{driverLabel(r.c.driver)}</span>
-            <button class="icon-btn small act" title={tr('새 콘솔')} onclick={(e) => (e.stopPropagation(), openConsole(r.c.id))}>
-              <Icon name="console" size={16} />
-            </button>
-          {:else if r.kind === 'schema'}
-            <Icon name="schema" size={15} color="var(--warn)" />
-            <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
-            {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : tr('행 수 · 크기 가져오는 중')}></span>{/if}
-            {#if r.s.tables && app.treeView.tableCount}<span class="count">{num(r.s.tables.length)}</span>{/if}
-          {:else if r.kind === 'table'}
-            <Icon name={r.t.t.type.includes('VIEW') ? 'view' : 'table'} size={15} color="var(--syn-fn)" />
-            <span class="label">{tableLabel(r.t, r.c.driver)}</span>
-            {#if app.treeView.comment && r.t.t.comment}<span class="cmt">{r.t.t.comment}</span>{/if}
-            {#if r.t.loading}<span class="spin"></span>{/if}
-            {#if tableMeta(r.t)}<span class="tmeta">{tableMeta(r.t)}</span>{/if}
-          {:else if r.kind === 'rgroup'}
-            <Icon name="fn" size={15} color="var(--syn-type)" />
-            <span class="label">{tr('프로시저 · 함수')}</span>
-            {#if r.s.routinesLoading}<span class="spin"></span>{/if}
-            {#if r.s.routines && app.treeView.tableCount}<span class="count">{num(r.s.routines.length)}</span>{/if}
-          {:else if r.kind === 'routine'}
-            <span class="rbadge" class:f={r.r.type === 'FUNCTION'} class:k={r.r.type === 'PACKAGE'} title={routineLabel(r.r.type)}
-              >{r.r.type === 'FUNCTION' ? 'F' : r.r.type === 'PACKAGE' ? 'K' : 'P'}</span
-            >
-            <span class="label">{r.c.driver === 'mssql' && r.r.schema !== 'dbo' ? r.r.schema + '.' : ''}{r.r.name}</span>
-            {#if r.r.args}<span class="cmt">({r.r.args})</span>{/if}
-          {:else if r.kind === 'col'}
-            <Icon name={keyIcon(r.col).name} size={13} color={keyIcon(r.col).color} />
-            <span class="label">{r.col.name}</span>
-            {#if app.treeView.comment && r.col.comment}<span class="cmt">{r.col.comment}</span>{/if}
-            <span class="ctype">{r.col.type.toLowerCase()}{r.col.nullable ? '' : ' !'}</span>
-          {/if}
-        </div>
-      {/if}
+    <!-- one box per connection: its row sticks only while its own rows
+         scroll by, then the next connection pushes it up -->
+    {#each groups as g (g[0].key)}
+      <div class="cgroup">
+        {#each g as r (r.key)}{@render treeRow(r)}{/each}
+      </div>
     {/each}
   </div>
 </aside>
@@ -1075,14 +1093,18 @@
   .node > .dbicon {
     flex-shrink: 0;
   }
-  /* Connection rows stay at the top while their schemas scroll under them;
-     the next connection pushes in over the previous one. */
+  /* Connection rows stay at the top while their own rows scroll under
+     them (sticky inside .cgroup), and the next connection pushes them up.
+     The 1px shadow above covers the sliver a fractional zoom (125%) leaves
+     between the stuck row and the top edge. */
   .node.conn {
     position: sticky;
     top: 0;
     z-index: 2;
     height: 28px;
-    box-shadow: inset 3px 0 0 var(--conn-color);
+    box-shadow:
+      inset 3px 0 0 var(--conn-color),
+      0 -1px 0 var(--bg-panel);
     background-color: var(--bg-panel);
   }
   .node.conn:hover {
@@ -1104,11 +1126,13 @@
   .node.conn.drop-before {
     box-shadow:
       inset 3px 0 0 var(--conn-color),
+      0 -1px 0 var(--bg-panel),
       inset 0 2px 0 var(--accent);
   }
   .node.conn.drop-after {
     box-shadow:
       inset 3px 0 0 var(--conn-color),
+      0 -1px 0 var(--bg-panel),
       inset 0 -2px 0 var(--accent);
   }
   .pick-btn {
