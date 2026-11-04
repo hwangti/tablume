@@ -1,0 +1,353 @@
+/* tablu.me — one stylesheet for both languages. */
+
+:root {
+  --paper: #f6f4ef;
+  --paper-2: #efece5;
+  --ink: #1b1c1f;
+  --muted: #5e6169;
+  --rule: #dcd8ce;
+  --accent: #2a55d6;
+  --amber: #b9770e;
+  --shot-border: #d6d2c8;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #161719;
+    --paper-2: #1d1e21;
+    --ink: #e7e5df;
+    --muted: #9b9da4;
+    --rule: #2c2e33;
+    --accent: #86a8ff;
+    --amber: #f0b44c;
+    --shot-border: #2f3136;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.65 'IBM Plex Sans KR', 'IBM Plex Sans', system-ui, sans-serif;
+  font-feature-settings: 'kern';
+}
+:lang(ko) body,
+body:lang(ko) {
+  word-break: keep-all;
+}
+a {
+  color: inherit;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 3px;
+}
+a:hover {
+  text-decoration-color: currentColor;
+}
+code,
+pre,
+.mono {
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+p code,
+li code,
+dd code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--paper-2);
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------------------------------------------------------------- header */
+
+header.top {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 22px;
+  padding-bottom: 22px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  font-size: 17px;
+  text-decoration: none;
+}
+.brand img {
+  width: 26px;
+  height: 26px;
+}
+header.top nav {
+  display: flex;
+  gap: 22px;
+  margin-left: auto;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+header.top nav a {
+  text-decoration: none;
+}
+header.top nav a:hover {
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ hero */
+
+.hero {
+  padding-top: 56px;
+  padding-bottom: 40px;
+}
+.hero .meta {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.hero h1 {
+  max-width: 15em;
+  margin: 0;
+  font-size: clamp(32px, 5.2vw, 52px);
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.hero .lede {
+  max-width: 34em;
+  margin: 22px 0 0;
+  font-size: 18px;
+  color: var(--muted);
+}
+.get {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin-top: 30px;
+}
+.btn {
+  display: inline-block;
+  padding: 10px 18px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+  font-size: 15px;
+  text-decoration: none;
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+}
+.btn:hover {
+  opacity: 0.86;
+}
+.get .note {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------ screenshot */
+
+.shot {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.shot img,
+figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--shot-border);
+  border-radius: 8px;
+}
+.shot img {
+  box-shadow: 0 18px 50px -28px rgba(0, 0, 0, 0.45);
+}
+.caption,
+figcaption {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* -------------------------------------------------------------- sections */
+
+section.part {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 8px 48px;
+  padding-top: 56px;
+  padding-bottom: 8px;
+}
+section.part > h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+section.part > h2 span {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+}
+.body {
+  max-width: 720px;
+  padding-top: 0;
+  border-top: 1px solid var(--rule);
+}
+section.part > h2 {
+  padding-top: 14px;
+  border-top: 1px solid var(--ink);
+}
+.body > :first-child {
+  margin-top: 14px;
+}
+.body h3 {
+  margin: 30px 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.body p {
+  margin: 0 0 12px;
+}
+.body ul {
+  margin: 0 0 12px;
+  padding-left: 1.1em;
+}
+.body li {
+  margin: 4px 0;
+}
+.body li::marker {
+  color: var(--muted);
+}
+
+pre {
+  margin: 14px 0 18px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--paper-2);
+  line-height: 1.55;
+}
+pre .c {
+  color: var(--muted);
+}
+pre .k {
+  color: var(--accent);
+}
+
+figure {
+  margin: 20px 0 18px;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 28px;
+  align-items: start;
+}
+.split figure {
+  margin-top: 6px;
+}
+
+/* ------------------------------------------------------------ spec sheet */
+
+dl.spec {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  margin: 14px 0 0;
+}
+dl.spec dt,
+dl.spec dd {
+  margin: 0;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
+}
+dl.spec dt {
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+footer {
+  margin-top: 80px;
+  padding-bottom: 40px;
+  color: var(--muted);
+  font-size: 14px;
+}
+footer .row {
+  padding-top: 22px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+footer .row :last-child {
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------------- narrow */
+
+@media (max-width: 820px) {
+  section.part {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 44px;
+  }
+  .body {
+    border-top: none;
+  }
+  section.part > h2 span {
+    display: inline;
+  }
+  section.part > h2 span::before {
+    content: ' · ';
+  }
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .split figure {
+    max-width: 260px;
+  }
+}
+@media (max-width: 560px) {
+  .wrap,
+  .shot {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  header.top nav .wide {
+    display: none;
+  }
+  header.top nav {
+    gap: 16px;
+  }
+  .hero {
+    padding-top: 28px;
+  }
+  .hero .lede {
+    font-size: 16.5px;
+  }
+  dl.spec {
+    grid-template-columns: 110px 1fr;
+  }
+  footer .row :last-child {
+    margin-left: 0;
+  }
+}
