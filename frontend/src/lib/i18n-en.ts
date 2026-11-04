@@ -251,6 +251,8 @@ export default {
   '{n}행 내보냄 (불러온 행만)': 'Exported {n} {n|row|rows} (loaded rows only)',
   '적용하지 않은 변경 {n}건이 있습니다. 버리고 실행할까요?': 'There {n|is|are} {n} unapplied {n|change|changes}. Discard and run?',
   '적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?': 'There {n|is|are} {n} unapplied {n|change|changes}. Discard and close the tab?',
+  '“{name}” 콘솔에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?': 'The console “{name}” has SQL you edited. It is lost when the tab closes. Close it?',
+  '닫을 탭 중 콘솔 {n}개에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?': '{n} consoles to close have SQL you edited. It is lost when they close. Close them?',
   '닫을 탭에 적용하지 않은 변경 {n}건이 있습니다. 버리고 닫을까요?': 'Tabs to close have {n} unapplied {n|change|changes}. Discard and close?',
   '적용하지 않은 변경 {n}건이 있습니다. 버리고 이동할까요?': 'There {n|is|are} {n} unapplied {n|change|changes}. Discard and move?',
   '적용하지 않은 변경 {n}건이 있습니다. 버리고 다시 조회할까요?': 'There {n|is|are} {n} unapplied {n|change|changes}. Discard and reload?',

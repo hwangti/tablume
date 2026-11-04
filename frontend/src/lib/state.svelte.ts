@@ -52,6 +52,9 @@ export interface Tab {
   connId: string
   schema: string
   sql: string
+  // The SQL as opened (a file, a routine's source, …) or last saved to a
+  // file: a console whose SQL differs asks before it is closed.
+  sqlBase?: string
   results: StmtResult[]
   activeResult: number // index into results, or -1 for the messages pane
   running: boolean
@@ -498,6 +501,7 @@ export function openConsole(connId: string, opts: { schema?: string; sql?: strin
     connId,
     schema: opts.schema ?? st?.current ?? '',
     sql: opts.sql ?? '',
+    sqlBase: opts.sql ?? '',
     results: [],
     activeResult: 0,
     running: false,
@@ -511,11 +515,24 @@ export function openConsole(connId: string, opts: { schema?: string; sql?: strin
   return app.tabs[app.tabs.length - 1]
 }
 
+// A console with SQL typed in it (not as opened or saved): closing the tab
+// loses it.
+export function sqlEdited(t: Tab): boolean {
+  return !t.tableRef && t.sql.trim() !== '' && t.sql !== (t.sqlBase ?? '')
+}
+
+// Asks before closing a tab with unapplied grid edits or edited SQL.
+async function okToClose(t: Tab): Promise<boolean> {
+  const n = tabPending(t)
+  if (n) return confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n }))
+  if (sqlEdited(t)) return confirmBox(tr('“{name}” 콘솔에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?', { name: t.title }))
+  return true
+}
+
 export async function closeTab(id: string) {
   const i = app.tabs.findIndex((t) => t.id === id)
   if (i < 0) return
-  const n = tabPending(app.tabs[i])
-  if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n })))) return
+  if (!(await okToClose(app.tabs[i]))) return
   if (app.tabs[i].detached) api.CloseTabWindow(id)
   api.CloseSession(id)
   app.tabs.splice(i, 1)
@@ -529,7 +546,11 @@ export async function closeTabs(ids: string[]) {
   const closing = app.tabs.filter((t) => set.has(t.id))
   if (!closing.length) return
   const n = closing.reduce((a, t) => a + tabPending(t), 0)
+  const edited = closing.filter(sqlEdited)
   if (n && !(await confirmBox(tr('닫을 탭에 적용하지 않은 변경 {n}건이 있습니다. 버리고 닫을까요?', { n })))) return
+  if (!n && edited.length === 1 && !(await okToClose(edited[0]))) return
+  if (!n && edited.length > 1 && !(await confirmBox(tr('닫을 탭 중 콘솔 {n}개에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?', { n: edited.length }))))
+    return
   const activeIdx = app.tabs.findIndex((t) => t.id === app.activeTab)
   for (const t of closing) api.CloseSession(t.id)
   const remaining = app.tabs.filter((t) => !set.has(t.id))
@@ -932,6 +953,7 @@ export async function openRoutine(connId: string, schema: string, r: Routine) {
     tab.connId = connId
     tab.schema = schema
     tab.sql = src
+    tab.sqlBase = src
     tab.title = title
     tab.results = []
     tab.tableRef = undefined
@@ -1063,7 +1085,7 @@ export function pinTab(tab: Tab | undefined) {
 // ---------------------------------------------------------------- workspace
 
 // The saved form of a tab (workspace file, and what a tab window gets).
-export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'preview' | 'layout' | 'tableRef'>
+export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef'>
 
 function savedTab(t: Tab): SavedTab {
   return $state.snapshot({
@@ -1072,6 +1094,7 @@ function savedTab(t: Tab): SavedTab {
     connId: t.connId,
     schema: t.schema,
     sql: t.sql,
+    sqlBase: t.sqlBase,
     preview: t.preview,
     layout: t.layout,
     tableRef: t.tableRef,
@@ -1079,7 +1102,8 @@ function savedTab(t: Tab): SavedTab {
 }
 
 function tabFromSaved(t: SavedTab): Tab {
-  return { ...t, results: [], activeResult: 0, running: false, loadingMore: false, messages: [], startedAt: 0 }
+  // (saved before sqlBase: what was there counts as kept)
+  return { ...t, sqlBase: t.sqlBase ?? t.sql, results: [], activeResult: 0, running: false, loadingMore: false, messages: [], startedAt: 0 }
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -1180,6 +1204,7 @@ function applySaved(t: Tab, s: SavedTab) {
   t.connId = s.connId
   t.schema = s.schema
   t.sql = s.sql
+  t.sqlBase = s.sqlBase
   t.preview = s.preview
   t.layout = s.layout
   t.tableRef = s.tableRef
@@ -1288,8 +1313,7 @@ export async function backToMain() {
 export async function closeTabWindow() {
   const t = app.tabs[0]
   if (!t) return
-  const n = tabPending(t)
-  if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n })))) return
+  if (!(await okToClose(t))) return
   clearTimeout(saveTimer)
   api.CloseSession(t.id)
   await Events.Emit('tab:close', { id: t.id }).catch(() => {})

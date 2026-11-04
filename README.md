@@ -36,6 +36,7 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
     - PostgreSQL: `$$` quoting is recognized.
   - On Oracle, PL/SQL created with compilation errors shows the errors (like SQL\*Plus's "created with compilation errors").
   - Tabs and their SQL come back when the app restarts. `.sql` files can be opened and saved.
+  - Closing a console with SQL you typed (not as opened or last saved to a file) asks first.
 - Result grid
   - Virtual scrolling: tens of thousands of rows stay light.
   - Fetches the first 500 rows (configurable) and more as you scroll.

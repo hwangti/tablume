@@ -433,6 +433,7 @@
       const f = await api.OpenSQLFile()
       if (f) {
         tab.sql = f.content
+        tab.sqlBase = f.content
         tab.title = f.name
         saveWorkspaceSoon()
       }
@@ -444,8 +445,13 @@
   async function saveFile() {
     const name = tab.title.endsWith('.sql') ? tab.title : tab.title.replace(/[\\/:*?"<>|]/g, '_') + '.sql'
     try {
-      const p = await api.SaveTextFile(name, tab.sql)
-      if (p) toast(t('저장됨') + ': ' + p)
+      const sql = tab.sql
+      const p = await api.SaveTextFile(name, sql)
+      if (p) {
+        tab.sqlBase = sql
+        saveWorkspaceSoon()
+        toast(t('저장됨') + ': ' + p)
+      }
     } catch (e) {
       toast(errText(e), 'error')
     }
