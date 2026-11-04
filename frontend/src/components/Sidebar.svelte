@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { formatBytes } from '../lib/format'
   import { isWeb } from '../lib/platform'
   import { i18n, LANGS, locale, num, t as tr } from '../lib/i18n.svelte'
@@ -230,6 +231,25 @@
       else out[out.length - 1].push(r)
     }
     return out
+  })
+
+  // The connection row currently held at the top (its group starts above
+  // the visible area). Only it gets the cover above it (see .stuck).
+  let stuckKey = $state('')
+  function findStuck() {
+    if (!treeEl) return
+    const top = treeEl.scrollTop
+    let key = ''
+    for (const g of treeEl.querySelectorAll<HTMLElement>(':scope > .cgroup')) {
+      if (g.offsetTop >= top) break
+      if (g.offsetTop + g.offsetHeight > top) key = g.dataset.key ?? ''
+    }
+    stuckKey = key
+  }
+  // rows opening or closing move the groups without a scroll
+  $effect(() => {
+    void groups
+    tick().then(findStuck)
   })
 
   // Table of the active tab, highlighted in the tree.
@@ -597,6 +617,7 @@
     <div
       class="node {r.kind}"
       class:cursor={cursor === r.key}
+      class:stuck={r.key === stuckKey}
       class:active={r.key === activeKey}
       class:dragging={r.kind === 'conn' && connDrag?.active && connDrag.id === r.c.id}
       class:drop-before={r.kind === 'conn' && connDrag?.active && connDrag.to === app.connections.indexOf(r.c)}
@@ -791,7 +812,7 @@
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="tree" bind:this={treeEl} tabindex="0" role="tree" onkeydown={treeKey} onscroll={() => (tip = null)}>
+  <div class="tree" bind:this={treeEl} tabindex="0" role="tree" onkeydown={treeKey} onscroll={() => ((tip = null), findStuck())}>
     {#if app.connections.length === 0}
       <div class="hint">
         <p>{tr('저장된 연결이 없습니다.')}</p>
@@ -802,7 +823,7 @@
     <!-- one box per connection: its row sticks only while its own rows
          scroll by, then the next connection pushes it up -->
     {#each groups as g (g[0].key)}
-      <div class="cgroup">
+      <div class="cgroup" data-key={g[0].key}>
         {#each g as r (r.key)}{@render treeRow(r)}{/each}
       </div>
     {/each}
@@ -868,6 +889,8 @@
     background: transparent;
   }
   .tree {
+    /* offsetTop of the groups counts from here (findStuck) */
+    position: relative;
     flex: 1;
     overflow: auto;
     padding-bottom: 20px;
@@ -1094,18 +1117,23 @@
     flex-shrink: 0;
   }
   /* Connection rows stay at the top while their own rows scroll under
-     them (sticky inside .cgroup), and the next connection pushes them up.
-     The 1px shadow above covers the sliver a fractional zoom (125%) leaves
-     between the stuck row and the top edge. */
+     them (sticky inside .cgroup), and the next connection pushes them up. */
   .node.conn {
     position: sticky;
     top: 0;
     z-index: 2;
     height: 28px;
+    box-shadow: inset 3px 0 0 var(--conn-color);
+    background-color: var(--bg-panel);
+  }
+  /* WebKit at a fractional zoom (125%) can draw the stuck row a little
+     below the top edge, and the rows scrolling under it show through the
+     gap. A panel-coloured band above the stuck row covers it (it only
+     shows above a row held at the top, where nothing else is). */
+  .node.conn.stuck {
     box-shadow:
       inset 3px 0 0 var(--conn-color),
-      0 -1px 0 var(--bg-panel);
-    background-color: var(--bg-panel);
+      0 -6px 0 var(--bg-panel);
   }
   .node.conn:hover {
     background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-panel);
@@ -1126,13 +1154,11 @@
   .node.conn.drop-before {
     box-shadow:
       inset 3px 0 0 var(--conn-color),
-      0 -1px 0 var(--bg-panel),
       inset 0 2px 0 var(--accent);
   }
   .node.conn.drop-after {
     box-shadow:
       inset 3px 0 0 var(--conn-color),
-      0 -1px 0 var(--bg-panel),
       inset 0 -2px 0 var(--accent);
   }
   .pick-btn {
