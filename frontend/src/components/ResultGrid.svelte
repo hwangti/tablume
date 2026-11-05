@@ -224,7 +224,10 @@
   // The "load previous rows" bar takes a row of its own above the data.
   let TOP_PAD = $derived(canLoadPrev || loadingPrev ? ROW_H : 0)
   let BODY_T = $derived(HEAD_H + TOP_PAD)
-  const OVERSCAN = 10
+  // Rows / pixels rendered beyond the view on each side, so a fast scroll
+  // (painted before the update lands in WKWebView) doesn't show blank areas.
+  const OVERSCAN = 20
+  const OVERSCAN_X = 400
 
   let scroller: HTMLDivElement
   let scrollTop = $state(0)
@@ -349,6 +352,7 @@
       scroller.scrollTop = r.top
       scroller.scrollLeft = r.left
       scrollTop = scroller.scrollTop
+      scrollLeft = scroller.scrollLeft
       saveView()
     })
   })
@@ -406,7 +410,25 @@
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
   let numW = $derived(Math.max(44, String(rowBase + rows.length).length * 8 + 20))
   let cw = $derived(widths.map((w) => Math.round(w)))
-  let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
+  // colX[p]: left edge of the column at position p; the last entry is the total width.
+  let colX = $derived.by(() => {
+    const x = [numW]
+    for (const c of vc) x.push(x[x.length - 1] + (cw[c] ?? 0))
+    return x
+  })
+  let totalW = $derived(colX[vc.length])
+  // Columns in (or near) the view: only these cells are rendered per row.
+  let cFirst = $derived.by(() => {
+    let p = 0
+    while (p < vc.length - 1 && colX[p + 1] <= scrollLeft + numW - OVERSCAN_X) p++
+    return p
+  })
+  let cLast = $derived.by(() => {
+    let p = cFirst
+    while (p < vc.length && colX[p] < scrollLeft + viewW + OVERSCAN_X) p++
+    return Math.max(p, cFirst + 1)
+  })
+  let vcols = $derived(vc.slice(cFirst, cLast).map((c, k) => ({ c, p: cFirst + k })))
   // The "load more / previous" bars span the visible width. They must end
   // inside the table: a bar reaching past it (scrollLeft is fractional when
   // zoomed) widens the scroll area, and scrolling right never ends.
@@ -525,11 +547,13 @@
     const top = TOP_PAD + vi * ROW_H
     if (top < scroller.scrollTop) scroller.scrollTop = top
     else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight - HEAD_H) scroller.scrollTop = top + ROW_H - scroller.clientHeight + HEAD_H + 12
-    let left = numW
-    for (let i = 0; i < c; i++) left += cw[vc[i]]
-    const right = left + cw[vc[c]]
+    const left = colX[c]
+    const right = colX[c + 1]
     if (left - numW < scroller.scrollLeft) scroller.scrollLeft = left - numW
     else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth + 12
+    // render the target cell now, not after the (async) scroll event
+    scrollTop = scroller.scrollTop
+    scrollLeft = scroller.scrollLeft
   }
 
   // edited cells in the selection, as [row, col]
@@ -685,9 +709,7 @@
   let dragged = false
 
   function edgeX(p: number): number {
-    let x = numW
-    for (let i = 0; i < p; i++) x += cw[vc[i]]
-    return x
+    return colX[p]
   }
 
   function headDown(e: MouseEvent, p: number) {
@@ -829,7 +851,8 @@
         >
           {st?.added[ri] ? '+' : rowBase + vi + 1}
         </div>
-        {#each vc as c, p (c)}
+        <div class="pad" style:width="{colX[cFirst] - numW}px"></div>
+        {#each vcols as { c, p } (c)}
           {@const v = val(ri, c)}
           {@const isFocus = focus?.r === vi && focus?.c === p}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1053,6 +1076,10 @@
     left: 0;
     display: flex;
     height: var(--row-h);
+  }
+
+  .pad {
+    flex-shrink: 0;
   }
 
   .tr.alt {
