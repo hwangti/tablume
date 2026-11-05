@@ -99,7 +99,11 @@
         : '',
   )
 
-  const def = (c: Column) => (c.default && c.default.toUpperCase() !== 'NULL' ? c.default : '')
+  // a default is an SQL expression; NULL (or nothing) is no default, which a
+  // nullable column reads as DEFAULT NULL (the text 'NULL' is quoted)
+  const defaultHint = t("SQL 식입니다. 문자열은 'a'처럼 따옴표로 감쌉니다. 비우거나 NULL이면 기본값 없음 (NULL 허용 컬럼은 NULL)")
+  const noDefault = (v: string) => (v.trim().toUpperCase() === 'NULL' ? '' : v.trim())
+  const def = (c: Column) => noDefault(c.default ?? '')
 
   // ---- dropping columns
   let dropped = $state<Record<string, true>>({})
@@ -145,6 +149,7 @@
     setDraft(c, { ...current(c), [f]: v })
   }
   function setDraft(c: Column, d: Draft) {
+    d = { ...d, default: noDefault(d.default) }
     draft[c.name] = d
     if (!FIELDS.some((x) => changed(c, x))) delete draft[c.name]
   }
@@ -384,7 +389,7 @@
   }
 
   function request() {
-    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '', collation: a.collation, onUpdate: a.onUpdate.trim(), invisible: a.invisible }))
+    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: noDefault(a.default), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '', collation: a.collation, onUpdate: a.onUpdate.trim(), invisible: a.invisible }))
     const names = order ? rows.filter((r) => !(r.col && dropped[r.col.name])).map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
     return {
       connId,
@@ -574,7 +579,7 @@
               {#if indexed.has(c.name)}<button class="kb" title={t('인덱스')} onclick={() => onkey?.('index', c.name)}><Icon name="sortLines" size={12} color="var(--text-dim)" /></button>{/if}
             </td>
             {#snippet cell(field: 'name' | 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
-              <td class="{cls} edit" class:edited={changed(c, field)} ondblclick={() => startEdit(c, field)}>
+              <td class="{cls} edit" class:edited={changed(c, field)} title={field === 'default' ? defaultHint : undefined} ondblclick={() => startEdit(c, field)}>
                 {#if editing?.name === c.name && editing.field === field}
                   <span class="edit-wrap">
                     <input class="cell-input mono" class:with-dots={field === 'comment'} bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
@@ -597,7 +602,7 @@
                 {#if cur.nullable}<span class="dim">NULL</span>{:else}<b>NOT NULL</b>{/if}
               </label>
             </td>
-            {@render cell('default', 'mono def', cur.default, c.default?.toUpperCase() === 'NULL' ? 'NULL' : '')}
+            {@render cell('default', 'mono def', cur.default, cur.nullable ? 'NULL' : '')}
             <td class="dim" class:edited={changed(c, 'auto')}>{extraShown(c, cur)}</td>
             {@render cell('comment', 'comment', cur.comment)}
             <td class="act">
@@ -624,7 +629,7 @@
                 {#if a.nullable}<span class="dim">NULL</span>{:else}<b>NOT NULL</b>{/if}
               </label>
             </td>
-            <td class="new"><input class="new-input mono" placeholder={t('기본값')} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
+            <td class="new"><input class="new-input mono" placeholder={t('기본값')} title={defaultHint} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td class="dim">{a.auto ? 'auto_increment' : ''}</td>
             <td class="new rel">
               <input class="new-input with-dots" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} />
