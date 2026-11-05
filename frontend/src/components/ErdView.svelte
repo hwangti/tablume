@@ -4,11 +4,11 @@
   import ZoomBox from './ZoomBox.svelte'
   import { t, num } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
-  import { app, connect, openDDL, openTableData, type Tab } from '../lib/state.svelte'
+  import { app, askText, connect, globMatch, openDDL, openTableData, saveWorkspaceSoon, type Tab } from '../lib/state.svelte'
   import { copyText } from '../lib/clipboard'
   import { closeMenus, fitMenu, onCloseMenus } from '../lib/fit'
-  import { layout, boxView, stack, edgePath, DEFAULT_OPTIONS, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
-  import type { ForeignKey, Table } from '../lib/types'
+  import { layout, boxView, stack, edgePath, routedPath, DEFAULT_OPTIONS, DEFAULT_AUDIT, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
+  import type { ForeignKey, SchemaGraph, Table } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
 
@@ -17,6 +17,7 @@
 
   let viewEl: HTMLDivElement
   let L = $state.raw<Layout | null>(null)
+  let graph: SchemaGraph | null = null // as read, for a new layout when the audit columns change
   let error = $state('')
   let loading = $state(false)
   let opt = $state<ViewOptions>({ ...DEFAULT_OPTIONS })
@@ -56,7 +57,8 @@
       fitted = false
       manual = {}
       viewCache.clear()
-      L = layout(g, measure)
+      graph = g
+      L = layout(g, measure, auditOf)
     } catch (e) {
       error = errText(e)
     } finally {
@@ -67,6 +69,23 @@
   $effect(() => {
     if (connected && !L && !error) untrack(load)
   })
+
+  // Audit columns: name patterns, one list for every ERD (app.erdAudit).
+  const auditOf = (col: string) => app.erdAudit.some((p) => globMatch(p, col))
+  $effect(() => {
+    JSON.stringify(app.erdAudit)
+    untrack(() => {
+      if (graph) (viewCache = new Map()), (L = layout(graph, measure, auditOf))
+    })
+  })
+  async function editAudit() {
+    menu = null
+    const v = await askText(t('감사 컬럼 이름 (쉼표로 구분, * 와일드카드, 비우면 기본값)'), app.erdAudit.join(', '), t('저장'))
+    if (v === null) return
+    const ps = v.split(/[,\n]/).map((s) => s.trim()).filter(Boolean)
+    app.erdAudit = ps.length ? ps : [...DEFAULT_AUDIT]
+    saveWorkspaceSoon()
+  }
 
   // Boxes moved or widened by hand: the offset from the layout and the
   // width. "Auto arrange" empties it.
@@ -88,7 +107,13 @@
       }
     return m
   })
-  let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt) : null)
+  // A column's row from the top of its box; a hidden one: the middle.
+  const rowAt = (n: string, col: string) => {
+    const v = views.get(n)!
+    const r = v.rows.find((r) => r.line.name === col)
+    return r ? r.y - 4 : v.h / 2
+  }
+  let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt, rowAt) : null)
   let nodes = $derived(L ? [...L.nodes.values()] : [])
 
   // Where each shown box is now: the layout plus what was done by hand.
@@ -129,7 +154,10 @@
         },
       }
     }
-    return L.edges.map((e, i) => ({ ...e, i, d: edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
+    // Through the waypoints while neither end was moved by hand.
+    const routed = (e: Layout['edges'][number]) =>
+      e.via.length && pos && !manual[e.a] && !manual[e.b] ? routedPath(at(e.a), at(e.b), e.ac, e.bc, e.via.map((id) => pos!.via.get(id)!)) : null
+    return L.edges.map((e, i) => ({ ...e, i, d: routed(e) ?? edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
   })
 
   // ------------------------------------------------------------ highlight
@@ -325,7 +353,7 @@
     closeMenus()
     menu = { right: window.innerWidth - r.right, top: r.bottom + 4 }
   }
-  type Opt = { key: keyof ViewOptions; label: string; title: string }
+  type Opt = { key: keyof ViewOptions | ''; label: string; title: string; run?: () => void }
   let groups = $derived<{ title: string; items: Opt[] }[]>([
     ...(L?.stats.iso && L.stats.tables
       ? [{ title: t('테이블 범위'), items: [{ key: 'iso' as const, label: t('관계 없는 테이블'), title: t('FK로 이어지지 않은 테이블을 관계도 아래에 늘어놓습니다') }] }]
@@ -333,7 +361,8 @@
     {
       title: t('컬럼 범위'),
       items: [
-        { key: 'audit', label: t('감사 컬럼'), title: 'created_* · updated_* · deleted_* · version' },
+        { key: 'audit', label: t('감사 컬럼'), title: app.erdAudit.join(' · ') || t('지정한 감사 컬럼이 없습니다') },
+        { key: '', label: t('감사 컬럼 지정…'), title: t('ERD에서 감사 컬럼으로 보고 감출 컬럼 이름입니다'), run: editAudit },
         { key: 'all', label: t('컬럼 모두 펼치기'), title: t('{n}개까지만 보이던 컬럼을 전부 보입니다', { n: K.MAX_LINES }) },
       ],
     },
@@ -390,7 +419,7 @@
 
 <div class="erd">
   <div class="bar">
-    <span class="legend" title={t('● 기본 키 · ◆ 외래 키\n선 끝: ○< 여럿 · ○| 하나 · || 필수 (○는 선택)\n자식 쪽 FK가 UNIQUE면 1:1, 아니면 1:N. 위쪽이 부모입니다.\n휠로 확대하고 끌어서 옮깁니다.')}
+    <span class="legend" title={t('● 기본 키 · ◆ 외래 키\n선 끝: ○< 여럿 · ○| 하나 · || 필수 (○는 선택)\n자식 쪽 FK가 UNIQUE면 1:1, 아니면 1:N. 왼쪽이 부모입니다.\n휠로 확대하고 끌어서 옮깁니다.')}
       ><b class="pk">●</b>PK <b class="fk">◆</b>FK <b>○&lt;</b>N <b>○|</b>1</span
     >
     {#if L}<span class="stat" title={statTitle}>{statText}</span>{/if}
@@ -410,10 +439,15 @@
         <div class="menu" style:right="{menu.right}px" style:top="{menu.top}px" use:fitMenu={menu} onclick={(e) => e.stopPropagation()}>
           {#each groups as g (g.title)}
             <div class="ttl">{g.title}</div>
-            {#each g.items as it (it.key)}
-              <button role="menuitemcheckbox" aria-checked={opt[it.key]} title={it.title} onclick={() => (opt[it.key] = !opt[it.key])}>
-                <span class="check">{opt[it.key] ? '✓' : ''}</span>{it.label}
-              </button>
+            {#each g.items as it (it.label)}
+              {#if it.key}
+                {@const k = it.key}
+                <button role="menuitemcheckbox" aria-checked={opt[k]} title={it.title} onclick={() => (opt[k] = !opt[k])}>
+                  <span class="check">{opt[k] ? '✓' : ''}</span>{it.label}
+                </button>
+              {:else}
+                <button title={it.title} onclick={it.run}><span class="check"></span>{it.label}</button>
+              {/if}
             {/each}
           {/each}
         </div>
@@ -472,12 +506,14 @@
         </defs>
         <g transform="translate({px} {py}) scale({z})">
           <g class="edges">
-            {#each edges as e (e.i)}
+            <!-- the lit lines last, over the rest; the rest dim with their boxes -->
+            {#each hot ? [...edges.filter((e) => !hot!.edges.has(e.i)), ...edges.filter((e) => hot!.edges.has(e.i))] : edges as e (e.i)}
               {@const on = !!hot?.edges.has(e.i)}
               <path
                 class="ed"
                 class:loose={e.fk.looseRef}
                 class:hot={on}
+                class:dim={!!hot && !on}
                 d={e.d}
                 marker-start="url(#{uid}-{e.fk.one ? 'one' : 'many'}{on ? '-h' : ''})"
                 marker-end="url(#{uid}-{e.fk.required ? 'req' : 'opt'}{on ? '-h' : ''})"
@@ -710,6 +746,10 @@
   .ed.hot {
     stroke: var(--accent);
     stroke-width: 2.2;
+  }
+  /* as the boxes: the line and its ends */
+  .ed.dim {
+    opacity: 0.16;
   }
   .edh {
     fill: none;
