@@ -10,6 +10,7 @@
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
   import IndexView from './IndexView.svelte'
+  import FkView from './FkView.svelte'
   import { api, errText } from '../lib/api'
   import { modKey, isMac, copyText } from '../lib/clipboard'
   import {
@@ -781,6 +782,17 @@
               onchanged={structureChanged}
               onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
             />
+            {#if conn?.driver !== 'sqlite'}
+              <FkView
+                connId={tab.connId}
+                schema={tab.tableRef.schema}
+                table={tab.tableRef.table}
+                driver={conn?.driver}
+                version={ddlVersion}
+                onchanged={structureChanged}
+                onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+              />
+            {/if}
           </div>
         {:else if isTable && tableView === 'ddl'}
           {#if ddlError}

@@ -27,6 +27,10 @@ export function ApplyChanges(req: dbx$0.ApplyRequest): $CancellablePromise<numbe
     return $Call.ByID(1334103025, req);
 }
 
+export function ApplyForeignKeys(req: dbx$0.FKRequest): $CancellablePromise<dbx$0.AlterResult> {
+    return $Call.ByID(1673511372, req);
+}
+
 export function ApplyIndexes(req: dbx$0.IndexRequest): $CancellablePromise<dbx$0.AlterResult> {
     return $Call.ByID(3589477944, req);
 }
@@ -116,6 +120,10 @@ export function ListConnections(): $CancellablePromise<dbx$0.ConnConfig[] | null
     return $Call.ByID(2249392661);
 }
 
+export function ListForeignKeys(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<dbx$0.TableFK[] | null> {
+    return $Call.ByID(1225993064, id, schema, t);
+}
+
 export function ListIndexes(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<dbx$0.Index[] | null> {
     return $Call.ByID(1177775444, id, schema, t);
 }
@@ -180,6 +188,10 @@ export function PreviewAlter(req: dbx$0.AlterRequest): $CancellablePromise<strin
 
 export function PreviewChanges(req: dbx$0.ApplyRequest): $CancellablePromise<string[] | null> {
     return $Call.ByID(4133903849, req);
+}
+
+export function PreviewForeignKeys(req: dbx$0.FKRequest): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2878927732, req);
 }
 
 export function PreviewIndexes(req: dbx$0.IndexRequest): $CancellablePromise<string[] | null> {

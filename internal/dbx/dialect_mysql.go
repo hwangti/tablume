@@ -170,6 +170,14 @@ func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []stri
 	return []string{def}
 }
 
+func (mysqlDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {
+	return []string{"ALTER TABLE " + target + " DROP COLUMN " + quoteWith(name, "`", "`")}, nil
+}
+
+func (mysqlDialect) tableComment(_ string, _ Table, target, comment string) []string {
+	return []string{"ALTER TABLE " + target + " COMMENT = " + sqlQuote(comment, true)}
+}
+
 func (mysqlDialect) Routines(ctx context.Context, q Querier, schema string) ([]Routine, error) {
 	return scanRoutines(ctx, q, `SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, '', ''
 		FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_TYPE DESC, ROUTINE_NAME`, schema)

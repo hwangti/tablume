@@ -19,6 +19,17 @@ export interface AlterRequest {
      * (Old = New where only the place changes). MySQL/MariaDB only.
      */
     "order": string[] | null;
+
+    /**
+     * Drop: columns to drop (by name; not in Changes or Order).
+     */
+    "drop": string[] | null;
+
+    /**
+     * TableComment: the table's new comment; nil = unchanged (Table.Comment
+     * is the current one).
+     */
+    "tableComment": string | null;
 }
 
 export interface AlterResult {
@@ -193,6 +204,14 @@ export interface ExecRequest {
 export interface ExecResponse {
     "results": StmtResult[] | null;
     "currentSchema": string;
+}
+
+export interface FKRequest {
+    "connId": string;
+    "schema": string;
+    "table": Table;
+    "drop": TableFK[] | null;
+    "create": TableFK[] | null;
 }
 
 export interface FetchResponse {
@@ -390,4 +409,27 @@ export interface Table {
      * bytes, -1 if unknown
      */
     "size": number;
+}
+
+export interface TableFK {
+    "name": string;
+    "columns": string[] | null;
+
+    /**
+     * RefTable is the referenced table; its Schema is set (SQL Server) or
+     * RefSchema names another schema.
+     */
+    "refTable": Table;
+
+    /**
+     * "" = the same schema
+     */
+    "refSchema": string;
+    "refColumns": string[] | null;
+
+    /**
+     * NO ACTION, CASCADE, SET NULL, ...; "" = not supported (Oracle)
+     */
+    "onUpdate": string;
+    "onDelete": string;
 }

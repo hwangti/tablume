@@ -258,6 +258,18 @@ func (pgDialect) addColumn(_ string, _ Table, target string, c Column) []string 
 	return out
 }
 
+func (pgDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {
+	return []string{"ALTER TABLE " + target + " DROP COLUMN " + quoteWith(name, `"`, `"`)}, nil
+}
+
+func (pgDialect) tableComment(_ string, _ Table, target, comment string) []string {
+	c := "NULL"
+	if comment != "" {
+		c = sqlQuote(comment, false)
+	}
+	return []string{"COMMENT ON TABLE " + target + " IS " + c}
+}
+
 func (pgDialect) Routines(ctx context.Context, q Querier, schema string) ([]Routine, error) {
 	return scanRoutines(ctx, q, `SELECT n.nspname, p.proname,
 		CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,

@@ -11,6 +11,7 @@ export type {
     EditInfo,
     ExecRequest,
     ExecResponse,
+    FKRequest,
     FetchResponse,
     Index,
     IndexColumn,
@@ -22,5 +23,6 @@ export type {
     SchemaFilter,
     SchemaList,
     StmtResult,
-    Table
+    Table,
+    TableFK
 } from "./models.js";

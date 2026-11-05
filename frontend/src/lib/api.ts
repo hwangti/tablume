@@ -2,7 +2,7 @@ import * as App from '../../bindings/tablume/internal/app/app'
 import { t } from './i18n.svelte'
 import { isWeb } from './platform'
 import { downloadText, uploadText } from './webfiles.svelte'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex } from './types'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, TableFK } from './types'
 
 export interface AlterResult {
   applied: number
@@ -19,6 +19,14 @@ export interface IndexRequest {
   create: NewIndex[]
 }
 
+export interface FKRequest {
+  connId: string
+  schema: string
+  table: Table
+  drop: TableFK[]
+  create: TableFK[]
+}
+
 export interface AlterRequest {
   connId: string
   schema: string
@@ -26,6 +34,8 @@ export interface AlterRequest {
   changes: { old: Column; new: Column }[]
   add: Column[]
   order?: string[]
+  drop?: string[]
+  tableComment?: string
 }
 
 // Typed view over the generated Wails bindings, using our own types
@@ -53,6 +63,9 @@ interface Api {
   ListIndexes(id: string, schema: string, t: Table): Promise<Index[] | null>
   PreviewIndexes(req: IndexRequest): Promise<string[] | null>
   ApplyIndexes(req: IndexRequest): Promise<AlterResult>
+  ListForeignKeys(id: string, schema: string, t: Table): Promise<TableFK[] | null>
+  PreviewForeignKeys(req: FKRequest): Promise<string[] | null>
+  ApplyForeignKeys(req: FKRequest): Promise<AlterResult>
   RenameTable(id: string, schema: string, t: Table, name: string): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
   FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>

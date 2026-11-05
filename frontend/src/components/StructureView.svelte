@@ -1,8 +1,9 @@
 <script lang="ts">
   // The table's columns as a table (the "컬럼" side of the structure tab). Type,
-  // NULL, default and comment can be edited, columns added, and on
-  // MySQL/MariaDB the rows dragged into another order: the changes become
-  // ALTER statements that are shown before they run.
+  // NULL, default and comment can be edited, columns added and dropped, the
+  // table comment changed, and on MySQL/MariaDB the rows dragged into
+  // another order: the changes become ALTER statements that are shown
+  // before they run.
   import { t } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
   import { copyText } from '../lib/clipboard'
@@ -44,8 +45,10 @@
   $effect(() => {
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
     const v = version
-    if (key !== loadedFor) load()
-    else if (v !== loadedVersion && !Object.keys(draft).length && !added.length && !order) load()
+    if (key !== loadedFor) {
+      savedComment = null
+      load()
+    } else if (v !== loadedVersion && !pending) load()
     loadedVersion = v
   })
 
@@ -66,6 +69,27 @@
   )
 
   const def = (c: Column) => (c.default && c.default.toUpperCase() !== 'NULL' ? c.default : '')
+
+  // ---- dropping columns
+  let dropped = $state<Record<string, true>>({})
+  function toggleDrop(c: Column) {
+    if (dropped[c.name]) delete dropped[c.name]
+    else dropped[c.name] = true
+  }
+
+  // ---- the table comment: tcDraft while changed, savedComment once applied
+  // (the table prop keeps the comment it was opened with)
+  let tcDraft = $state<string | null>(null)
+  let savedComment = $state<string | null>(null)
+  let tableComment = $derived(savedComment ?? table.comment ?? '')
+  let tcEditing = $state(false)
+  function commitComment(v: string) {
+    tcEditing = false
+    tcDraft = v === tableComment ? null : v
+  }
+
+  // ---- finding a column (name or comment)
+  let find = $state('')
 
   function current(c: Column): Draft {
     return draft[c.name] ?? { type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '' }
@@ -116,10 +140,12 @@
     added = []
     order = null
     moved = {}
+    dropped = {}
+    tcDraft = null
   }
 
   // ---- order (MySQL/MariaDB): a row is dragged by its number
-  const canMove = $derived(!readOnlyReason && (driver === 'mysql' || driver === 'mariadb'))
+  const canMove = $derived(!readOnlyReason && !find && (driver === 'mysql' || driver === 'mariadb'))
   let order = $state<string[] | null>(null) // row keys; null = as loaded, new ones last
   let moved = $state<Record<string, true>>({}) // rows the user dragged
   type Row = { key: string; col?: Column; add?: NewCol }
@@ -129,6 +155,12 @@
     const by = new Map(all.map((r) => [r.key, r]))
     return order.flatMap((k) => by.get(k) ?? [])
   })
+  let shown = $derived.by(() => {
+    const f = find.trim().toLowerCase()
+    if (!f) return rows
+    return rows.filter((r) => (r.col ? r.col.name + ' ' + (r.col.comment ?? '') : r.add!.name).toLowerCase().includes(f))
+  })
+  let rowNo = $derived(new Map(rows.map((r, i) => [r.key, i + 1])))
 
   let tbody = $state<HTMLTableSectionElement>()
   let drag = $state<{ key: string; to: number } | null>(null)
@@ -201,11 +233,11 @@
     sel = keys.indexOf(key)
   }
 
-  let edits = $derived((cols ? cols.filter((c) => draft[c.name]).length : 0) + added.length)
-  let pending = $derived(edits + (order ? 1 : 0))
+  let edits = $derived((cols ? cols.filter((c) => draft[c.name] && !dropped[c.name]).length : 0) + added.length + Object.keys(dropped).length)
+  let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0))
 
   function startEdit(c: Column, field: Exclude<Field, 'nullable'>) {
-    if (readOnlyReason) return
+    if (readOnlyReason || dropped[c.name]) return
     editing = { name: c.name, field, value: current(c)[field] }
   }
 
@@ -236,7 +268,7 @@
   // with a new order the server needs every column (it restates the moved ones)
   function changes() {
     return (cols ?? [])
-      .filter((c) => order || draft[c.name])
+      .filter((c) => !dropped[c.name] && (order || draft[c.name]))
       .map((c) => {
         const d = current(c)
         return {
@@ -248,8 +280,17 @@
 
   function request() {
     const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: '' }))
-    const names = order ? rows.map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
-    return { connId, schema, table: $state.snapshot(table), changes: changes(), add, order: names }
+    const names = order ? rows.filter((r) => !(r.col && dropped[r.col.name])).map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
+    return {
+      connId,
+      schema,
+      table: { ...$state.snapshot(table), comment: tableComment },
+      changes: changes(),
+      add,
+      order: names,
+      drop: Object.keys(dropped),
+      tableComment: tcDraft ?? undefined,
+    }
   }
 
   // ---- apply: preview the statements, then run them
@@ -285,6 +326,7 @@
         return
       }
       apply = null
+      if (tcDraft !== null) savedComment = tcDraft
       onlog?.(a.sql, t('컬럼 변경 {n}건 적용', { n: r.applied }))
       toast(t('컬럼 변경 {n}건 적용됨', { n: r.applied }))
       revert()
@@ -314,10 +356,28 @@
   <div class="wrap">
     <div class="bar">
       <span class="title">{t('컬럼')} <span class="count">{cols.length}</span></span>
-      {#if table.comment}<span class="tcomment">{table.comment}</span>{/if}
+      {#if tcEditing}
+        <input
+          class="tc-input"
+          value={tcDraft ?? tableComment}
+          use:focus
+          onkeydown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') commitComment(e.currentTarget.value)
+            if (e.key === 'Escape') tcEditing = false
+          }}
+          onblur={(e) => tcEditing && commitComment(e.currentTarget.value)}
+        />
+      {:else if tcDraft !== null || tableComment || !readOnlyReason}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span class="tcomment" class:edited={tcDraft !== null} class:dim={!(tcDraft ?? tableComment)} title={readOnlyReason ? '' : t('더블클릭: 테이블 코멘트 바꾸기')} ondblclick={() => !readOnlyReason && (tcEditing = true)}
+          >{(tcDraft ?? tableComment) || t('테이블 코멘트 없음')}</span
+        >
+      {/if}
       {#if !readOnlyReason}
         <button class="btn mini" onclick={addRow}><Icon name="plus" size={13} /> {t('컬럼 추가')}</button>
       {/if}
+      <input class="find" type="search" placeholder={t('컬럼 찾기')} bind:value={find} onkeydown={(e) => (e.stopPropagation(), e.key === 'Escape' && (find = ''))} />
       <span class="grow"></span>
       {#if readOnlyReason}
         <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> {t('읽기 전용')}</span>
@@ -325,6 +385,7 @@
         {#if addError}<span class="adderr">{addError}</span>{/if}
         {#if edits}<span class="pending">{t('컬럼 {n}개 변경', { n: edits })}</span>{/if}
         {#if order}<span class="pending">{t('순서 변경')}</span>{/if}
+        {#if tcDraft !== null}<span class="pending">{t('테이블 코멘트 변경')}</span>{/if}
         <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('적용')}</button>
         <button class="btn mini" onclick={revert}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
       {:else}
@@ -343,18 +404,19 @@
           <th>{t('기타')}</th>
           <th>{t('참조 (FK)')}</th>
           <th>{t('코멘트')}</th>
+          <th class="act"></th>
         </tr>
       </thead>
       <tbody bind:this={tbody}>
         {#snippet num(i: number, key: string, label: string | number)}
           <td class="n" class:grip={canMove} class:edited={moved[key]} title={canMove ? t('끌어서 순서 바꾸기') : undefined} onpointerdown={(e) => grab(e, key)}>{label}</td>
         {/snippet}
-        {#each rows as r, i (r.key)}
+        {#each shown as r, i (r.key)}
           {#if r.col}
           {@const c = r.col}
           {@const cur = current(c)}
-          <tr class:sel={sel === i} class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key} onclick={() => (sel = i)}>
-            {@render num(i, r.key, i + 1)}
+          <tr class:sel={sel === i} class:dropped={dropped[c.name]} class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key} onclick={() => (sel = i)}>
+            {@render num(i, r.key, rowNo.get(r.key) ?? i + 1)}
             <td class="k">
               {#if c.pk}<span title={t('기본 키 (PK)')}><Icon name="key" size={12} color="var(--key-pk)" /></span>{/if}
               {#if c.fk}<span title={t('외래 키 (FK)')}><Icon name="link" size={12} color="var(--key-fk)" /></span>{/if}
@@ -379,6 +441,15 @@
             <td class="dim">{c.extra ?? ''}</td>
             <td class="mono fk">{c.fk ?? ''}</td>
             {@render cell('comment', 'comment', cur.comment)}
+            <td class="act">
+              {#if !readOnlyReason}
+                {#if dropped[c.name]}
+                  <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(c)}><Icon name="undo" size={13} /></button>
+                {:else}
+                  <button class="icon-btn sm" title={t('컬럼 삭제')} onclick={() => toggleDrop(c)}><Icon name="trash" size={13} /></button>
+                {/if}
+              {/if}
+            </td>
           </tr>
           {:else if r.add}
           {@const a = r.add}
@@ -394,9 +465,10 @@
               </label>
             </td>
             <td class="new"><input class="new-input mono" placeholder={t('기본값')} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
-            <td><button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button></td>
+            <td></td>
             <td></td>
             <td class="new"><input class="new-input" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} /></td>
+            <td class="act"><button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button></td>
           </tr>
           {/if}
         {/each}
@@ -522,6 +594,34 @@
     border: 2px solid var(--accent);
     border-radius: 0;
     font-size: 12.5px;
+  }
+  .act {
+    width: 1%;
+    padding: 0 4px;
+  }
+  tr.dropped td:not(.act) {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+  .tcomment {
+    cursor: default;
+  }
+  .tcomment.edited {
+    padding: 0 4px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--warn) 22%, transparent);
+  }
+  .tc-input {
+    width: 260px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 12.5px;
+  }
+  .find {
+    width: 150px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 12px;
   }
   td.grip {
     cursor: grab;

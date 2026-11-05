@@ -802,13 +802,44 @@ func TestAlterColumns(t *testing.T) {
 			if n, ok := c["new_n"]; !ok || !n.Nullable {
 				t.Errorf("new_n: %+v", n)
 			}
+			// drop a column (new_z has a default: a constraint on SQL Server)
+			// and set the table comment, twice (add, then change)
+			for _, tc := range []string{"tc1", "tc2"} {
+				cur := tbl
+				if ts, _ := m.Tables(tg.cfg.ID, tg.schema); true {
+					for _, x := range ts {
+						if strings.EqualFold(x.Name, tbl.Name) {
+							cur.Comment = x.Comment
+						}
+					}
+				}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: cur, TableComment: &tc}
+				if tc == "tc1" {
+					req.Drop = []string{c["new_z"].Name}
+				}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("drop/comment: %+v %v", r, err)
+				}
+			}
+			c = cols()
+			if _, ok := c["new_z"]; ok {
+				t.Errorf("new_z not dropped")
+			}
+			ts, _ := m.Tables(tg.cfg.ID, tg.schema)
+			for _, x := range ts {
+				if strings.EqualFold(x.Name, tbl.Name) && x.Comment != "tc2" {
+					t.Errorf("table comment: %q", x.Comment)
+				}
+			}
 			if name == "mariadb" { // reorder, and add in the middle
 				cs, _ := m.Columns(tg.cfg.ID, tg.schema, tbl)
 				var ch []ColumnAlter
 				for _, c := range cs {
 					ch = append(ch, ColumnAlter{Old: c, New: c})
 				}
-				want := []string{"new_n", "id", "a", "mid", "b", "new_z"}
+				want := []string{"new_n", "id", "a", "mid", "b"}
 				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: ch, Order: want,
 					Add: []Column{{Name: "mid", Type: "int", Nullable: true}}}
 				prev, err := m.PreviewAlter(req)
@@ -877,5 +908,75 @@ func TestOracleMviewListedOnce(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("TB_MV listed %d times", n)
+	}
+}
+
+func TestForeignKeys(t *testing.T) {
+	setup := map[string]string{
+		"mariadb":  "DROP TABLE IF EXISTS fk_c; DROP TABLE IF EXISTS fk_p; CREATE TABLE fk_p (a INT, b INT, PRIMARY KEY (a, b)); CREATE TABLE fk_c (id INT PRIMARY KEY, x INT, y INT)",
+		"postgres": "DROP TABLE IF EXISTS fk_c; DROP TABLE IF EXISTS fk_p; CREATE TABLE fk_p (a int, b int, PRIMARY KEY (a, b)); CREATE TABLE fk_c (id int PRIMARY KEY, x int, y int)",
+		"mssql":    "IF OBJECT_ID('dbo.fk_c') IS NOT NULL DROP TABLE dbo.fk_c;\nIF OBJECT_ID('dbo.fk_p') IS NOT NULL DROP TABLE dbo.fk_p;\nCREATE TABLE dbo.fk_p (a int NOT NULL, b int NOT NULL, PRIMARY KEY (a, b));\nCREATE TABLE dbo.fk_c (id int PRIMARY KEY, x int, y int)",
+		"oracle":   "BEGIN EXECUTE IMMEDIATE 'DROP TABLE fk_c'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nBEGIN EXECUTE IMMEDIATE 'DROP TABLE fk_p'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE TABLE fk_p (a NUMBER, b NUMBER, PRIMARY KEY (a, b));\nCREATE TABLE fk_c (id NUMBER PRIMARY KEY, x NUMBER, y NUMBER)",
+	}
+	all := targets(t)
+	for name, q := range setup {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			res, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+			if err != nil || res.Results[len(res.Results)-1].Error != "" {
+				t.Fatal(err, res.Results)
+			}
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE fk_c;\nDROP TABLE fk_p", Cursor: -1})
+			up := func(s string) string {
+				if name == "oracle" {
+					return strings.ToUpper(s)
+				}
+				return s
+			}
+			child, parent := Table{Name: up("fk_c"), Type: "TABLE"}, Table{Name: up("fk_p"), Type: "TABLE"}
+			if name == "mssql" {
+				child.Schema, parent.Schema = "dbo", "dbo"
+			}
+			onUpdate := "CASCADE"
+			if name == "oracle" {
+				onUpdate = ""
+			}
+			fk := TableFK{Name: up("fk_c_xy"), Columns: []string{up("x"), up("y")}, RefTable: parent, RefColumns: []string{up("a"), up("b")}, OnDelete: "CASCADE", OnUpdate: onUpdate}
+			req := FKRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: child, Create: []TableFK{fk}}
+			prev, err := m.PreviewForeignKeys(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			if r, err := m.ApplyForeignKeys(req); err != nil || r.Error != "" {
+				t.Fatalf("add: %+v %v", r, err)
+			}
+			got, err := m.ListForeignKeys(tg.cfg.ID, tg.schema, child)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("list: %+v %v", got, err)
+			}
+			g := got[0]
+			if g.Name != fk.Name || strings.Join(g.Columns, ",") != strings.Join(fk.Columns, ",") || strings.Join(g.RefColumns, ",") != strings.Join(fk.RefColumns, ",") ||
+				!strings.EqualFold(g.RefTable.Name, parent.Name) || g.RefSchema != "" || g.OnDelete != "CASCADE" || g.OnUpdate != onUpdate && !(name == "oracle" && g.OnUpdate == "") {
+				t.Errorf("listed: %+v", g)
+			}
+			if cs, _ := m.Columns(tg.cfg.ID, tg.schema, child); !strings.Contains(strings.ToLower(cs[1].FK), "fk_p") {
+				t.Errorf("column fk: %+v", cs[1])
+			}
+			req = FKRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: child, Drop: got}
+			prev, _ = m.PreviewForeignKeys(req)
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			if r, err := m.ApplyForeignKeys(req); err != nil || r.Error != "" {
+				t.Fatalf("drop: %+v %v", r, err)
+			}
+			if got, _ := m.ListForeignKeys(tg.cfg.ID, tg.schema, child); len(got) != 0 {
+				t.Errorf("after drop: %+v", got)
+			}
+		})
 	}
 }

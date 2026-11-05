@@ -52,6 +52,16 @@ export interface Column {
   extra?: string // auto increment / identity / generated
 }
 
+export interface TableFK {
+  name: string
+  columns: string[]
+  refTable: Table
+  refSchema: string // "" = the same schema
+  refColumns: string[]
+  onUpdate: string // "" where the database has no ON UPDATE (Oracle)
+  onDelete: string
+}
+
 export interface Index {
   name: string
   schema: string // the index's own schema when it differs (Oracle)
