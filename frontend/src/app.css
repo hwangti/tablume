@@ -107,6 +107,8 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
+  /* a long press opens the app's menu (lib/longpress), not iOS's callout */
+  -webkit-touch-callout: none;
 }
 
 button {
@@ -126,6 +128,7 @@ textarea {
   outline: none;
   user-select: text;
   -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 input:focus,

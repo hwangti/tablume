@@ -3,8 +3,10 @@ import './app.css'
 import App from './App.svelte'
 import { initTheme } from './lib/theme'
 import { initPlatform } from './lib/platform'
+import { installLongPress } from './lib/longpress'
 
 initTheme()
+installLongPress()
 
 // Focus rings only while moving around with the keyboard. When the native
 // window first gets focus, WebKit can put focus on the first button (the
