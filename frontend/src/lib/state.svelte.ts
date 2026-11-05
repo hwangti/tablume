@@ -1,4 +1,4 @@
-import { api, errText, loginExpired } from './api'
+import { api, errText, loginExpired, type FetchedPage } from './api'
 import { Events, Window } from '@wailsio/runtime'
 import { isWeb } from './platform'
 import { i18n, isLang, t as tr, type Lang } from './i18n.svelte'
@@ -688,11 +688,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     const failed = results.some((r) => r.error)
     tab.results = grids
     tab.activeResult = failed || grids.length === 0 ? -1 : grids.length - 1
-    // Until the next paint: the frame runs after the DOM update, the timeout
-    // after that frame is drawn.
-    const shown = tab.results
-    const t1 = performance.now()
-    requestAnimationFrame(() => setTimeout(() => shown.forEach((r) => (r.renderMs = Math.round(performance.now() - t1)))))
+    timePaint(tab.results)
     return results
   } catch (e) {
     log(tab, 'error', errText(e))
@@ -712,14 +708,37 @@ export function fetchedCount(r: StmtResult): number {
  * Appends the next page. Returns how many rows were dropped from the top
  * to keep the window small (the grid shifts its scroll by that much).
  */
+// Until the next paint: the frame runs after the DOM update, the timeout
+// after that frame is drawn.
+function timePaint(shown: StmtResult[]) {
+  const t1 = performance.now()
+  requestAnimationFrame(() => setTimeout(() => shown.forEach((r) => (r.renderMs = Math.round(performance.now() - t1)))))
+}
+
+// Fetches a page of a result. The time shown with the result becomes this
+// fetch's, and the log gets a line like a query's.
+async function timedPage(tab: Tab, r: StmtResult, from: number, call: () => Promise<FetchedPage>): Promise<FetchedPage> {
+  const t0 = performance.now()
+  const res = await call()
+  const n = (res.rows ?? []).length
+  r.elapsedMs = res.elapsedMs
+  r.fetchMs = res.fetchMs
+  r.appMs = Math.max(0, Math.round(performance.now() - t0 - res.elapsedMs))
+  r.renderMs = undefined
+  log(tab, 'info', tr('{n}행 조회', { n: n + (res.hasMore ? '+' : '') }) + (n ? ` (${from + 1}–${from + n})` : '') + ` (${res.elapsedMs}ms)`, short(r.sql))
+  timePaint([r])
+  return res
+}
+
 export async function fetchMore(tab: Tab, r: StmtResult): Promise<number> {
   if (!r.hasMore || tab.loadingMore || tab.running) return 0
   if (!r.paged && !r.cursorId) return 0
   tab.loadingMore = true
   try {
-    const res = r.paged
-      ? await api.FetchPage(tab.id, tab.connId, r.sql, (r.start ?? 0) + fetchedCount(r), app.pageSize)
-      : await api.FetchMore(tab.id, r.cursorId, app.pageSize)
+    const from = (r.start ?? 0) + fetchedCount(r)
+    const res = await timedPage(tab, r, from, () =>
+      r.paged ? api.FetchPage(tab.id, tab.connId, r.sql, from, app.pageSize) : api.FetchMore(tab.id, r.cursorId, app.pageSize),
+    )
     const rows = res.rows ?? []
     // new rows go before rows added in the grid (those stay at the bottom)
     insertFetched(r, fetchedCount(r), rows)
@@ -742,7 +761,7 @@ export async function fetchPrev(tab: Tab, r: StmtResult): Promise<number> {
   tab.loadingPrev = true
   try {
     const n = Math.min(app.pageSize, start)
-    const res = await api.FetchPage(tab.id, tab.connId, r.sql, start - n, n)
+    const res = await timedPage(tab, r, start - n, () => api.FetchPage(tab.id, tab.connId, r.sql, start - n, n))
     const rows = res.rows ?? []
     insertFetched(r, 0, rows)
     r.start = start - rows.length
@@ -762,7 +781,7 @@ export async function jumpTo(tab: Tab, r: StmtResult, offset: number): Promise<b
   if (tabPending(tab) && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 이동할까요?', { n: tabPending(tab) })))) return false
   tab.loadingMore = true
   try {
-    const res = await api.FetchPage(tab.id, tab.connId, r.sql, offset, app.pageSize)
+    const res = await timedPage(tab, r, offset, () => api.FetchPage(tab.id, tab.connId, r.sql, offset, app.pageSize))
     if (r.edit) {
       r.edit.edits = {}
       r.edit.deleted = {}

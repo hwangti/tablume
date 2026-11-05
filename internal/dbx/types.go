@@ -116,6 +116,8 @@ type ExecResponse struct {
 }
 
 type FetchResponse struct {
-	Rows    [][]any `json:"rows"`
-	HasMore bool    `json:"hasMore"`
+	Rows      [][]any `json:"rows"`
+	HasMore   bool    `json:"hasMore"`
+	ElapsedMs int64   `json:"elapsedMs"` // as in StmtResult
+	FetchMs   int64   `json:"fetchMs"`
 }

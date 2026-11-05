@@ -185,6 +185,12 @@ export interface ExecResponse {
 export interface FetchResponse {
     "rows": (any[] | null)[] | null;
     "hasMore": boolean;
+
+    /**
+     * as in StmtResult
+     */
+    "elapsedMs": number;
+    "fetchMs": number;
 }
 
 export interface Index {

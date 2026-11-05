@@ -53,7 +53,7 @@ interface Api {
   ApplyIndexes(req: IndexRequest): Promise<AlterResult>
   RenameTable(id: string, schema: string, t: Table, name: string): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
-  FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
+  FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<FetchedPage>
   CountResult(tabId: string, connId: string, sql: string): Promise<number>
   QuoteIdent(id: string, name: string): Promise<string>
   QualifiedName(id: string, schema: string, t: Table): Promise<string>
@@ -69,7 +69,7 @@ interface Api {
     cursor: number
     fetch: number
   }): Promise<ExecResponse>
-  FetchMore(tabId: string, cursorId: string, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
+  FetchMore(tabId: string, cursorId: string, n: number): Promise<FetchedPage>
   Cancel(tabId: string): Promise<void>
   CloseSession(tabId: string): Promise<void>
   PickSQLiteFile(): Promise<string>
@@ -89,6 +89,14 @@ interface Api {
   TouchSessions(tabIds: string[]): Promise<void>
   SetLanguage(lang: string): Promise<void>
   Version(): Promise<string>
+}
+
+// A page of rows from FetchPage / FetchMore, with its time (see StmtResult).
+export interface FetchedPage {
+  rows: Cell[][] | null
+  hasMore: boolean
+  elapsedMs: number
+  fetchMs: number
 }
 
 export interface FileList {

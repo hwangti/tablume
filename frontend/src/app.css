@@ -278,6 +278,9 @@ textarea:focus {
   grid-template-columns: auto auto;
   column-gap: 16px;
 }
+.app-tip .tip-cols > span {
+  white-space: nowrap;
+}
 .app-tip .tip-cols .v {
   text-align: right;
   font-variant-numeric: tabular-nums;
