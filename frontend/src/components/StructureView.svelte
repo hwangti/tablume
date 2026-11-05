@@ -576,14 +576,16 @@
             {#snippet cell(field: 'name' | 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
               <td class="{cls} edit" class:edited={changed(c, field)} ondblclick={() => startEdit(c, field)}>
                 {#if editing?.name === c.name && editing.field === field}
-                  <input class="cell-input mono" class:with-dots={field === 'comment'} bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
-                  {#if field === 'comment'}<button
-                      class="dots"
-                      title="{t('큰 창에서 편집')} (F2)"
-                      onmousedown={(e) => e.preventDefault()}
-                      ondblclick={(e) => e.stopPropagation()}
-                      onclick={(e) => (e.stopPropagation(), bigComment(c))}>…</button
-                    >{/if}
+                  <span class="edit-wrap">
+                    <input class="cell-input mono" class:with-dots={field === 'comment'} bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
+                    {#if field === 'comment'}<button
+                        class="dots"
+                        title="{t('큰 창에서 편집')} (F2)"
+                        onmousedown={(e) => e.preventDefault()}
+                        ondblclick={(e) => e.stopPropagation()}
+                        onclick={(e) => (e.stopPropagation(), bigComment(c))}>…</button
+                      >{/if}
+                  </span>
                 {:else if shown}{shown}{:else}<span class="dim">{empty}</span>{/if}
               </td>
             {/snippet}
@@ -832,8 +834,13 @@
     color: var(--text);
     background: var(--bg-hover);
   }
-  td.edit:has(.dots) {
+  /* the input as a block (no line box under it), "…" centred on it */
+  .edit-wrap {
     position: relative;
+    display: flex; /* (a block one gets an empty line for the "…" button) */
+  }
+  .edit-wrap .cell-input {
+    flex: 1;
   }
   .engine.edited :global(.dd) {
     background: color-mix(in srgb, var(--warn) 18%, var(--bg-input));
