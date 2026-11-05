@@ -75,6 +75,7 @@ var en = map[string]string{
 	// structure, indexes, DDL
 	"이 DB에서는 컬럼을 바꿀 수 없습니다 (SQLite는 테이블을 새로 만들어야 합니다)": "Columns cannot be changed in this DB (SQLite has to rebuild the table)",
 	"뷰의 컬럼은 바꿀 수 없습니다":                "Columns of a view cannot be changed",
+	"새 컬럼의 이름이 비어 있습니다":               "A new column has no name",
 	"%s: 타입이 비어 있습니다":                 "%s: the type is empty",
 	"계산(generated) 컬럼은 여기서 바꿀 수 없습니다": "Generated columns cannot be changed here",
 	"%s의 DDL을 찾을 수 없습니다":              "DDL of %s not found",
@@ -157,7 +158,7 @@ var en = map[string]string{
 	"삭제":                  "Delete",
 	"마지막 패스키는 지울 수 없습니다":                             "The last passkey cannot be deleted",
 	"\"{name}\" 패스키를 지울까요? 이 패스키로 로그인한 기기는 로그아웃됩니다.": "Delete the passkey \"{name}\"? Devices signed in with it will be signed out.",
-	"(이 브라우저 포함)":        "(including this browser)",
-	"패스키를 추가했습니다.":       "Passkey added.",
-	"{time}까지 쓸 수 있습니다.": "Valid until {time}.",
+	"(이 브라우저 포함)":                                    "(including this browser)",
+	"패스키를 추가했습니다.":                                   "Passkey added.",
+	"{time}까지 쓸 수 있습니다.":                             "Valid until {time}.",
 }

@@ -3,6 +3,7 @@ package dbx
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"tablume/internal/i18n"
 )
@@ -24,6 +25,9 @@ type AlterRequest struct {
 	Schema  string        `json:"schema"`
 	Table   Table         `json:"table"`
 	Changes []ColumnAlter `json:"changes"`
+	// Add: new columns, appended after the existing ones (Name, Type,
+	// Nullable, Default, Comment).
+	Add []Column `json:"add"`
 }
 
 type AlterResult struct {
@@ -37,6 +41,7 @@ type AlterResult struct {
 
 type alterDialect interface {
 	alterColumn(ctx context.Context, q Querier, schema string, t Table, target string, a ColumnAlter) ([]string, error)
+	addColumn(schema string, t Table, target string, c Column) []string
 	// transactionalDDL: the statements can run in one transaction.
 	transactionalDDL() bool
 }
@@ -61,6 +66,11 @@ func diffOf(a ColumnAlter) colDiff {
 }
 
 func (d colDiff) any() bool { return d.typ || d.null || d.def || d.comment }
+
+// plainIdent: a name the database would take unquoted. Oracle and
+// PostgreSQL fold those (upper / lower), so a typed "new_col" is given that
+// case instead of becoming a quoted, case-sensitive name.
+var plainIdent = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*$`)
 
 func sqlQuote(s string, backslash bool) string {
 	if backslash {
@@ -97,6 +107,16 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 			return nil, nil, nil, fmt.Errorf("%s: %w", a.Old.Name, err)
 		}
 		out = append(out, stmts...)
+	}
+	for _, c := range req.Add {
+		c.Name, c.Type, c.Default = strings.TrimSpace(c.Name), strings.TrimSpace(c.Type), defaultOf(c.Default)
+		if c.Name == "" {
+			return nil, nil, nil, i18n.Error("새 컬럼의 이름이 비어 있습니다")
+		}
+		if c.Type == "" {
+			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", c.Name)
+		}
+		out = append(out, ad.addColumn(req.Schema, req.Table, target, c)...)
 	}
 	return p, ad, out, nil
 }
