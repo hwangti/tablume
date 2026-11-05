@@ -360,6 +360,7 @@ export default {
   '고치기': 'Change',
   '추가 취소': 'Remove',
   '컬럼 추가': 'Add column',
+  '바뀜: {what}': 'Changed: {what}',
   'SELECT *에서 빠지는 컬럼 (MySQL 8.0.23+, MariaDB 10.3+)': 'Left out of SELECT * (MySQL 8.0.23+, MariaDB 10.3+)',
   '숨김 (INVISIBLE)': 'Invisible',
   '콜레이션': 'Collation',

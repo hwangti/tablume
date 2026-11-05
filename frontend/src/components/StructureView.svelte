@@ -133,7 +133,7 @@
     if (f === 'name') return d.name.trim() !== c.name
     if (f === 'auto') return d.auto !== isAuto(c)
     if (f === 'collation' || f === 'onUpdate') return d[f].trim() !== colOpt(c)[f]
-    if (f === 'invisible') return d.invisible !== colOpt(c).invisible
+    if (f === 'invisible') return !!d.invisible !== !!colOpt(c).invisible
     if (f === 'nullable') return d.nullable !== c.nullable
     if (f === 'default') return d.default.trim() !== def(c)
     if (f === 'type') return d.type.trim().toLowerCase() !== c.type.toLowerCase()
@@ -170,6 +170,15 @@
   function openDetailNew(a: NewCol) {
     detail = { title: t('새 컬럼'), value: { ...a }, autoReason: '', info: [], save: (v) => Object.assign(a, v) }
   }
+  // changes the table has no column for (the number cell is marked)
+  function hiddenChanges(c: Column): string {
+    const out: string[] = []
+    if (changed(c, 'collation')) out.push(t('콜레이션'))
+    if (changed(c, 'onUpdate')) out.push('ON UPDATE')
+    if (changed(c, 'invisible')) out.push(t('숨김 (INVISIBLE)'))
+    return out.join(', ')
+  }
+
   // what the 기타 column shows: the auto increment as it will be
   function extraShown(c: Column, d: Draft): string {
     if (d.auto === isAuto(c)) return c.extra ?? ''
@@ -542,15 +551,22 @@
         </tr>
       </thead>
       <tbody bind:this={tbody}>
-        {#snippet num(i: number, key: string, label: string | number)}
-          <td class="n" class:grip={canMove} class:edited={moved[key]} title={canMove ? t('끌어서 순서 바꾸기') : undefined} onpointerdown={(e) => grab(e, key)}>{label}</td>
+        <!-- marked when moved, or changed where the table doesn't show it (hidden: what) -->
+        {#snippet num(i: number, key: string, label: string | number, hidden = '')}
+          <td
+            class="n"
+            class:grip={canMove}
+            class:edited={moved[key] || !!hidden}
+            title={[hidden && t('바뀜: {what}', { what: hidden }), canMove && t('끌어서 순서 바꾸기')].filter(Boolean).join('\n') || undefined}
+            onpointerdown={(e) => grab(e, key)}>{label}</td
+          >
         {/snippet}
         {#each shown as r, i (r.key)}
           {#if r.col}
           {@const c = r.col}
           {@const cur = current(c)}
           <tr class:sel={sel === i} class:dropped={dropped[c.name]} class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key} onclick={() => (sel = i)}>
-            {@render num(i, r.key, rowNo.get(r.key) ?? i + 1)}
+            {@render num(i, r.key, rowNo.get(r.key) ?? i + 1, hiddenChanges(c))}
             <td class="k">
               {#if c.pk}<button class="kb" title={t('기본 키 (PK)')} onclick={() => onkey?.('index', c.name)}><Icon name="key" size={12} color="var(--key-pk)" /></button>{/if}
               {#if c.fk}<button class="kb" title="{t('외래 키 (FK)')} → {c.fk}" onclick={() => onkey?.('fk', c.name)}><Icon name="link" size={12} color="var(--key-fk)" /></button>{/if}
