@@ -285,6 +285,44 @@ textarea:focus {
 .app-tip .tip-cols .all {
   grid-column: 1 / -1;
 }
+/* data-tip-bar: one bar split in proportions; each part's colour also marks its row */
+.app-tip .tip-bar {
+  display: flex;
+  gap: 1px;
+  height: 6px;
+  margin: 3px 0 7px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.app-tip .tip-bar span {
+  flex-basis: 0;
+  min-width: 2px;
+}
+.app-tip .tip-cols .dot::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--tip-c);
+}
+.app-tip .tip-cols .sum {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+.app-tip .c0 { --tip-c: var(--ok); }
+.app-tip .c1 { --tip-c: var(--accent); }
+.app-tip .c2 { --tip-c: var(--text-faint); }
+.app-tip .c3 { --tip-c: var(--warn); }
+.app-tip .tip-bar .c0,
+.app-tip .tip-bar .c1,
+.app-tip .tip-bar .c2,
+.app-tip .tip-bar .c3 {
+  background: var(--tip-c);
+}
 
 /* see main.ts: rings only for keyboard navigation */
 :root:not(.kbd-nav) button:focus,
