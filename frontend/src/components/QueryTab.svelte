@@ -41,16 +41,19 @@
   let { tab }: { tab: Tab } = $props()
 
   // Shown: the whole wait; on hover, its parts (like DataGrip's execution / fetching).
+  // The bar over the list shows the same parts in proportion.
   const timingTotal = (r: StmtResult) => r.elapsedMs + (r.appMs ?? 0) + (r.renderMs ?? 0)
+  function timingParts(r: StmtResult): [string, number][] {
+    return [
+      [t('실행#timing'), r.elapsedMs - r.fetchMs],
+      [t('가져오기'), r.fetchMs],
+      ...(r.appMs !== undefined ? [[t('앱 전달'), r.appMs] as [string, number]] : []),
+      ...(r.renderMs !== undefined ? [[t('그리기'), r.renderMs] as [string, number]] : []),
+    ]
+  }
   function timingTitle(r: StmtResult): string {
     const ms = (n: number) => num(n) + 'ms'
-    return [
-      `${t('실행#timing')}\t${ms(r.elapsedMs - r.fetchMs)}`,
-      `${t('가져오기')}\t${ms(r.fetchMs)}`,
-      ...(r.appMs !== undefined ? [`${t('앱 전달')}\t${ms(r.appMs)}`] : []),
-      ...(r.renderMs !== undefined ? [`${t('그리기')}\t${ms(r.renderMs)}`] : []),
-      `${t('합계')}\t${ms(timingTotal(r))}`,
-    ].join('\n')
+    return [...timingParts(r).map(([name, n]) => `${name}\t${ms(n)}`), `${t('합계')}\t${ms(timingTotal(r))}`].join('\n')
   }
 
   let view = $state<EditorView>()
@@ -740,7 +743,7 @@
                 {/each}
               </div>
             {/if}
-            <span class="meta" title={timingTitle(current)}>{num(timingTotal(current))}ms</span>
+            <span class="meta" title={timingTitle(current)} data-tip-bar={timingParts(current).map((p) => p[1]).join(',')}>{num(timingTotal(current))}ms</span>
           </div>
         {/if}
       </div>

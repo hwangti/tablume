@@ -32,19 +32,37 @@ function show() {
   const text = current.getAttribute('data-tip')
   if (!text) return
   tipEl ??= Object.assign(document.body.appendChild(document.createElement('div')), { className: 'app-tip' })
+  // data-tip-bar="15,372,6,31": a bar split in those proportions over the
+  // text, one colour per part; the first rows below get the same colours.
+  const parts = (current.getAttribute('data-tip-bar') ?? '').split(',').filter(Boolean).map(Number)
+  const nodes: Node[] = []
+  if (parts.length) {
+    const bar = document.createElement('div')
+    bar.className = 'tip-bar'
+    parts.forEach((v, i) => Object.assign(bar.appendChild(document.createElement('span')), { className: 'c' + i }).style.setProperty('flex-grow', String(v)))
+    nodes.push(bar)
+  }
   // Lines with a tab are "name<TAB>value" rows: names left, values right.
   if (text.includes('\t')) {
     const grid = document.createElement('div')
     grid.className = 'tip-cols'
+    let row = 0
     for (const line of text.split('\n')) {
       const [name, ...value] = line.split('\t')
       const n = grid.appendChild(document.createElement('span'))
       n.textContent = name
       if (!value.length) n.className = 'all'
-      else Object.assign(grid.appendChild(document.createElement('span')), { className: 'v', textContent: value.join(' ') })
+      else {
+        // rows past the bar's parts (a total): bold, under a rule
+        const sum = parts.length > 0 && row >= parts.length
+        n.className = sum ? 'sum' : row < parts.length ? 'dot c' + row : ''
+        row++
+        Object.assign(grid.appendChild(document.createElement('span')), { className: sum ? 'v sum' : 'v', textContent: value.join(' ') })
+      }
     }
-    tipEl.replaceChildren(grid)
-  } else tipEl.textContent = text
+    nodes.push(grid)
+  } else nodes.push(document.createTextNode(text))
+  tipEl.replaceChildren(...nodes)
   tipEl.style.display = 'block'
   const w = tipEl.offsetWidth
   const h = tipEl.offsetHeight
