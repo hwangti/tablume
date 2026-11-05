@@ -43,7 +43,7 @@
 
   function save() {
     if (err) return
-    onsave({ ...f, name: f.name.trim(), type: f.type.trim(), default: f.default.trim(), onUpdate: f.onUpdate.trim() })
+    onsave({ ...f, name: f.name.trim(), type: f.type.trim(), default: f.default.trim().toUpperCase() === 'NULL' ? '' : f.default.trim(), onUpdate: f.onUpdate.trim() })
     onclose()
   }
 
@@ -69,7 +69,7 @@
       {/if}
     </div>
     {#if autoReason}<div class="row"><span class="lbl"></span><span class="note">{autoReason}</span></div>{/if}
-    <label class="row"><span class="lbl">{t('기본값')}</span><input class="mono" bind:value={f.default} disabled={f.auto} spellcheck="false" placeholder={t("SQL 식 (예: 0, 'a', CURRENT_TIMESTAMP)")} /></label>
+    <label class="row"><span class="lbl">{t('기본값')}</span><input class="mono" bind:value={f.default} disabled={f.auto} spellcheck="false" placeholder={t("SQL 식 (예: 0, 'a', CURRENT_TIMESTAMP) · 비우면 기본값 없음")} /></label>
     {#if collations}
       <label class="row"><span class="lbl">ON UPDATE</span><input class="mono" bind:value={f.onUpdate} spellcheck="false" placeholder="CURRENT_TIMESTAMP" /></label>
       {#if textType || f.collation}
