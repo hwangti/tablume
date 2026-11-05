@@ -316,7 +316,9 @@ func (oracleDialect) alterColumn(ctx context.Context, q Querier, schema string, 
 		if plainIdent.MatchString(n) {
 			n = strings.ToUpper(n)
 		}
-		out = append(out, "ALTER TABLE "+target+" RENAME COLUMN "+col+" TO "+quoteWith(n, `"`, `"`))
+		if n != a.Old.Name { // ID typed as id folds back to the name it has
+			out = append(out, "ALTER TABLE "+target+" RENAME COLUMN "+col+" TO "+quoteWith(n, `"`, `"`))
+		}
 	}
 	return out, nil
 }

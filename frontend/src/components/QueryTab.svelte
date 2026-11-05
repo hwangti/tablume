@@ -747,7 +747,7 @@
           </div>
         {/if}
       </div>
-      {#if isTable && tableView === 'data' && tab.tableRef}
+      {#if isTable && tableView === 'data' && tab.tableRef && !tab.creating}
         <!-- DataGrip-style: part of the grid's surface, no boxed inputs -->
         <div class="filterbar" bind:this={filterBar}>
           <div class="fpart">

@@ -713,7 +713,7 @@
                 >{/if}
             </td>
             <td class="new"><input class="new-input mono" placeholder={t('이름')} bind:value={a.name} use:focusIf={!a.prefill} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
-            <td class="new"><input class="new-input mono" placeholder="varchar(50)" bind:value={a.type} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
+            <td class="new"><input class="new-input mono" placeholder={t('타입')} title={t('예: varchar(50)')} bind:value={a.type} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td class="c">
               <label class="nullbox" title={t('NULL 허용')}>
                 <input type="checkbox" bind:checked={a.nullable} />

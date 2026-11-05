@@ -315,6 +315,7 @@ export default {
   '컬럼 {n}개 변경': '{n} {n|column|columns} changed',
   '키': 'Key',
   '타입': 'Type',
+  '예: varchar(50)': 'e.g. varchar(50)',
   '기본값': 'Default',
   '기타': 'Extra',
   '코멘트': 'Comment',

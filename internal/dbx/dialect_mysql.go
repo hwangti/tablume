@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"tablume/internal/i18n"
 
@@ -207,13 +208,17 @@ func (mysqlDialect) tableEngine(ctx context.Context, q Querier, schema string, t
 }
 
 // onUpdateOf: the ON UPDATE expression in a column's EXTRA ("" = none).
+// Only the expression: EXTRA goes on after it, e.g. MariaDB's
+// "on update current_timestamp(), INVISIBLE" or MySQL's
+// "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3) INVISIBLE".
 func onUpdateOf(extra string) string {
-	ex := strings.ToLower(extra)
-	if i := strings.Index(ex, "on update "); i >= 0 {
-		return strings.TrimSpace(extra[i+len("on update "):])
+	if m := onUpdateRe.FindStringSubmatch(extra); m != nil {
+		return m[1]
 	}
 	return ""
 }
+
+var onUpdateRe = regexp.MustCompile(`(?i)\bon update\s+([a-z_]+(?:\s*\(\s*\d*\s*\))?)`)
 
 func (d mysqlDialect) addColumn(schema string, t Table, target string, c Column) []string {
 	def, after := d.columnDef(schema, t, target, c)
@@ -226,7 +231,9 @@ func (mysqlDialect) columnDef(_ string, _ Table, _ string, c Column) (string, []
 	if c.Collation != "" {
 		def += " COLLATE " + c.Collation
 	}
-	if !c.Nullable {
+	if c.Nullable { // said outright: a TIMESTAMP is NOT NULL by default where explicit_defaults_for_timestamp is off
+		def += " NULL"
+	} else {
 		def += " NOT NULL"
 	}
 	if c.Default != "" {
