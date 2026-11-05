@@ -176,28 +176,41 @@ func (oracleDialect) TableStats(ctx context.Context, q Querier, schema string) (
 }
 
 func (oracleDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
-	return scanColumns(ctx, q, `SELECT c.column_name,
+	// The table's key columns are read once in k and folded per column in
+	// f; per-column subqueries against all_constraints took seconds on wide
+	// tables. rc is probed for FKs only; a referenced constraint that isn't
+	// visible leaves rc NULL and no fk, as an inner join would.
+	return scanColumns(ctx, q, `WITH k AS (
+		SELECT /*+ MATERIALIZE */ kc.column_name, k.constraint_type,
+			CASE WHEN rc.column_name IS NOT NULL THEN
+				CASE WHEN rc.owner <> k.owner THEN rc.owner || '.' END || rc.table_name || '.' || rc.column_name END AS ref
+		FROM all_constraints k
+		JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
+		LEFT JOIN all_cons_columns rc ON k.constraint_type = 'R' AND rc.owner = k.r_owner AND rc.constraint_name = k.r_constraint_name AND rc.position = kc.position
+		WHERE k.owner = :1 AND k.table_name = :2 AND k.constraint_type IN ('P', 'U', 'R')
+	), f AS (
+		SELECT column_name,
+			MAX(CASE WHEN constraint_type = 'P' THEN 1 ELSE 0 END) AS pk,
+			MAX(CASE WHEN constraint_type = 'U' THEN 1 ELSE 0 END) AS uq,
+			MIN(CASE WHEN constraint_type = 'R' THEN ref END) AS fk
+		FROM k GROUP BY column_name
+	)
+	SELECT c.column_name,
 		c.data_type || CASE
 			WHEN c.data_type IN ('VARCHAR2','NVARCHAR2','CHAR','NCHAR') THEN '(' || c.char_length || ')'
 			WHEN c.data_type = 'RAW' THEN '(' || c.data_length || ')'
 			WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL THEN '(' || c.data_precision || ',' || c.data_scale || ')'
 			ELSE '' END,
 		c.nullable,
-		CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
-			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'P' AND kc.column_name = c.column_name)
-			THEN 1 ELSE 0 END,
+		NVL(f.pk, 0),
 		cc.comments,
-		CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
-			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'U' AND kc.column_name = c.column_name)
-			THEN 1 ELSE 0 END,
-		(SELECT MIN(CASE WHEN rc.owner <> c.owner THEN rc.owner || '.' END || rc.table_name || '.' || rc.column_name) FROM all_constraints k
-			JOIN all_cons_columns kc ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name
-			JOIN all_cons_columns rc ON rc.owner = k.r_owner AND rc.constraint_name = k.r_constraint_name AND rc.position = kc.position
-			WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'R' AND kc.column_name = c.column_name),
+		NVL(f.uq, 0),
+		f.fk,
 		c.data_default
 		FROM all_tab_columns c
 		LEFT JOIN all_col_comments cc ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
-		WHERE c.owner = :1 AND c.table_name = :2 ORDER BY c.column_id`, schema, t.Name)
+		LEFT JOIN f ON f.column_name = c.column_name
+		WHERE c.owner = :3 AND c.table_name = :4 ORDER BY c.column_id`, schema, t.Name, schema, t.Name)
 }
 
 func (oracleDialect) AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error) {
