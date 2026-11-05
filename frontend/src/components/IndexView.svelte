@@ -272,7 +272,7 @@
             <td class="mono cols">{ix.columns.join(', ')}</td>
             <td class="c">{#if ix.unique}<Icon name="check" size={13} />{/if}</td>
             <td class="dim">{ix.type}{ix.constraint && !ix.primary ? ' · ' + t('제약') : ''}</td>
-            <td class="mono dim">
+            <td class="mono dim cond">
               {#if ix.where}WHERE {ix.where}{/if}
               {#if ix.include?.length}{ix.where ? ' · ' : ''}INCLUDE ({ix.include.join(', ')}){/if}
             </td>
@@ -506,6 +506,15 @@
   }
   .cols {
     color: var(--syn-ident);
+  }
+  /* long column lists and expressions wrap instead of widening the table */
+  .cols,
+  .cond {
+    min-width: 220px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .act {
     width: 1%;

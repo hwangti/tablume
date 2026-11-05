@@ -75,6 +75,9 @@ var en = map[string]string{
 	// structure, indexes, DDL
 	"이 DB에서는 컬럼을 바꿀 수 없습니다 (SQLite는 테이블을 새로 만들어야 합니다)": "Columns cannot be changed in this DB (SQLite has to rebuild the table)",
 	"뷰의 컬럼은 바꿀 수 없습니다":                "Columns of a view cannot be changed",
+	"이 DB에서는 컬럼 순서를 바꿀 수 없습니다":        "This database cannot reorder columns",
+	"컬럼 순서가 맞지 않습니다: %s":              "The column order does not match the table: %s",
+	"컬럼 순서에 빠진 컬럼이 있습니다":              "The column order leaves out a column",
 	"새 컬럼의 이름이 비어 있습니다":               "A new column has no name",
 	"%s: 타입이 비어 있습니다":                 "%s: the type is empty",
 	"계산(generated) 컬럼은 여기서 바꿀 수 없습니다": "Generated columns cannot be changed here",

@@ -28,6 +28,10 @@ type AlterRequest struct {
 	// Add: new columns, appended after the existing ones (Name, Type,
 	// Nullable, Default, Comment).
 	Add []Column `json:"add"`
+	// Order: when set, every column name (existing and new) in the wanted
+	// order, and Changes lists every existing column in its current order
+	// (Old = New where only the place changes). MySQL/MariaDB only.
+	Order []string `json:"order"`
 }
 
 type AlterResult struct {
@@ -44,6 +48,61 @@ type alterDialect interface {
 	addColumn(schema string, t Table, target string, c Column) []string
 	// transactionalDDL: the statements can run in one transaction.
 	transactionalDDL() bool
+}
+
+// columnPlacer: a database whose ADD / MODIFY COLUMN take a position
+// (MySQL, MariaDB). Its addColumn and alterColumn give one statement, which
+// the position is appended to.
+type columnPlacer interface {
+	placeAfter(after string) string // "" = first
+}
+
+type placement struct{ name, after string }
+
+// placements: the columns to put in place, in turn, each right after the
+// one before it in order ("" = first), to turn orig into order. Columns of
+// a longest run already in their original order stay; new ones (not in
+// orig) and the rest are placed.
+func placements(orig, order []string) []placement {
+	pos := map[string]int{}
+	for i, n := range orig {
+		pos[n] = i
+	}
+	var names []string
+	var idx []int
+	for _, n := range order {
+		if i, ok := pos[n]; ok {
+			names, idx = append(names, n), append(idx, i)
+		}
+	}
+	// ponytail: O(n²) longest increasing run; fine for a table's columns
+	run, prev, best := make([]int, len(idx)), make([]int, len(idx)), -1
+	for i := range idx {
+		run[i], prev[i] = 1, -1
+		for j := 0; j < i; j++ {
+			if idx[j] < idx[i] && run[j]+1 > run[i] {
+				run[i], prev[i] = run[j]+1, j
+			}
+		}
+		if best < 0 || run[i] > run[best] {
+			best = i
+		}
+	}
+	stay := map[string]bool{}
+	for i := best; i >= 0; i = prev[i] {
+		stay[names[i]] = true
+	}
+	var out []placement
+	for i, n := range order {
+		if !stay[n] {
+			after := ""
+			if i > 0 {
+				after = order[i-1]
+			}
+			out = append(out, placement{n, after})
+		}
+	}
+	return out
 }
 
 func defaultOf(s string) string {
@@ -99,16 +158,8 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 		if strings.TrimSpace(a.New.Type) == "" {
 			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
 		}
-		if !diffOf(a).any() {
-			continue
-		}
-		stmts, err := ad.alterColumn(ctx, p.db, req.Schema, req.Table, target, a)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("%s: %w", a.Old.Name, err)
-		}
-		out = append(out, stmts...)
 	}
-	for _, c := range req.Add {
+	for i, c := range req.Add {
 		c.Name, c.Type, c.Default = strings.TrimSpace(c.Name), strings.TrimSpace(c.Type), defaultOf(c.Default)
 		if c.Name == "" {
 			return nil, nil, nil, i18n.Error("새 컬럼의 이름이 비어 있습니다")
@@ -116,7 +167,74 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 		if c.Type == "" {
 			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", c.Name)
 		}
-		out = append(out, ad.addColumn(req.Schema, req.Table, target, c)...)
+		req.Add[i] = c
+	}
+	alter := func(a ColumnAlter, place string) error {
+		stmts, err := ad.alterColumn(ctx, p.db, req.Schema, req.Table, target, a)
+		if err != nil {
+			return fmt.Errorf("%s: %w", a.Old.Name, err)
+		}
+		if len(stmts) > 0 {
+			stmts[0] += place
+		}
+		out = append(out, stmts...)
+		return nil
+	}
+	if len(req.Order) == 0 {
+		for _, a := range req.Changes {
+			if diffOf(a).any() {
+				if err := alter(a, ""); err != nil {
+					return nil, nil, nil, err
+				}
+			}
+		}
+		for _, c := range req.Add {
+			out = append(out, ad.addColumn(req.Schema, req.Table, target, c)...)
+		}
+		return p, ad, out, nil
+	}
+
+	pl, ok := p.d.(columnPlacer)
+	if !ok {
+		return nil, nil, nil, i18n.Error("이 DB에서는 컬럼 순서를 바꿀 수 없습니다")
+	}
+	old := map[string]ColumnAlter{}
+	var orig []string
+	for _, a := range req.Changes {
+		old[a.Old.Name] = a
+		orig = append(orig, a.Old.Name)
+	}
+	added := map[string]Column{}
+	for _, c := range req.Add {
+		added[c.Name] = c
+	}
+	seen := map[string]bool{}
+	for _, n := range req.Order {
+		_, isOld := old[n]
+		_, isNew := added[n]
+		if seen[n] || isOld == isNew {
+			return nil, nil, nil, i18n.Errorf("컬럼 순서가 맞지 않습니다: %s", n)
+		}
+		seen[n] = true
+	}
+	if len(seen) != len(old)+len(added) {
+		return nil, nil, nil, i18n.Error("컬럼 순서에 빠진 컬럼이 있습니다")
+	}
+	place := map[string]string{}
+	for _, pm := range placements(orig, req.Order) {
+		place[pm.name] = pl.placeAfter(pm.after)
+	}
+	// in the wanted order, so the column each one goes after is in place
+	for _, n := range req.Order {
+		if c, ok := added[n]; ok {
+			stmts := ad.addColumn(req.Schema, req.Table, target, c)
+			stmts[0] += place[n]
+			out = append(out, stmts...)
+		} else if a, pos := old[n], place[n]; pos != "" || diffOf(a).any() {
+			if err := alter(a, pos); err != nil {
+				return nil, nil, nil, err
+			}
+		}
 	}
 	return p, ad, out, nil
 }

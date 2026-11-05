@@ -149,6 +149,13 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 	return []string{"ALTER TABLE " + target + " MODIFY COLUMN " + def}, nil
 }
 
+func (mysqlDialect) placeAfter(after string) string {
+	if after == "" {
+		return " FIRST"
+	}
+	return " AFTER " + quoteWith(after, "`", "`")
+}
+
 func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []string {
 	def := "ALTER TABLE " + target + " ADD COLUMN " + quoteWith(c.Name, "`", "`") + " " + c.Type
 	if !c.Nullable {
