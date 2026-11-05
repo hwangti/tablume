@@ -442,7 +442,6 @@ export default {
   '컬럼 설명': 'Column comments',
   '컬럼 주석을 이름 아래 한 줄로 붙입니다': 'Shows each column\'s comment on a line under its name',
   'NULL을 허용하는 컬럼에 표시합니다': 'Marks the columns that allow NULL',
-  '자동 증가': 'Auto increment',
   'AUTO_INCREMENT 컬럼에 표시합니다': 'Marks AUTO_INCREMENT columns',
   '테이블 {t} · 관계 {e} · {l}층 · 선 교차 {c}': '{t} {t|table|tables} · {e} {e|relation|relations} · {l} {l|layer|layers} · {c} {c|crossing|crossings}',
   '관계 없는 테이블 {n}': '{n} without relations',
