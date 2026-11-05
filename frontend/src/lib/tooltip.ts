@@ -32,7 +32,19 @@ function show() {
   const text = current.getAttribute('data-tip')
   if (!text) return
   tipEl ??= Object.assign(document.body.appendChild(document.createElement('div')), { className: 'app-tip' })
-  tipEl.textContent = text
+  // Lines with a tab are "name<TAB>value" rows: names left, values right.
+  if (text.includes('\t')) {
+    const grid = document.createElement('div')
+    grid.className = 'tip-cols'
+    for (const line of text.split('\n')) {
+      const [name, ...value] = line.split('\t')
+      const n = grid.appendChild(document.createElement('span'))
+      n.textContent = name
+      if (!value.length) n.className = 'all'
+      else Object.assign(grid.appendChild(document.createElement('span')), { className: 'v', textContent: value.join(' ') })
+    }
+    tipEl.replaceChildren(grid)
+  } else tipEl.textContent = text
   tipEl.style.display = 'block'
   const w = tipEl.offsetWidth
   const h = tipEl.offsetHeight
