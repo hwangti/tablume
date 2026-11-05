@@ -99,6 +99,11 @@ body,
   overflow: hidden;
 }
 
+/* a double tap is a double click (pin a tab, …), not a zoom; pinching still zooms */
+html {
+  touch-action: manipulation;
+}
+
 body {
   background: var(--bg);
   color: var(--text);

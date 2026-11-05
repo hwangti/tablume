@@ -307,11 +307,12 @@
   }
   .row {
     display: flex;
+    flex-wrap: wrap; /* a phone: what doesn't fit goes under the field */
     gap: 8px;
     align-items: center;
   }
   .row > input:first-child {
-    flex: 1;
+    flex: 1 1 140px;
     min-width: 0;
   }
   .port {
@@ -361,5 +362,20 @@
   .result.ok {
     background: color-mix(in srgb, var(--ok) 14%, transparent);
     color: var(--ok);
+  }
+  /* a phone: labels over their fields, which get the whole width */
+  @media (max-width: 480px) {
+    .form {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    .form > label,
+    .form > .lbl {
+      text-align: left;
+      margin-top: 6px;
+    }    /* (the label column's spacers) */
+    .form > span:empty {
+      display: none;
+    }
   }
 </style>

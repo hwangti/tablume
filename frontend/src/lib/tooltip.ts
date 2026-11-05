@@ -97,9 +97,22 @@ export function installTooltips() {
     }
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] })
 
+  // A touch screen gets no tooltips: the mouse events a tap sends would
+  // show one, and with no pointer to move off it, it stayed.
+  let touched = 0
+  addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.pointerType === 'mouse') return
+      touched = Date.now()
+      hide()
+    },
+    { capture: true, passive: true },
+  )
   document.addEventListener(
     'mouseover',
     (e) => {
+      if (Date.now() - touched < 1500) return
       const el = (e.target as Element).closest?.('[data-tip]') as HTMLElement | null
       if (el === current) return
       const wasShowing = tipEl?.style.display === 'block' || Date.now() - lastHidden < 300
