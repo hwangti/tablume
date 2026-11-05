@@ -777,7 +777,9 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 	if n <= 0 {
 		n = 500
 	}
+	start := time.Now()
 	rows, more, err := readRows(s.cur.rows, s.cur.cols, n)
+	ms := time.Since(start).Milliseconds() // all of it is reading rows
 	if err != nil || !more {
 		s.closeCursor()
 	}
@@ -786,7 +788,7 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 		// (60s by default). The next run opens a new connection.
 		err = i18n.Error("DB 서버가 연결을 끊어 나머지 결과를 가져올 수 없습니다. 결과를 오래 읽지 않으면 서버가 연결을 끊습니다(MySQL/MariaDB의 net_write_timeout). 쿼리를 다시 실행하세요")
 	}
-	return FetchResponse{Rows: rows, HasMore: more && err == nil}, err
+	return FetchResponse{Rows: rows, HasMore: more && err == nil, ElapsedMs: ms, FetchMs: ms}, err
 }
 
 // pageRun runs one query on a tab's session (so session state such as the
@@ -831,7 +833,10 @@ func (m *Manager) FetchPage(tabID, connID, stmt string, offset, n int) (FetchRes
 		if !ok {
 			return i18n.Error("이 쿼리는 페이지 단위로 읽을 수 없습니다")
 		}
+		start := time.Now()
 		out, abandoned := s.runStmt(ctx, q, true, n+1)
+		resp.ElapsedMs = time.Since(start).Milliseconds()
+		resp.FetchMs = min(out.fetch.Milliseconds(), resp.ElapsedMs)
 		if abandoned {
 			return i18n.Error("사용자에 의해 취소됨")
 		}

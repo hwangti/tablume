@@ -64,6 +64,10 @@ function show() {
   } else nodes.push(document.createTextNode(text))
   tipEl.replaceChildren(...nodes)
   tipEl.style.display = 'block'
+  // Measure at the left edge: left where the last tip was (near the right
+  // edge, say), it would be squeezed, wrap, and keep that narrow width.
+  tipEl.style.left = '0px'
+  tipEl.style.top = '0px'
   const w = tipEl.offsetWidth
   const h = tipEl.offsetHeight
   let left = x + 10
@@ -78,7 +82,11 @@ export function installTooltips() {
   document.querySelectorAll('[title]').forEach(adopt)
   new MutationObserver((list) => {
     for (const m of list) {
-      if (m.type === 'attributes') adopt(m.target as Element)
+      if (m.type === 'attributes') {
+        adopt(m.target as Element)
+        // the tip on show follows a title that changes (a time filled in later)
+        if (m.target === current && tipEl?.style.display === 'block') show()
+      }
       else
         m.addedNodes.forEach((n) => {
           if (n instanceof Element) {
