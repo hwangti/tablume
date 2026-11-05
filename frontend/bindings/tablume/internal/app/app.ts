@@ -74,6 +74,10 @@ export function CountRows(id: string, schema: string, t: dbx$0.Table, where: str
     return $Call.ByID(832531678, id, schema, t, where);
 }
 
+export function CreateTable(req: dbx$0.CreateRequest): $CancellablePromise<dbx$0.CreateResult> {
+    return $Call.ByID(3737146844, req);
+}
+
 export function DeleteConnection(id: string): $CancellablePromise<void> {
     return $Call.ByID(4088564671, id);
 }
@@ -188,6 +192,10 @@ export function PreviewAlter(req: dbx$0.AlterRequest): $CancellablePromise<strin
 
 export function PreviewChanges(req: dbx$0.ApplyRequest): $CancellablePromise<string[] | null> {
     return $Call.ByID(4133903849, req);
+}
+
+export function PreviewCreateTable(req: dbx$0.CreateRequest): $CancellablePromise<string[] | null> {
+    return $Call.ByID(814473760, req);
 }
 
 export function PreviewForeignKeys(req: dbx$0.FKRequest): $CancellablePromise<string[] | null> {

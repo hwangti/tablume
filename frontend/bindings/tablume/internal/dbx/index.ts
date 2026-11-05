@@ -9,6 +9,8 @@ export type {
     ColumnAlter,
     ColumnOptions,
     ConnConfig,
+    CreateRequest,
+    CreateResult,
     EditInfo,
     ExecRequest,
     ExecResponse,

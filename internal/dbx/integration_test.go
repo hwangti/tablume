@@ -1186,3 +1186,67 @@ func TestForeignKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateTable(t *testing.T) {
+	all := targets(t)
+	for _, name := range []string{"mariadb", "postgres", "mssql", "oracle"} {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			tbl := Table{Name: "made_t", Comment: "만든 테이블"}
+			if name == "mssql" {
+				tbl.Schema = "dbo"
+			}
+			typ := map[string][3]string{"mariadb": {"int", "varchar(20)", "timestamp"}, "postgres": {"int", "varchar(20)", "timestamp"},
+				"mssql": {"int", "nvarchar(20)", "datetime2"}, "oracle": {"NUMBER", "VARCHAR2(20)", "TIMESTAMP"}}[name]
+			now := map[string]string{"mssql": "SYSDATETIME()", "oracle": "SYSTIMESTAMP"}[name]
+			if now == "" {
+				now = "CURRENT_TIMESTAMP"
+			}
+			req := CreateRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Columns: []Column{
+				{Name: "id", Type: typ[0], PK: true, Extra: "auto_increment"},
+				{Name: "code", Type: typ[1], PK: true, Comment: "코드"},
+				{Name: "made_at", Type: typ[2], Nullable: true, Default: now},
+			}}
+			if name == "mariadb" {
+				req.Engine = "InnoDB"
+				req.Columns[0].PK = true // MySQL: auto increment needs the key; (id, code)
+			}
+			prev, err := m.PreviewCreateTable(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			res, err := m.CreateTable(req)
+			if err != nil || res.Result.Error != "" {
+				t.Fatalf("create: %+v %v", res, err)
+			}
+			made := res.Table
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE " + map[string]string{"oracle": "made_t"}[name] + map[bool]string{true: "", false: "made_t"}[name == "oracle"], Cursor: -1})
+			cs, err := m.Columns(tg.cfg.ID, tg.schema, made)
+			if err != nil || len(cs) != 3 {
+				t.Fatalf("columns: %+v %v", cs, err)
+			}
+			if !cs[0].PK || !cs[1].PK || cs[2].PK || cs[1].Comment != "코드" || !cs[2].Nullable {
+				t.Errorf("columns: %+v", cs)
+			}
+			if name != "oracle" && !autoInc(cs[0]) {
+				t.Errorf("id not auto: %+v", cs[0])
+			}
+			ts, _ := m.Tables(tg.cfg.ID, tg.schema)
+			found := false
+			for _, x := range ts {
+				if x.Name == made.Name {
+					found = x.Comment == "만든 테이블"
+				}
+			}
+			if !found {
+				t.Errorf("table %s with its comment not listed", made.Name)
+			}
+		})
+	}
+}

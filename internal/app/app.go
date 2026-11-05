@@ -171,6 +171,14 @@ func (a *App) SchemaGraph(id, schema string) (dbx.SchemaGraph, error) {
 	return a.db.SchemaGraph(id, schema)
 }
 
+func (a *App) PreviewCreateTable(req dbx.CreateRequest) ([]string, error) {
+	return a.db.PreviewCreateTable(req)
+}
+
+func (a *App) CreateTable(req dbx.CreateRequest) (dbx.CreateResult, error) {
+	return a.db.CreateTable(req)
+}
+
 func (a *App) TableOptions(id, schema string, t dbx.Table) (dbx.TableOptions, error) {
 	return a.db.TableOptions(id, schema, t)
 }

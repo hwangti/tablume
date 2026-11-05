@@ -334,10 +334,14 @@ func (oracleDialect) alterColumn(ctx context.Context, q Querier, schema string, 
 	return out, nil
 }
 
-func (oracleDialect) addColumn(_ string, _ Table, target string, c Column) []string {
-	if plainIdent.MatchString(c.Name) {
-		c.Name = strings.ToUpper(c.Name)
-	}
+func (d oracleDialect) addColumn(schema string, t Table, target string, c Column) []string {
+	def, after := d.columnDef(schema, t, target, c)
+	return append([]string{"ALTER TABLE " + target + " ADD (" + def + ")"}, after...)
+}
+
+// columnDef: a new column's definition, then its comment.
+func (oracleDialect) columnDef(_ string, _ Table, target string, c Column) (string, []string) {
+	c.Name = foldName("oracle", c.Name)
 	col := quoteWith(c.Name, `"`, `"`)
 	def := col + " " + c.Type
 	if autoInc(c) {
@@ -349,11 +353,11 @@ func (oracleDialect) addColumn(_ string, _ Table, target string, c Column) []str
 	if !c.Nullable {
 		def += " NOT NULL"
 	}
-	out := []string{"ALTER TABLE " + target + " ADD (" + def + ")"}
+	var after []string
 	if c.Comment != "" {
-		out = append(out, "COMMENT ON COLUMN "+target+"."+col+" IS "+sqlQuote(c.Comment, false))
+		after = append(after, "COMMENT ON COLUMN "+target+"."+col+" IS "+sqlQuote(c.Comment, false))
 	}
-	return out
+	return def, after
 }
 
 func (oracleDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {

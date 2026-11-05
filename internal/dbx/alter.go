@@ -93,6 +93,9 @@ type AlterResult struct {
 type alterDialect interface {
 	alterColumn(ctx context.Context, q Querier, schema string, t Table, target string, a ColumnAlter) ([]string, error)
 	addColumn(schema string, t Table, target string, c Column) []string
+	// columnDef: a new column's definition and the statements that follow
+	// it (comments), for CREATE TABLE
+	columnDef(schema string, t Table, target string, c Column) (string, []string)
 	dropColumn(ctx context.Context, q Querier, schema string, t Table, target, name string) ([]string, error)
 	tableComment(schema string, t Table, target, comment string) []string
 	// transactionalDDL: the statements can run in one transaction.

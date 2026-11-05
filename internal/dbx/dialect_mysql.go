@@ -8,6 +8,7 @@ package dbx
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"tablume/internal/i18n"
@@ -177,7 +178,8 @@ func (mysqlDialect) placeAfter(after string) string {
 func (mysqlDialect) tableEngine(ctx context.Context, q Querier, schema string, t Table) (TableOptions, error) {
 	var o TableOptions
 	var e sql.NullString
-	if err := q.QueryRowContext(ctx, `SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`, schema, t.Name).Scan(&e); err != nil {
+	// (a table not made yet: no engine, but the lists)
+	if err := q.QueryRowContext(ctx, `SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`, schema, t.Name).Scan(&e); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return o, err
 	}
 	o.Engine = e.String
@@ -216,8 +218,14 @@ func onUpdateOf(extra string) string {
 	return ""
 }
 
-func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []string {
-	def := "ALTER TABLE " + target + " ADD COLUMN " + quoteWith(c.Name, "`", "`") + " " + c.Type
+func (d mysqlDialect) addColumn(schema string, t Table, target string, c Column) []string {
+	def, after := d.columnDef(schema, t, target, c)
+	return append([]string{"ALTER TABLE " + target + " ADD COLUMN " + def}, after...)
+}
+
+// columnDef: a new column's definition, for ADD COLUMN and CREATE TABLE.
+func (mysqlDialect) columnDef(_ string, _ Table, _ string, c Column) (string, []string) {
+	def := quoteWith(c.Name, "`", "`") + " " + c.Type
 	if c.Collation != "" {
 		def += " COLLATE " + c.Collation
 	}
@@ -239,7 +247,7 @@ func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []stri
 	if c.Comment != "" {
 		def += " COMMENT " + sqlQuote(c.Comment, true)
 	}
-	return []string{def}
+	return def, nil
 }
 
 func (mysqlDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {

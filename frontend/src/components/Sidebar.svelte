@@ -18,6 +18,7 @@
     openConsole,
     openErd,
     ERD_DRIVERS,
+    openCreateTable,
     openTableData,
     activeTab,
     pinTab,
@@ -555,6 +556,7 @@
       items: [
         { label: tr('이 스키마로 새 콘솔'), icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
         ...(ERD_DRIVERS.includes(c.driver) ? [{ label: tr('ERD 보기'), icon: 'erd', run: () => openErd(c.id, s.name) }] : []),
+        ...(c.driver !== 'sqlite' ? [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name) }] : []),
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s) },
         { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },
