@@ -173,7 +173,7 @@ var en = map[string]string{
 	"삭제":                  "Delete",
 	"마지막 패스키는 지울 수 없습니다":                             "The last passkey cannot be deleted",
 	"\"{name}\" 패스키를 지울까요? 이 패스키로 로그인한 기기는 로그아웃됩니다.": "Delete the passkey \"{name}\"? Devices signed in with it will be signed out.",
-	"(이 브라우저 포함)":                                    "(including this browser)",
-	"패스키를 추가했습니다.":                                   "Passkey added.",
-	"{time}까지 쓸 수 있습니다.":                             "Valid until {time}.",
+	"(이 브라우저 포함)":        "(including this browser)",
+	"패스키를 추가했습니다.":       "Passkey added.",
+	"{time}까지 쓸 수 있습니다.": "Valid until {time}.",
 }

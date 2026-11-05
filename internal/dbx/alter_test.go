@@ -43,3 +43,20 @@ func TestPlacements(t *testing.T) {
 		}
 	}
 }
+
+// Only the ON UPDATE expression is taken from EXTRA, not what follows it.
+func TestOnUpdateOf(t *testing.T) {
+	for extra, want := range map[string]string{
+		"":                              "",
+		"auto_increment":                "",
+		"on update current_timestamp()": "current_timestamp()",
+		"on update current_timestamp(), INVISIBLE":                   "current_timestamp()",
+		"on update current_timestamp(3) INVISIBLE":                   "current_timestamp(3)",
+		"DEFAULT_GENERATED on update CURRENT_TIMESTAMP":              "CURRENT_TIMESTAMP",
+		"DEFAULT_GENERATED on update CURRENT_TIMESTAMP(6) INVISIBLE": "CURRENT_TIMESTAMP(6)",
+	} {
+		if got := onUpdateOf(extra); got != want {
+			t.Errorf("onUpdateOf(%q) = %q, want %q", extra, got, want)
+		}
+	}
+}

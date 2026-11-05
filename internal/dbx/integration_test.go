@@ -891,6 +891,23 @@ func TestAlterColumns(t *testing.T) {
 					t.Fatalf("rename back: %+v %v", r, err)
 				}
 				c = cols()
+				if name == "postgres" || name == "oracle" { // only the case typed differently: folds back, no rename
+					old := c["b"]
+					nw := old
+					nw.Name, nw.Comment = strings.ToUpper(old.Name), "same name"
+					if name == "oracle" {
+						nw.Name = strings.ToLower(old.Name)
+					}
+					req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: old, New: nw}}}
+					prev, _ := m.PreviewAlter(req)
+					t.Logf("%s", strings.Join(prev, ";\n"))
+					if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+						t.Fatalf("case-only rename: %+v %v", r, err)
+					}
+					if c = cols(); c["b"].Comment != "same name" || c["b"].Name != old.Name {
+						t.Errorf("after case-only rename: %+v", c)
+					}
+				}
 			}
 			{ // auto increment: off and on again where an existing column can
 				// change (MySQL/MariaDB, PostgreSQL); refused elsewhere. A new
@@ -918,6 +935,28 @@ func TestAlterColumns(t *testing.T) {
 						}
 						if got := autoInc(cols()["id"]); got != on {
 							t.Errorf("auto: %v, want %v (%+v)", got, on, cols()["id"])
+						}
+					}
+					if name == "postgres" { // identity off and a default, in one change
+						on := flip(true)
+						if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{on}}); err != nil || r.Error != "" {
+							t.Fatalf("auto on: %+v %v", r, err)
+						}
+						off := flip(false)
+						off.New.Default = "0"
+						req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{off}}
+						prev, _ := m.PreviewAlter(req)
+						t.Logf("%s", strings.Join(prev, ";\n"))
+						if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+							t.Fatalf("auto off + default: %+v %v", r, err)
+						}
+						if got := cols()["id"]; autoInc(got) || defaultOf(got.Default) != "0" {
+							t.Errorf("id: %+v", got)
+						}
+						back := flip(false)
+						back.New.Default = ""
+						if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{back}}); err != nil || r.Error != "" {
+							t.Fatalf("drop default: %+v %v", r, err)
 						}
 					}
 				default:
@@ -1017,7 +1056,39 @@ func TestAlterColumns(t *testing.T) {
 				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Columns["code"].Collation != "utf8mb4_general_ci" {
 					t.Errorf("collation lost: %+v", o.Columns["code"])
 				}
-				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Drop: []string{"ts", "code"}}); err != nil || r.Error != "" {
+				// ON UPDATE and INVISIBLE on one column (MariaDB's EXTRA:
+				// "on update current_timestamp(), INVISIBLE"), restated by
+				// a comment change, then made visible
+				req = AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Add: []Column{
+					{Name: "upd", Type: "timestamp", Nullable: true, Default: "CURRENT_TIMESTAMP", OnUpdate: "CURRENT_TIMESTAMP", Invisible: true}}}
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("add upd: %+v %v", r, err)
+				}
+				withOpts := func() Column {
+					c := cols()["upd"]
+					o, _ := m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+					c.OnUpdate, c.Invisible = o.Columns["upd"].OnUpdate, o.Columns["upd"].Invisible
+					return c
+				}
+				upd := withOpts()
+				if !upd.Nullable || !upd.Invisible || !strings.HasPrefix(strings.ToLower(upd.OnUpdate), "current_timestamp") {
+					t.Fatalf("upd after add: %+v", upd)
+				}
+				for _, step := range []func(c *Column){func(c *Column) { c.Comment = "restated" }, func(c *Column) { c.Invisible = false }} {
+					old := withOpts()
+					nw := old
+					step(&nw)
+					req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: old, New: nw}}}
+					prev, _ := m.PreviewAlter(req)
+					t.Logf("%s", strings.Join(prev, ";\n"))
+					if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+						t.Fatalf("upd change: %+v %v", r, err)
+					}
+					if got := withOpts(); got.Invisible != nw.Invisible || got.OnUpdate != old.OnUpdate || got.Comment != nw.Comment {
+						t.Errorf("upd: %+v, want invisible %v, on update %q", got, nw.Invisible, old.OnUpdate)
+					}
+				}
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Drop: []string{"ts", "code", "upd"}}); err != nil || r.Error != "" {
 					t.Fatalf("drop ts/code: %+v %v", r, err)
 				}
 				for _, e := range []string{"MyISAM", "InnoDB"} {
