@@ -948,6 +948,50 @@ func TestAlterColumns(t *testing.T) {
 				if err != nil || o.Engine != "InnoDB" || !slices.Contains(o.Engines, "MyISAM") {
 					t.Fatalf("options: %+v %v", o, err)
 				}
+				// collation and ON UPDATE: a new column with both, then each
+				// changed on its own (the other kept)
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Add: []Column{
+					{Name: "ts", Type: "timestamp", Nullable: true, Default: "CURRENT_TIMESTAMP", OnUpdate: "CURRENT_TIMESTAMP"},
+					{Name: "code", Type: "varchar(10)", Nullable: true, Collation: "utf8mb4_bin"}}}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("add ts/code: %+v %v", r, err)
+				}
+				o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+				if !strings.EqualFold(strings.TrimSuffix(o.Columns["ts"].OnUpdate, "()"), "current_timestamp") || o.Columns["code"].Collation != "utf8mb4_bin" {
+					t.Fatalf("options after add: %+v", o.Columns)
+				}
+				cs := cols()
+				ts, code := cs["ts"], cs["code"]
+				ts.OnUpdate, code.Collation = o.Columns["ts"].OnUpdate, "utf8mb4_bin"
+				nts, ncode := ts, code
+				nts.OnUpdate, nts.Comment = "", "no on update" // ON UPDATE off
+				ncode.Collation = "utf8mb4_general_ci"
+				req = AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: ts, New: nts}, {Old: code, New: ncode}}}
+				prev, _ = m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("change ts/code: %+v %v", r, err)
+				}
+				o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+				if o.Columns["ts"].OnUpdate != "" || o.Columns["code"].Collation != "utf8mb4_general_ci" {
+					t.Errorf("options after change: %+v", o.Columns)
+				}
+				// a plain comment change keeps them
+				cs = cols()
+				code = cs["code"]
+				ncode = code
+				ncode.Comment = "kept"
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("comment: %+v %v", r, err)
+				}
+				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Columns["code"].Collation != "utf8mb4_general_ci" {
+					t.Errorf("collation lost: %+v", o.Columns["code"])
+				}
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Drop: []string{"ts", "code"}}); err != nil || r.Error != "" {
+					t.Fatalf("drop ts/code: %+v %v", r, err)
+				}
 				for _, e := range []string{"MyISAM", "InnoDB"} {
 					if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Engine: e}); err != nil || r.Error != "" {
 						t.Fatalf("engine %s: %+v %v", e, r, err)

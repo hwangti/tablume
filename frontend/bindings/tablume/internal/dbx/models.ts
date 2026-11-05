@@ -86,6 +86,14 @@ export interface Column {
      * Extra: auto increment / identity / generated, for the structure view.
      */
     "extra": string;
+
+    /**
+     * MySQL/MariaDB, in column changes only (see TableOptions.Columns):
+     * the collation and the ON UPDATE expression. Old and New differ where
+     * they change; equal (or both "") keeps what the column has.
+     */
+    "collation"?: string;
+    "onUpdate"?: string;
 }
 
 /**
@@ -96,6 +104,11 @@ export interface Column {
 export interface ColumnAlter {
     "old": Column;
     "new": Column;
+}
+
+export interface ColumnOptions {
+    "collation": string;
+    "onUpdate": string;
 }
 
 /**
@@ -520,4 +533,11 @@ export interface TableFK {
 export interface TableOptions {
     "engine": string;
     "engines": string[] | null;
+
+    /**
+     * Columns: each column's collation and ON UPDATE; Collations: the
+     * server's collations.
+     */
+    "columns": { [_ in string]?: ColumnOptions } | null;
+    "collations": string[] | null;
 }

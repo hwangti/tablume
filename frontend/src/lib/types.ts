@@ -50,6 +50,8 @@ export interface Column {
   fk?: string // referenced "table.column"
   default?: string
   extra?: string // auto increment / identity / generated
+  collation?: string // MySQL/MariaDB, in column changes
+  onUpdate?: string
 }
 
 // ERD data: a schema's tables and the foreign keys between them.

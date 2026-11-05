@@ -48,6 +48,15 @@ type AlterRequest struct {
 type TableOptions struct {
 	Engine  string   `json:"engine"`
 	Engines []string `json:"engines"`
+	// Columns: each column's collation and ON UPDATE; Collations: the
+	// server's collations.
+	Columns    map[string]ColumnOptions `json:"columns"`
+	Collations []string                 `json:"collations"`
+}
+
+type ColumnOptions struct {
+	Collation string `json:"collation"`
+	OnUpdate  string `json:"onUpdate"`
 }
 
 type engineDialect interface {
@@ -159,7 +168,7 @@ func autoInc(c Column) bool {
 	return strings.Contains(e, "auto_increment") || strings.Contains(e, "identity")
 }
 
-type colDiff struct{ name, typ, null, def, comment, auto bool }
+type colDiff struct{ name, typ, null, def, comment, auto, opt bool }
 
 func diffOf(a ColumnAlter) colDiff {
 	return colDiff{
@@ -169,10 +178,13 @@ func diffOf(a ColumnAlter) colDiff {
 		def:     defaultOf(a.Old.Default) != defaultOf(a.New.Default),
 		comment: a.Old.Comment != a.New.Comment,
 		auto:    autoInc(a.Old) != autoInc(a.New),
+		opt:     a.Old.Collation != a.New.Collation || a.Old.OnUpdate != a.New.OnUpdate,
 	}
 }
 
-func (d colDiff) any() bool { return d.name || d.typ || d.null || d.def || d.comment || d.auto }
+func (d colDiff) any() bool {
+	return d.name || d.typ || d.null || d.def || d.comment || d.auto || d.opt
+}
 
 // plainIdent: a name the database would take unquoted. Oracle and
 // PostgreSQL fold those (upper / lower), so a typed "new_col" is given that

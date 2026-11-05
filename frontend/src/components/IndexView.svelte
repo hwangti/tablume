@@ -307,7 +307,7 @@
                 {#if dropped[ix.name]}
                   <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(ix)}><Icon name="undo" size={13} /></button>
                 {:else}
-                  <button class="icon-btn sm" title={blockEdit || t('고치기 (지우고 다시 만듭니다)')} disabled={!!blockEdit} onclick={() => openEdit(ix)}><Icon name="edit" size={13} /></button>
+                  <button class="icon-btn sm" title={blockEdit || t('수정 (삭제 후 생성)')} disabled={!!blockEdit} onclick={() => openEdit(ix)}><Icon name="edit" size={13} /></button>
                   <button class="icon-btn sm" title={blockDrop || t('삭제')} disabled={!!blockDrop} onclick={() => toggleDrop(ix)}><Icon name="trash" size={13} /></button>
                 {/if}
               {/if}
@@ -545,6 +545,8 @@
   .act {
     width: 1%;
     padding: 0 4px;
+    white-space: nowrap;
+    font-size: 0; /* no gap between the buttons */
   }
   .act .icon-btn {
     width: 22px;
