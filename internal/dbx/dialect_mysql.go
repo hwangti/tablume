@@ -61,11 +61,14 @@ func (mysqlDialect) TableStats(ctx context.Context, q Querier, schema string) ([
 }
 
 func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t Table) ([]Column, error) {
+	// The subqueries filter on bound constants, not c.*: correlated filters
+	// keep MariaDB from narrowing information_schema to one table, so it
+	// opened every table on the server for each column.
 	return scanColumns(ctx, q, `SELECT c.COLUMN_NAME, c.COLUMN_TYPE, c.IS_NULLABLE, c.COLUMN_KEY = 'PRI', c.COLUMN_COMMENT,
-		EXISTS (SELECT 1 FROM information_schema.STATISTICS s WHERE s.TABLE_SCHEMA = c.TABLE_SCHEMA AND s.TABLE_NAME = c.TABLE_NAME
+		EXISTS (SELECT 1 FROM information_schema.STATISTICS s WHERE s.TABLE_SCHEMA = ? AND s.TABLE_NAME = ?
 			AND s.COLUMN_NAME = c.COLUMN_NAME AND s.NON_UNIQUE = 0 AND s.INDEX_NAME <> 'PRIMARY'),
 		(SELECT CONCAT(IF(k.REFERENCED_TABLE_SCHEMA <> k.TABLE_SCHEMA, CONCAT(k.REFERENCED_TABLE_SCHEMA, '.'), ''), k.REFERENCED_TABLE_NAME, '.', k.REFERENCED_COLUMN_NAME) FROM information_schema.KEY_COLUMN_USAGE k
-			WHERE k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME AND k.COLUMN_NAME = c.COLUMN_NAME
+			WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.COLUMN_NAME = c.COLUMN_NAME
 			AND k.REFERENCED_TABLE_NAME IS NOT NULL LIMIT 1),
 		-- defaults as SQL expressions: MariaDB already reports them that way;
 		-- MySQL 8 gives literals bare (DEFAULT_GENERATED marks expressions)
@@ -73,7 +76,7 @@ func (mysqlDialect) ListColumns(ctx context.Context, q Querier, schema string, t
 			WHEN @@version LIKE '%MariaDB%' OR c.EXTRA LIKE '%DEFAULT_GENERATED%' THEN c.COLUMN_DEFAULT
 			ELSE QUOTE(c.COLUMN_DEFAULT) END,
 		TRIM(REPLACE(c.EXTRA, 'DEFAULT_GENERATED', ''))
-		FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION`, schema, t.Name)
+		FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ? ORDER BY c.ORDINAL_POSITION`, schema, t.Name, schema, t.Name, schema, t.Name)
 }
 
 func (mysqlDialect) AllColumns(ctx context.Context, q Querier, schema string) (map[string][]string, error) {
