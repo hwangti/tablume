@@ -321,6 +321,13 @@ func (oracleDialect) alterColumn(ctx context.Context, q Querier, schema string, 
 	if d.comment {
 		out = append(out, "COMMENT ON COLUMN "+target+"."+col+" IS "+sqlQuote(a.New.Comment, false))
 	}
+	if d.name { // last: the statements above name the column as it was
+		n := a.New.Name
+		if plainIdent.MatchString(n) {
+			n = strings.ToUpper(n)
+		}
+		out = append(out, "ALTER TABLE "+target+" RENAME COLUMN "+col+" TO "+quoteWith(n, `"`, `"`))
+	}
 	return out, nil
 }
 

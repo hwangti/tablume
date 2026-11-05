@@ -171,6 +171,10 @@ func (a *App) SchemaGraph(id, schema string) (dbx.SchemaGraph, error) {
 	return a.db.SchemaGraph(id, schema)
 }
 
+func (a *App) TableOptions(id, schema string, t dbx.Table) (dbx.TableOptions, error) {
+	return a.db.TableOptions(id, schema, t)
+}
+
 func (a *App) ListForeignKeys(id, schema string, t dbx.Table) ([]dbx.TableFK, error) {
 	return a.db.ListForeignKeys(id, schema, t)
 }

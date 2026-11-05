@@ -236,6 +236,13 @@ func (pgDialect) alterColumn(ctx context.Context, q Querier, schema string, t Ta
 		}
 		out = append(out, "COMMENT ON COLUMN "+target+"."+col+" IS "+c)
 	}
+	if d.name { // last: the statements above name the column as it was
+		n := a.New.Name
+		if plainIdent.MatchString(n) {
+			n = strings.ToLower(n)
+		}
+		out = append(out, "ALTER TABLE "+target+" RENAME COLUMN "+col+" TO "+quoteWith(n, `"`, `"`))
+	}
 	return out, nil
 }
 

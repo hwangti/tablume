@@ -292,6 +292,10 @@ export function TableDDL(id: string, schema: string, t: dbx$0.Table): $Cancellab
     return $Call.ByID(2431381340, id, schema, t);
 }
 
+export function TableOptions(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<dbx$0.TableOptions> {
+    return $Call.ByID(4086510750, id, schema, t);
+}
+
 export function TableStats(id: string, schema: string): $CancellablePromise<dbx$0.Table[] | null> {
     return $Call.ByID(189184371, id, schema);
 }

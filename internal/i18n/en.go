@@ -82,6 +82,8 @@ var en = map[string]string{
 	"이 DB에서는 외래 키를 바꿀 수 없습니다":         "This database's foreign keys cannot be changed here",
 	"외래 키 이름이 비어 있습니다":                "The foreign key has no name",
 	"%s: 컬럼과 참조할 컬럼을 짝지어 고르세요":        "%s: pick columns and the columns they reference, in pairs",
+	"%s: 새 이름이 비어 있습니다":               "%s: the new name is empty",
+	"엔진을 바꿀 수 없습니다: %s":               "Cannot change the engine to %s",
 	"새 컬럼의 이름이 비어 있습니다":               "A new column has no name",
 	"%s: 타입이 비어 있습니다":                 "%s: the type is empty",
 	"계산(generated) 컬럼은 여기서 바꿀 수 없습니다": "Generated columns cannot be changed here",

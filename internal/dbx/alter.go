@@ -39,7 +39,37 @@ type AlterRequest struct {
 	TableComment *string `json:"tableComment"`
 	// Rename: the table's new name ("" = unchanged), renamed last.
 	Rename string `json:"rename"`
+	// Engine: MySQL/MariaDB storage engine to change to ("" = unchanged).
+	Engine string `json:"engine"`
 }
+
+// TableOptions: settings of a table beyond its columns. Engine and Engines
+// (the ones the server offers) are MySQL/MariaDB only, "" / nil elsewhere.
+type TableOptions struct {
+	Engine  string   `json:"engine"`
+	Engines []string `json:"engines"`
+}
+
+type engineDialect interface {
+	tableEngine(ctx context.Context, q Querier, schema string, t Table) (TableOptions, error)
+}
+
+// TableOptions reads a table's options (see TableOptions).
+func (m *Manager) TableOptions(id, schema string, t Table) (TableOptions, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return TableOptions{}, err
+	}
+	ed, ok := p.d.(engineDialect)
+	if !ok {
+		return TableOptions{}, nil
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	return ed.tableEngine(ctx, p.db, schema, t)
+}
+
+var engineName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 type AlterResult struct {
 	Applied int    `json:"applied"` // statements that ran
@@ -122,10 +152,11 @@ func defaultOf(s string) string {
 	return s
 }
 
-type colDiff struct{ typ, null, def, comment bool }
+type colDiff struct{ name, typ, null, def, comment bool }
 
 func diffOf(a ColumnAlter) colDiff {
 	return colDiff{
+		name:    a.Old.Name != a.New.Name,
 		typ:     !strings.EqualFold(strings.TrimSpace(a.Old.Type), strings.TrimSpace(a.New.Type)),
 		null:    a.Old.Nullable != a.New.Nullable,
 		def:     defaultOf(a.Old.Default) != defaultOf(a.New.Default),
@@ -133,7 +164,7 @@ func diffOf(a ColumnAlter) colDiff {
 	}
 }
 
-func (d colDiff) any() bool { return d.typ || d.null || d.def || d.comment }
+func (d colDiff) any() bool { return d.name || d.typ || d.null || d.def || d.comment }
 
 // plainIdent: a name the database would take unquoted. Oracle and
 // PostgreSQL fold those (upper / lower), so a typed "new_col" is given that
@@ -171,8 +202,14 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 		out = append(out, stmts...)
 	}
 	var tail []string // after the column statements
+	if e := strings.TrimSpace(req.Engine); e != "" {
+		if _, ok := p.d.(engineDialect); !ok || !engineName.MatchString(e) {
+			return nil, nil, nil, i18n.Errorf("엔진을 바꿀 수 없습니다: %s", e)
+		}
+		tail = append(tail, "ALTER TABLE "+target+" ENGINE = "+e)
+	}
 	if c := req.TableComment; c != nil && *c != req.Table.Comment {
-		tail = ad.tableComment(req.Schema, req.Table, target, *c)
+		tail = append(tail, ad.tableComment(req.Schema, req.Table, target, *c)...)
 	}
 	if n := strings.TrimSpace(req.Rename); n != "" && n != req.Table.Name {
 		rd, ok := p.d.(renameDialect)
@@ -181,9 +218,12 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 		}
 		tail = append(tail, rd.renameTable(req.Schema, req.Table, n))
 	}
-	for _, a := range req.Changes {
+	for i, a := range req.Changes {
 		if strings.TrimSpace(a.New.Type) == "" {
 			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
+		}
+		if req.Changes[i].New.Name = strings.TrimSpace(a.New.Name); req.Changes[i].New.Name == "" {
+			return nil, nil, nil, i18n.Errorf("%s: 새 이름이 비어 있습니다", a.Old.Name)
 		}
 	}
 	for i, c := range req.Add {
@@ -247,9 +287,20 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	if len(seen) != len(old)+len(added) {
 		return nil, nil, nil, i18n.Error("컬럼 순서에 빠진 컬럼이 있습니다")
 	}
+	// a column placed after one renamed before it goes after the new name
+	renamed := map[string]string{}
+	for _, a := range req.Changes {
+		if a.New.Name != a.Old.Name {
+			renamed[a.Old.Name] = a.New.Name
+		}
+	}
 	place := map[string]string{}
 	for _, pm := range placements(orig, req.Order) {
-		place[pm.name] = pl.placeAfter(pm.after)
+		after := pm.after
+		if n, ok := renamed[after]; ok {
+			after = n
+		}
+		place[pm.name] = pl.placeAfter(after)
 	}
 	// in the wanted order, so the column each one goes after is in place
 	for _, n := range req.Order {

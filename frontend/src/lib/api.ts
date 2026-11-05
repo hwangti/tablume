@@ -37,6 +37,12 @@ export interface AlterRequest {
   drop?: string[]
   tableComment?: string
   rename?: string
+  engine?: string
+}
+
+export interface TableOptions {
+  engine: string
+  engines: string[] | null
 }
 
 // Typed view over the generated Wails bindings, using our own types
@@ -60,6 +66,7 @@ interface Api {
   ListRoutines(id: string, schema: string): Promise<Routine[]>
   RoutineSource(id: string, schema: string, r: Routine): Promise<string>
   PreviewAlter(req: AlterRequest): Promise<string[]>
+  TableOptions(id: string, schema: string, t: Table): Promise<TableOptions>
   ApplyAlter(req: AlterRequest): Promise<AlterResult>
   ListIndexes(id: string, schema: string, t: Table): Promise<Index[] | null>
   PreviewIndexes(req: IndexRequest): Promise<string[] | null>
