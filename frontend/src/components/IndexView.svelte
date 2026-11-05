@@ -548,10 +548,6 @@
     white-space: nowrap;
     font-size: 0; /* no gap between the buttons */
   }
-  .act .icon-btn {
-    width: 22px;
-    height: 20px;
-  }
   .dim {
     color: var(--text-faint);
   }
