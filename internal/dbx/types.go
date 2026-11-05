@@ -73,6 +73,7 @@ type Column struct {
 	// they change; equal (or both "") keeps what the column has.
 	Collation string `json:"collation,omitempty"`
 	OnUpdate  string `json:"onUpdate,omitempty"`
+	Invisible bool   `json:"invisible,omitempty"` // left out of SELECT *
 }
 
 type SchemaList struct {

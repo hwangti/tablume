@@ -43,7 +43,7 @@ export interface AlterRequest {
 export interface TableOptions {
   engine: string
   engines: string[] | null
-  columns: Record<string, { collation: string; onUpdate: string }> | null
+  columns: Record<string, { collation: string; onUpdate: string; invisible: boolean }> | null
   collations: string[] | null
 }
 

@@ -52,6 +52,7 @@ export interface Column {
   extra?: string // auto increment / identity / generated
   collation?: string // MySQL/MariaDB, in column changes
   onUpdate?: string
+  invisible?: boolean
 }
 
 // ERD data: a schema's tables and the foreign keys between them.

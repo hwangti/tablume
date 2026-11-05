@@ -978,6 +978,34 @@ func TestAlterColumns(t *testing.T) {
 				if o.Columns["ts"].OnUpdate != "" || o.Columns["code"].Collation != "utf8mb4_general_ci" {
 					t.Errorf("options after change: %+v", o.Columns)
 				}
+				// INVISIBLE: on, kept through another change, off
+				cs = cols()
+				code = cs["code"]
+				code.Collation = "utf8mb4_general_ci"
+				ncode = code
+				ncode.Invisible = true
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("invisible on: %+v %v", r, err)
+				}
+				code = cols()["code"]
+				ncode = code
+				ncode.Comment = "still hidden"
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("comment on invisible: %+v %v", r, err)
+				}
+				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); !o.Columns["code"].Invisible {
+					t.Errorf("INVISIBLE lost: %+v", o.Columns["code"])
+				}
+				code = cols()["code"]
+				code.Invisible, code.Collation = true, "utf8mb4_general_ci"
+				ncode = code
+				ncode.Invisible = false
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("invisible off: %+v %v", r, err)
+				}
+				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Columns["code"].Invisible {
+					t.Errorf("still invisible: %+v", o.Columns["code"])
+				}
 				// a plain comment change keeps them
 				cs = cols()
 				code = cs["code"]
