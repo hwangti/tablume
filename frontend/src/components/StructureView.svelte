@@ -83,8 +83,10 @@
   let sel = $state(-1)
 
   // ---- editing
-  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment' | 'auto'
-  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean }
+  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment' | 'auto' | 'collation' | 'onUpdate'
+  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean; collation: string; onUpdate: string }
+  // MySQL/MariaDB: a column's collation and ON UPDATE as the server has them
+  const colOpt = (c: Column) => opts?.columns?.[c.name] ?? { collation: '', onUpdate: '' }
   const isAuto = (c: Column) => /auto_increment|identity/i.test(c.extra ?? '')
   let draft = $state<Record<string, Draft>>({})
   let editing = $state<{ name: string; field: Exclude<Field, 'nullable' | 'auto'>; value: string } | null>(null)
@@ -122,7 +124,7 @@
   let find = $state('')
 
   function current(c: Column): Draft {
-    return draft[c.name] ?? { name: c.name, type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '', auto: isAuto(c) }
+    return draft[c.name] ?? { name: c.name, type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '', auto: isAuto(c), ...colOpt(c) }
   }
 
   function changed(c: Column, f: Field): boolean {
@@ -130,13 +132,14 @@
     if (!d) return false
     if (f === 'name') return d.name.trim() !== c.name
     if (f === 'auto') return d.auto !== isAuto(c)
+    if (f === 'collation' || f === 'onUpdate') return d[f].trim() !== colOpt(c)[f]
     if (f === 'nullable') return d.nullable !== c.nullable
     if (f === 'default') return d.default.trim() !== def(c)
     if (f === 'type') return d.type.trim().toLowerCase() !== c.type.toLowerCase()
     return d.comment !== (c.comment ?? '')
   }
 
-  const FIELDS: Field[] = ['name', 'type', 'nullable', 'default', 'comment', 'auto']
+  const FIELDS: Field[] = ['name', 'type', 'nullable', 'default', 'comment', 'auto', 'collation', 'onUpdate']
   function setField(c: Column, f: Field, v: string | boolean) {
     setDraft(c, { ...current(c), [f]: v })
   }
@@ -147,6 +150,7 @@
 
   // ---- ✎: a column in the detail dialog
   let detail = $state<{ title: string; value: ColumnForm; autoReason: string; info: [string, string][]; save: (v: ColumnForm) => void } | null>(null)
+  const mysqlish = $derived(driver === 'mysql' || driver === 'mariadb')
   const autoEditable = $derived(driver === 'mysql' || driver === 'mariadb' || driver === 'postgres')
   function openDetail(c: Column) {
     const info: [string, string][] = []
@@ -177,7 +181,7 @@
   let nextId = 0
   const newKey = (a: NewCol) => '\0' + a.id
   function addRow() {
-    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '', auto: false }
+    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '', auto: false, collation: '', onUpdate: '' }
     added.push(a)
     order?.push(newKey(a))
   }
@@ -363,14 +367,14 @@
       .map((c) => {
         const d = current(c)
         return {
-          old: $state.snapshot(c),
-          new: { ...$state.snapshot(c), extra: d.auto === isAuto(c) ? c.extra : d.auto ? 'auto_increment' : '', name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
+          old: { ...$state.snapshot(c), ...colOpt(c) },
+          new: { ...$state.snapshot(c), collation: d.collation.trim(), onUpdate: d.onUpdate.trim(), extra: d.auto === isAuto(c) ? c.extra : d.auto ? 'auto_increment' : '', name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
         }
       })
   }
 
   function request() {
-    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '' }))
+    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '', collation: a.collation, onUpdate: a.onUpdate.trim() }))
     const names = order ? rows.filter((r) => !(r.col && dropped[r.col.name])).map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
     return {
       connId,
@@ -582,7 +586,7 @@
                 {#if dropped[c.name]}
                   <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(c)}><Icon name="undo" size={13} /></button>
                 {:else}
-                  <button class="icon-btn sm" title={t('자세히 수정')} onclick={() => openDetail(c)}><Icon name="edit" size={13} /></button>
+                  <button class="icon-btn sm" title={t('수정')} onclick={() => openDetail(c)}><Icon name="edit" size={13} /></button>
                   <button class="icon-btn sm" title={t('컬럼 삭제')} onclick={() => toggleDrop(c)}><Icon name="trash" size={13} /></button>
                 {/if}
               {/if}
@@ -608,7 +612,7 @@
               <button class="dots" title={t('큰 창에서 편집')} onclick={() => (viewing = { title: `${a.name || t('새 컬럼')} — ${t('코멘트')}`, value: a.comment, save: (v) => (a.comment = v) })}>…</button>
             </td>
             <td class="act">
-              <button class="icon-btn sm" title={t('자세히 수정')} onclick={() => openDetailNew(a)}><Icon name="edit" size={13} /></button>
+              <button class="icon-btn sm" title={t('수정')} onclick={() => openDetailNew(a)}><Icon name="edit" size={13} /></button>
               <button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button>
             </td>
           </tr>
@@ -620,7 +624,15 @@
 {/if}
 
 {#if detail}
-  <ColumnDialog title={detail.title} value={detail.value} autoReason={detail.autoReason} info={detail.info} onsave={detail.save} onclose={() => (detail = null)} />
+  <ColumnDialog
+    title={detail.title}
+    value={detail.value}
+    autoReason={detail.autoReason}
+    info={detail.info}
+    collations={mysqlish ? (opts?.collations ?? []) : null}
+    onsave={detail.save}
+    onclose={() => (detail = null)}
+  />
 {/if}
 
 {#if viewing}
@@ -754,6 +766,8 @@
   .act {
     width: 1%;
     padding: 0 4px;
+    white-space: nowrap;
+    font-size: 0; /* no gap between the buttons */
   }
   tr.dropped td:not(.act) {
     text-decoration: line-through;
@@ -763,9 +777,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px 20px;
-    padding: 10px 12px 14px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid var(--grid-line);
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    background: var(--bg-panel);
   }
   .wrap:focus {
     outline: none;
@@ -923,7 +937,7 @@
     min-width: 200px;
     padding-top: 4px;
     padding-bottom: 4px;
-    line-height: 1.45;
+    line-height: 1.3;
     color: var(--text-dim);
   }
   .comment:has(.cell-input) {

@@ -68,6 +68,11 @@ type Column struct {
 	Default  string `json:"default"`
 	// Extra: auto increment / identity / generated, for the structure view.
 	Extra string `json:"extra"`
+	// MySQL/MariaDB, in column changes only (see TableOptions.Columns):
+	// the collation and the ON UPDATE expression. Old and New differ where
+	// they change; equal (or both "") keeps what the column has.
+	Collation string `json:"collation,omitempty"`
+	OnUpdate  string `json:"onUpdate,omitempty"`
 }
 
 type SchemaList struct {

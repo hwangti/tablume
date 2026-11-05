@@ -43,6 +43,8 @@ export interface AlterRequest {
 export interface TableOptions {
   engine: string
   engines: string[] | null
+  columns: Record<string, { collation: string; onUpdate: string }> | null
+  collations: string[] | null
 }
 
 // Typed view over the generated Wails bindings, using our own types

@@ -7,6 +7,7 @@ export type {
     ApplyRequest,
     Column,
     ColumnAlter,
+    ColumnOptions,
     ConnConfig,
     EditInfo,
     ExecRequest,

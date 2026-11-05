@@ -124,7 +124,11 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 	def := quoteWith(n.Name, "`", "`") + " " + strings.TrimSpace(n.Type)
 	base, _, _ := strings.Cut(strings.ToUpper(strings.TrimSpace(n.Type)), "(")
 	for _, st := range mysqlStringType {
-		if base == st && cs.String != "" {
+		switch {
+		case base != st:
+		case a.Old.Collation != n.Collation && n.Collation != "": // the character set follows the collation
+			def += " COLLATE " + n.Collation
+		case cs.String != "":
 			def += " CHARACTER SET " + cs.String + " COLLATE " + coll.String
 		}
 	}
@@ -140,8 +144,12 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 	if autoInc(n) { // as wanted: on, off or kept
 		def += " AUTO_INCREMENT"
 	}
-	if i := strings.Index(ex, "on update "); i >= 0 {
-		def += " ON UPDATE " + strings.TrimSpace(ex[i+len("on update "):])
+	if a.Old.OnUpdate != n.OnUpdate { // as wanted, "" = none
+		if u := strings.TrimSpace(n.OnUpdate); u != "" {
+			def += " ON UPDATE " + u
+		}
+	} else if u := onUpdateOf(ex); u != "" {
+		def += " ON UPDATE " + u
 	}
 	if n.Comment != "" {
 		def += " COMMENT " + sqlQuote(n.Comment, true)
@@ -173,11 +181,39 @@ func (mysqlDialect) tableEngine(ctx context.Context, q Querier, schema string, t
 	for _, r := range rows {
 		o.Engines = append(o.Engines, r[0])
 	}
+	cols, err := rowStrings(ctx, q, `SELECT COLUMN_NAME, COALESCE(COLLATION_NAME, ''), EXTRA FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`, schema, t.Name)
+	if err != nil {
+		return o, err
+	}
+	o.Columns = map[string]ColumnOptions{}
+	for _, r := range cols {
+		o.Columns[r[0]] = ColumnOptions{Collation: r[1], OnUpdate: onUpdateOf(r[2])}
+	}
+	colls, err := rowStrings(ctx, q, `SELECT COLLATION_NAME FROM information_schema.COLLATIONS ORDER BY COLLATION_NAME`)
+	if err != nil {
+		return o, err
+	}
+	for _, r := range colls {
+		o.Collations = append(o.Collations, r[0])
+	}
 	return o, nil
+}
+
+// onUpdateOf: the ON UPDATE expression in a column's EXTRA ("" = none).
+func onUpdateOf(extra string) string {
+	ex := strings.ToLower(extra)
+	if i := strings.Index(ex, "on update "); i >= 0 {
+		return strings.TrimSpace(extra[i+len("on update "):])
+	}
+	return ""
 }
 
 func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []string {
 	def := "ALTER TABLE " + target + " ADD COLUMN " + quoteWith(c.Name, "`", "`") + " " + c.Type
+	if c.Collation != "" {
+		def += " COLLATE " + c.Collation
+	}
 	if !c.Nullable {
 		def += " NOT NULL"
 	}
@@ -186,6 +222,9 @@ func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []stri
 	}
 	if autoInc(c) {
 		def += " AUTO_INCREMENT"
+	}
+	if u := strings.TrimSpace(c.OnUpdate); u != "" {
+		def += " ON UPDATE " + u
 	}
 	if c.Comment != "" {
 		def += " COMMENT " + sqlQuote(c.Comment, true)

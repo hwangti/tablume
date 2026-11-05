@@ -50,6 +50,8 @@ export interface Column {
   fk?: string // referenced "table.column"
   default?: string
   extra?: string // auto increment / identity / generated
+  collation?: string // MySQL/MariaDB, in column changes
+  onUpdate?: string
 }
 
 export interface TableFK {
