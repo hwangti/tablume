@@ -239,6 +239,25 @@ func (pgDialect) alterColumn(ctx context.Context, q Querier, schema string, t Ta
 	return out, nil
 }
 
+func (pgDialect) addColumn(_ string, _ Table, target string, c Column) []string {
+	if plainIdent.MatchString(c.Name) {
+		c.Name = strings.ToLower(c.Name)
+	}
+	col := quoteWith(c.Name, `"`, `"`)
+	def := "ALTER TABLE " + target + " ADD COLUMN " + col + " " + c.Type
+	if !c.Nullable {
+		def += " NOT NULL"
+	}
+	if c.Default != "" {
+		def += " DEFAULT " + c.Default
+	}
+	out := []string{def}
+	if c.Comment != "" {
+		out = append(out, "COMMENT ON COLUMN "+target+"."+col+" IS "+sqlQuote(c.Comment, false))
+	}
+	return out
+}
+
 func (pgDialect) Routines(ctx context.Context, q Querier, schema string) ([]Routine, error) {
 	return scanRoutines(ctx, q, `SELECT n.nspname, p.proname,
 		CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,

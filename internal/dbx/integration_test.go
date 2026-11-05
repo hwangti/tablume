@@ -784,6 +784,24 @@ func TestAlterColumns(t *testing.T) {
 			if defaultOf(c["a"].Default) != "" || c["a"].Comment != "" || defaultOf(c["b"].Default) != "" || c["b"].Comment != "" {
 				t.Errorf("after removal: a=%+v b=%+v", c["a"], c["b"])
 			}
+			// add a column: NOT NULL with a default fills the existing row
+			addReq := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl,
+				Add: []Column{{Name: "new_z", Type: newType[name][0], Default: "'q'", Comment: "cz"}, {Name: "new_n", Type: newType[name][1], Nullable: true}}}
+			prev, err := m.PreviewAlter(addReq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			if r, err := m.ApplyAlter(addReq); err != nil || r.Error != "" || r.Applied != len(prev) {
+				t.Fatalf("add: %+v %v", r, err)
+			}
+			c = cols()
+			if z := c["new_z"]; z.Nullable || !strings.Contains(z.Default, "q") || z.Comment != "cz" || !strings.Contains(z.Type, "40") {
+				t.Errorf("new_z: %+v", z)
+			}
+			if n, ok := c["new_n"]; !ok || !n.Nullable {
+				t.Errorf("new_n: %+v", n)
+			}
 			// a failing change reports its error
 			bad := c["a"]
 			nbad := bad

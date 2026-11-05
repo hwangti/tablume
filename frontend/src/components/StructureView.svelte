@@ -1,7 +1,7 @@
 <script lang="ts">
   // The table's columns as a table (the "컬럼" side of the structure tab). Type,
-  // NULL, default and comment can be edited: the changes become ALTER
-  // statements that are shown before they run.
+  // NULL, default and comment can be edited, and columns added at the end:
+  // the changes become ALTER statements that are shown before they run.
   import { t } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
   import { copyText } from '../lib/clipboard'
@@ -31,6 +31,7 @@
     cols = null
     error = ''
     draft = {}
+    added = []
     api
       .ListColumns(connId, schema, $state.snapshot(table))
       .then((c) => key === loadedFor && (cols = c ?? []))
@@ -44,7 +45,7 @@
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
     const v = version
     if (key !== loadedFor) load()
-    else if (v !== loadedVersion && !Object.keys(draft).length) load()
+    else if (v !== loadedVersion && !Object.keys(draft).length && !added.length) load()
     loadedVersion = v
   })
 
@@ -85,7 +86,23 @@
     if (!(['type', 'nullable', 'default', 'comment'] as Field[]).some((x) => changed(c, x))) delete draft[c.name]
   }
 
-  let pending = $derived(cols ? cols.filter((c) => draft[c.name]).length : 0)
+  // new columns, appended at the end
+  let added = $state<(Draft & { name: string })[]>([])
+  const addRow = () => added.push({ name: '', type: '', nullable: true, default: '', comment: '' })
+  let addError = $derived.by(() => {
+    const seen = new Set((cols ?? []).map((c) => c.name.toLowerCase()))
+    for (const a of added) {
+      const n = a.name.trim()
+      if (!n) return t('새 컬럼의 이름이 비어 있습니다')
+      if (!a.type.trim()) return t('{name}: 타입이 비어 있습니다', { name: n })
+      if (seen.has(n.toLowerCase())) return t('같은 이름의 컬럼이 이미 있습니다: {name}', { name: n })
+      seen.add(n.toLowerCase())
+    }
+    return ''
+  })
+  const revert = () => ((draft = {}), (added = []))
+
+  let pending = $derived((cols ? cols.filter((c) => draft[c.name]).length : 0) + added.length)
 
   function startEdit(c: Column, field: Exclude<Field, 'nullable'>) {
     if (readOnlyReason) return
@@ -128,13 +145,18 @@
       })
   }
 
+  function request() {
+    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: '' }))
+    return { connId, schema, table: $state.snapshot(table), changes: changes(), add }
+  }
+
   // ---- apply: preview the statements, then run them
   let apply = $state<{ sql: string[]; busy: boolean; error: string; note: string } | null>(null)
   const transactional = $derived(driver === 'postgres' || driver === 'mssql')
 
   async function openApply() {
     try {
-      const sql = await api.PreviewAlter({ connId, schema, table: $state.snapshot(table), changes: changes() })
+      const sql = await api.PreviewAlter(request())
       apply = { sql: sql ?? [], busy: false, error: '', note: '' }
     } catch (e) {
       toast(errText(e), 'error')
@@ -146,7 +168,7 @@
     if (!a) return
     a.busy = true
     try {
-      const r = await api.ApplyAlter({ connId, schema, table: $state.snapshot(table), changes: changes() })
+      const r = await api.ApplyAlter(request())
       if (r.error) {
         onlog?.(a.sql.slice(0, r.rolledBack ? a.sql.length : r.applied + 1), '', r.error + '\n' + (r.rolledBack ? t('(모두 취소됨)') : t('({a}/{n}개 적용됨)', { a: r.applied, n: r.total })))
         a.busy = false
@@ -155,7 +177,7 @@
           ? t('하나라도 실패하면 전부 취소됩니다. 아무것도 바뀌지 않았습니다.')
           : t('{n}개 중 {a}개는 이미 적용됐습니다 (이 DB는 DDL을 되돌릴 수 없습니다).', { n: r.total, a: r.applied })
         if (!r.rolledBack && r.applied > 0) {
-          draft = {}
+          revert()
           onchanged ? onchanged() : load()
         }
         return
@@ -163,7 +185,7 @@
       apply = null
       onlog?.(a.sql, t('컬럼 변경 {n}건 적용', { n: r.applied }))
       toast(t('컬럼 변경 {n}건 적용됨', { n: r.applied }))
-      draft = {}
+      revert()
       onchanged ? onchanged() : load()
     } catch (e) {
       a.busy = false
@@ -191,13 +213,17 @@
     <div class="bar">
       <span class="title">{t('컬럼')} <span class="count">{cols.length}</span></span>
       {#if table.comment}<span class="tcomment">{table.comment}</span>{/if}
+      {#if !readOnlyReason}
+        <button class="btn mini" onclick={addRow}><Icon name="plus" size={13} /> {t('컬럼 추가')}</button>
+      {/if}
       <span class="grow"></span>
       {#if readOnlyReason}
         <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> {t('읽기 전용')}</span>
       {:else if pending > 0}
+        {#if addError}<span class="adderr">{addError}</span>{/if}
         <span class="pending">{t('컬럼 {n}개 변경', { n: pending })}</span>
-        <button class="btn mini primary" onclick={openApply}><Icon name="check" size={13} /> {t('적용')}</button>
-        <button class="btn mini" onclick={() => (draft = {})}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
+        <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('적용')}</button>
+        <button class="btn mini" onclick={revert}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
       {:else}
         <span class="hint">{t('타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
       {/if}
@@ -245,6 +271,24 @@
             <td class="dim">{c.extra ?? ''}</td>
             <td class="mono fk">{c.fk ?? ''}</td>
             {@render cell('comment', 'comment', cur.comment)}
+          </tr>
+        {/each}
+        {#each added as a, i (i)}
+          <tr class="added">
+            <td class="n">+</td>
+            <td class="k"></td>
+            <td class="new"><input class="new-input mono" placeholder={t('이름')} bind:value={a.name} use:focus onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
+            <td class="new"><input class="new-input mono" placeholder="varchar(50)" bind:value={a.type} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
+            <td class="c">
+              <label class="nullbox" title={t('NULL 허용')}>
+                <input type="checkbox" bind:checked={a.nullable} />
+                {#if a.nullable}<span class="dim">NULL</span>{:else}<b>NOT NULL</b>{/if}
+              </label>
+            </td>
+            <td class="new"><input class="new-input mono" placeholder={t('기본값')} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
+            <td><button class="icon-btn sm" title={t('추가 취소')} onclick={() => added.splice(i, 1)}><Icon name="close" size={13} /></button></td>
+            <td></td>
+            <td class="new"><input class="new-input" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} /></td>
           </tr>
         {/each}
       </tbody>
@@ -366,6 +410,30 @@
     border: 2px solid var(--accent);
     border-radius: 0;
     font-size: 12.5px;
+  }
+  tr.added {
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+  td.new {
+    padding: 0;
+  }
+  .new-input {
+    width: 100%;
+    min-width: 110px;
+    height: 23px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-size: 12.5px;
+  }
+  .new-input:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  .adderr {
+    color: var(--danger);
+    font-size: 11.5px;
   }
   .nullbox {
     display: inline-flex;

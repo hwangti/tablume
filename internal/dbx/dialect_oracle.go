@@ -324,6 +324,25 @@ func (oracleDialect) alterColumn(ctx context.Context, q Querier, schema string, 
 	return out, nil
 }
 
+func (oracleDialect) addColumn(_ string, _ Table, target string, c Column) []string {
+	if plainIdent.MatchString(c.Name) {
+		c.Name = strings.ToUpper(c.Name)
+	}
+	col := quoteWith(c.Name, `"`, `"`)
+	def := col + " " + c.Type
+	if c.Default != "" { // DEFAULT comes before NOT NULL in Oracle
+		def += " DEFAULT " + c.Default
+	}
+	if !c.Nullable {
+		def += " NOT NULL"
+	}
+	out := []string{"ALTER TABLE " + target + " ADD (" + def + ")"}
+	if c.Comment != "" {
+		out = append(out, "COMMENT ON COLUMN "+target+"."+col+" IS "+sqlQuote(c.Comment, false))
+	}
+	return out
+}
+
 func (oracleDialect) Routines(ctx context.Context, q Querier, schema string) ([]Routine, error) {
 	return scanRoutines(ctx, q, `SELECT owner, object_name, object_type, '', ''
 		FROM all_objects WHERE owner = :1 AND object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE')
