@@ -5,6 +5,7 @@ import { i18n, isLang, t as tr, type Lang } from './i18n.svelte'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import { DRIVERS } from './types'
+import { DEFAULT_AUDIT } from './erd'
 import type { Cell, Column, ConnConfig, Driver, Routine, SchemaFilter, StmtResult, Table } from './types'
 
 export interface TableNode {
@@ -129,6 +130,7 @@ export const app = $state({
   wide: false, // 넓게 보기: only the active tab, no tree or tab strip (not saved)
   orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
+  erdAudit: [...DEFAULT_AUDIT] as string[], // column names the ERD takes for audit columns (* wildcards)
   ddlMode: 'table' as 'sql' | 'table', // structure tab: columns and indexes, or the DDL text
   theme: getTheme(),
   // Databases this build includes (a build can leave some out).
@@ -1140,6 +1142,7 @@ export function saveWorkspaceSoon() {
       orderShare: app.orderShare,
       gridColNumbers: app.gridColNumbers,
       ddlView: app.ddlMode,
+      erdAudit: app.erdAudit,
       theme: app.theme,
       lang: i18n.lang,
       sidebarHidden: app.sidebarHidden,
@@ -1168,6 +1171,7 @@ export async function loadWorkspace(tabs = true) {
     if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     else if (data.ddlView === 'index') app.ddlMode = 'table' // was a view of its own
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
+    if (Array.isArray(data.erdAudit) && data.erdAudit.every((p: unknown) => typeof p === 'string')) app.erdAudit = data.erdAudit
     setLanguage(isLang(data.lang) ? data.lang : i18n.lang, false)
     if (typeof data.sidebarHidden === 'boolean') app.sidebarHidden = data.sidebarHidden
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
