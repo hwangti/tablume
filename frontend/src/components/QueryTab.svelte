@@ -93,7 +93,16 @@
   let ddlFor = ''
   let ddlVersion = $state(0) // bumped when the columns were altered
   // a key icon clicked in the columns: the index / foreign key rows to show
+  // (cleared after the flash: a structure view made again later, after the
+  // data or log, must not scroll to it again)
   let keyHl = $state<{ kind: 'fk' | 'index'; column: string; n: number } | null>(null)
+  let keyHlTimer = 0
+  let keyHlN = 0 // only grows: each click is a new request
+  function showKey(kind: 'fk' | 'index', column: string) {
+    keyHl = { kind, column, n: ++keyHlN }
+    clearTimeout(keyHlTimer)
+    keyHlTimer = window.setTimeout(() => (keyHl = null), 2000)
+  }
   $effect(() => {
     const ref = tab.tableRef
     if (!ref || tableView !== 'ddl') return
@@ -775,7 +784,7 @@
               version={ddlVersion}
               onchanged={structureChanged}
               onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
-              onkey={(kind, column) => (keyHl = { kind, column, n: (keyHl?.n ?? 0) + 1 })}
+              onkey={showKey}
             />
             <IndexView
               highlight={keyHl?.kind === 'index' ? keyHl : null}

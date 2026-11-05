@@ -65,10 +65,12 @@
   // ---- a key icon clicked in the columns: flash the rows with that column
   let flash = $state(new Set<string>())
   let flashTimer = 0
+  let seen = 0 // the request last shown: once each, not again when the list reloads
   $effect(() => {
     const h = highlight
     const list = indexes
-    if (!h || !list) return
+    if (!h || !list || h.n === seen) return
+    seen = h.n
     const col = h.column.toLowerCase()
     flash = new Set(list.filter((x) => x.columns.map((c) => c.replace(/ DESC$/, '').replace(/\(\d+\)$/, '').replace(/^["`[](.*)["`\]]$/, '$1')).some((c) => c.toLowerCase() === col)).map((x) => x.name))
     clearTimeout(flashTimer)
