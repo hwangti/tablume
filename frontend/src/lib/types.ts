@@ -52,6 +52,7 @@ export interface Column {
   extra?: string // auto increment / identity / generated
   collation?: string // MySQL/MariaDB, in column changes
   onUpdate?: string
+  invisible?: boolean
 }
 
 export interface TableFK {

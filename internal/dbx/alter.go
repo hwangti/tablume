@@ -57,6 +57,7 @@ type TableOptions struct {
 type ColumnOptions struct {
 	Collation string `json:"collation"`
 	OnUpdate  string `json:"onUpdate"`
+	Invisible bool   `json:"invisible"`
 }
 
 type engineDialect interface {
@@ -178,7 +179,7 @@ func diffOf(a ColumnAlter) colDiff {
 		def:     defaultOf(a.Old.Default) != defaultOf(a.New.Default),
 		comment: a.Old.Comment != a.New.Comment,
 		auto:    autoInc(a.Old) != autoInc(a.New),
-		opt:     a.Old.Collation != a.New.Collation || a.Old.OnUpdate != a.New.OnUpdate,
+		opt:     a.Old.Collation != a.New.Collation || a.Old.OnUpdate != a.New.OnUpdate || a.Old.Invisible != a.New.Invisible,
 	}
 }
 

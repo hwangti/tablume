@@ -141,6 +141,10 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 		def += " DEFAULT " + d
 	}
 	ex := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(extra.String, "DEFAULT_GENERATED", "")))
+	// INVISIBLE (MySQL 8.0.23+, MariaDB 10.3+): as wanted, or kept
+	if a.Old.Invisible != n.Invisible && n.Invisible || a.Old.Invisible == n.Invisible && strings.Contains(ex, "invisible") {
+		def += " INVISIBLE"
+	}
 	if autoInc(n) { // as wanted: on, off or kept
 		def += " AUTO_INCREMENT"
 	}
@@ -188,7 +192,7 @@ func (mysqlDialect) tableEngine(ctx context.Context, q Querier, schema string, t
 	}
 	o.Columns = map[string]ColumnOptions{}
 	for _, r := range cols {
-		o.Columns[r[0]] = ColumnOptions{Collation: r[1], OnUpdate: onUpdateOf(r[2])}
+		o.Columns[r[0]] = ColumnOptions{Collation: r[1], OnUpdate: onUpdateOf(r[2]), Invisible: strings.Contains(strings.ToLower(r[2]), "invisible")}
 	}
 	colls, err := rowStrings(ctx, q, `SELECT COLLATION_NAME FROM information_schema.COLLATIONS ORDER BY COLLATION_NAME`)
 	if err != nil {
@@ -219,6 +223,9 @@ func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []stri
 	}
 	if c.Default != "" {
 		def += " DEFAULT " + c.Default
+	}
+	if c.Invisible {
+		def += " INVISIBLE"
 	}
 	if autoInc(c) {
 		def += " AUTO_INCREMENT"

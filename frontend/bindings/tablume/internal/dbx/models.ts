@@ -94,6 +94,11 @@ export interface Column {
      */
     "collation"?: string;
     "onUpdate"?: string;
+
+    /**
+     * left out of SELECT *
+     */
+    "invisible"?: boolean;
 }
 
 /**
@@ -109,6 +114,7 @@ export interface ColumnAlter {
 export interface ColumnOptions {
     "collation": string;
     "onUpdate": string;
+    "invisible": boolean;
 }
 
 /**

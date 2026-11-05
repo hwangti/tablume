@@ -7,7 +7,7 @@
   import Modal from './Modal.svelte'
   import Dropdown from './Dropdown.svelte'
 
-  export type ColumnForm = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean; collation: string; onUpdate: string }
+  export type ColumnForm = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean; collation: string; onUpdate: string; invisible: boolean }
 
   let {
     title,
@@ -64,6 +64,9 @@
         <input type="checkbox" checked={f.auto} disabled={!!autoReason} onchange={(e) => setAuto(e.currentTarget.checked)} />
         {t('자동 증가')}
       </label>
+      {#if collations}
+        <label class="chk" title={t('SELECT *에서 빠지는 컬럼 (MySQL 8.0.23+, MariaDB 10.3+)')}><input type="checkbox" bind:checked={f.invisible} /> {t('숨김 (INVISIBLE)')}</label>
+      {/if}
     </div>
     {#if autoReason}<div class="row"><span class="lbl"></span><span class="note">{autoReason}</span></div>{/if}
     <label class="row"><span class="lbl">{t('기본값')}</span><input class="mono" bind:value={f.default} disabled={f.auto} spellcheck="false" placeholder={t("SQL 식 (예: 0, 'a', CURRENT_TIMESTAMP)")} /></label>

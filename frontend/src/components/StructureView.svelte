@@ -83,13 +83,13 @@
   let sel = $state(-1)
 
   // ---- editing
-  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment' | 'auto' | 'collation' | 'onUpdate'
-  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean; collation: string; onUpdate: string }
+  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment' | 'auto' | 'collation' | 'onUpdate' | 'invisible'
+  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean; collation: string; onUpdate: string; invisible: boolean }
   // MySQL/MariaDB: a column's collation and ON UPDATE as the server has them
-  const colOpt = (c: Column) => opts?.columns?.[c.name] ?? { collation: '', onUpdate: '' }
+  const colOpt = (c: Column) => opts?.columns?.[c.name] ?? { collation: '', onUpdate: '', invisible: false }
   const isAuto = (c: Column) => /auto_increment|identity/i.test(c.extra ?? '')
   let draft = $state<Record<string, Draft>>({})
-  let editing = $state<{ name: string; field: Exclude<Field, 'nullable' | 'auto'>; value: string } | null>(null)
+  let editing = $state<{ name: string; field: Exclude<Field, 'nullable' | 'auto' | 'invisible'>; value: string } | null>(null)
 
   let readOnlyReason = $derived(
     driver === 'sqlite'
@@ -133,13 +133,14 @@
     if (f === 'name') return d.name.trim() !== c.name
     if (f === 'auto') return d.auto !== isAuto(c)
     if (f === 'collation' || f === 'onUpdate') return d[f].trim() !== colOpt(c)[f]
+    if (f === 'invisible') return d.invisible !== colOpt(c).invisible
     if (f === 'nullable') return d.nullable !== c.nullable
     if (f === 'default') return d.default.trim() !== def(c)
     if (f === 'type') return d.type.trim().toLowerCase() !== c.type.toLowerCase()
     return d.comment !== (c.comment ?? '')
   }
 
-  const FIELDS: Field[] = ['name', 'type', 'nullable', 'default', 'comment', 'auto', 'collation', 'onUpdate']
+  const FIELDS: Field[] = ['name', 'type', 'nullable', 'default', 'comment', 'auto', 'collation', 'onUpdate', 'invisible']
   function setField(c: Column, f: Field, v: string | boolean) {
     setDraft(c, { ...current(c), [f]: v })
   }
@@ -181,7 +182,7 @@
   let nextId = 0
   const newKey = (a: NewCol) => '\0' + a.id
   function addRow() {
-    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '', auto: false, collation: '', onUpdate: '' }
+    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '', auto: false, collation: '', onUpdate: '', invisible: false }
     added.push(a)
     order?.push(newKey(a))
   }
@@ -311,7 +312,7 @@
   let edits = $derived((cols ? cols.filter((c) => draft[c.name] && !dropped[c.name]).length : 0) + added.length + Object.keys(dropped).length)
   let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0) + (nameDraft !== null ? 1 : 0) + (engineDraft !== null ? 1 : 0))
 
-  function startEdit(c: Column, field: Exclude<Field, 'nullable' | 'auto'>) {
+  function startEdit(c: Column, field: Exclude<Field, 'nullable' | 'auto' | 'invisible'>) {
     if (readOnlyReason || dropped[c.name]) return
     editing = { name: c.name, field, value: current(c)[field] }
   }
@@ -368,13 +369,13 @@
         const d = current(c)
         return {
           old: { ...$state.snapshot(c), ...colOpt(c) },
-          new: { ...$state.snapshot(c), collation: d.collation.trim(), onUpdate: d.onUpdate.trim(), extra: d.auto === isAuto(c) ? c.extra : d.auto ? 'auto_increment' : '', name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
+          new: { ...$state.snapshot(c), collation: d.collation.trim(), onUpdate: d.onUpdate.trim(), invisible: d.invisible, extra: d.auto === isAuto(c) ? c.extra : d.auto ? 'auto_increment' : '', name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
         }
       })
   }
 
   function request() {
-    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '', collation: a.collation, onUpdate: a.onUpdate.trim() }))
+    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '', collation: a.collation, onUpdate: a.onUpdate.trim(), invisible: a.invisible }))
     const names = order ? rows.filter((r) => !(r.col && dropped[r.col.name])).map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
     return {
       connId,

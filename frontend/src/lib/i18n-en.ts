@@ -360,6 +360,8 @@ export default {
   '고치기': 'Change',
   '추가 취소': 'Remove',
   '컬럼 추가': 'Add column',
+  'SELECT *에서 빠지는 컬럼 (MySQL 8.0.23+, MariaDB 10.3+)': 'Left out of SELECT * (MySQL 8.0.23+, MariaDB 10.3+)',
+  '숨김 (INVISIBLE)': 'Invisible',
   '콜레이션': 'Collation',
   '수정': 'Edit',
   '이 DB에서는 기존 컬럼의 자동 증가를 바꿀 수 없습니다 (테이블을 새로 만들어야 합니다)': 'This database cannot turn auto increment on or off for an existing column (the table has to be made again)',
