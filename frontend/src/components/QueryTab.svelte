@@ -45,11 +45,11 @@
   function timingTitle(r: StmtResult): string {
     const ms = (n: number) => num(n) + 'ms'
     return [
-      `${t('실행#timing')} ${ms(r.elapsedMs - r.fetchMs)}`,
-      `${t('가져오기')} ${ms(r.fetchMs)}`,
-      ...(r.appMs !== undefined ? [`${t('앱 전달')} ${ms(r.appMs)}`] : []),
-      ...(r.renderMs !== undefined ? [`${t('그리기')} ${ms(r.renderMs)}`] : []),
-      `${t('합계')} ${ms(timingTotal(r))}`,
+      `${t('실행#timing')}\t${ms(r.elapsedMs - r.fetchMs)}`,
+      `${t('가져오기')}\t${ms(r.fetchMs)}`,
+      ...(r.appMs !== undefined ? [`${t('앱 전달')}\t${ms(r.appMs)}`] : []),
+      ...(r.renderMs !== undefined ? [`${t('그리기')}\t${ms(r.renderMs)}`] : []),
+      `${t('합계')}\t${ms(timingTotal(r))}`,
     ].join('\n')
   }
 

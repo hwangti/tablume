@@ -273,6 +273,18 @@ textarea:focus {
   word-break: break-word;
   pointer-events: none;
 }
+.app-tip .tip-cols {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 16px;
+}
+.app-tip .tip-cols .v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.app-tip .tip-cols .all {
+  grid-column: 1 / -1;
+}
 
 /* see main.ts: rings only for keyboard navigation */
 :root:not(.kbd-nav) button:focus,
