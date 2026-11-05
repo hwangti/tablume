@@ -213,8 +213,14 @@ func onUpdateOf(extra string) string {
 	return ""
 }
 
-func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []string {
-	def := "ALTER TABLE " + target + " ADD COLUMN " + quoteWith(c.Name, "`", "`") + " " + c.Type
+func (d mysqlDialect) addColumn(schema string, t Table, target string, c Column) []string {
+	def, after := d.columnDef(schema, t, target, c)
+	return append([]string{"ALTER TABLE " + target + " ADD COLUMN " + def}, after...)
+}
+
+// columnDef: a new column's definition, for ADD COLUMN and CREATE TABLE.
+func (mysqlDialect) columnDef(_ string, _ Table, _ string, c Column) (string, []string) {
+	def := quoteWith(c.Name, "`", "`") + " " + c.Type
 	if c.Collation != "" {
 		def += " COLLATE " + c.Collation
 	}
@@ -236,7 +242,7 @@ func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []stri
 	if c.Comment != "" {
 		def += " COMMENT " + sqlQuote(c.Comment, true)
 	}
-	return []string{def}
+	return def, nil
 }
 
 func (mysqlDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {

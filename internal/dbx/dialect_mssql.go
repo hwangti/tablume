@@ -425,8 +425,15 @@ func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Tab
 	return out, nil
 }
 
-func (mssqlDialect) addColumn(db string, t Table, target string, c Column) []string {
-	def := "ALTER TABLE " + target + " ADD " + msq(c.Name) + " " + c.Type
+func (d mssqlDialect) addColumn(db string, t Table, target string, c Column) []string {
+	def, after := d.columnDef(db, t, target, c)
+	return append([]string{"ALTER TABLE " + target + " ADD " + def}, after...)
+}
+
+// columnDef: a new column's definition, then its comment (an extended
+// property).
+func (mssqlDialect) columnDef(db string, t Table, _ string, c Column) (string, []string) {
+	def := msq(c.Name) + " " + c.Type
 	if autoInc(c) {
 		def += " IDENTITY(1,1)"
 	}
@@ -438,16 +445,16 @@ func (mssqlDialect) addColumn(db string, t Table, target string, c Column) []str
 	if c.Default != "" {
 		def += " DEFAULT " + c.Default
 	}
-	out := []string{def}
+	var after []string
 	if c.Comment != "" {
 		sch := t.Schema
 		if sch == "" {
 			sch = "dbo"
 		}
-		out = append(out, "EXEC "+msq(db)+".sys.sp_addextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA', @level0name = "+nq(sch)+
+		after = append(after, "EXEC "+msq(db)+".sys.sp_addextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA', @level0name = "+nq(sch)+
 			", @level1type = N'TABLE', @level1name = "+nq(t.Name)+", @level2type = N'COLUMN', @level2name = "+nq(c.Name)+", @value = "+nq(c.Comment))
 	}
-	return out
+	return def, after
 }
 
 // mssqlDefault: the name of a column's default constraint, if it has one.
