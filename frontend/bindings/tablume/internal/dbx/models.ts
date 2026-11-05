@@ -35,6 +35,11 @@ export interface AlterRequest {
      * Rename: the table's new name ("" = unchanged), renamed last.
      */
     "rename": string;
+
+    /**
+     * Engine: MySQL/MariaDB storage engine to change to ("" = unchanged).
+     */
+    "engine": string;
 }
 
 export interface AlterResult {
@@ -437,4 +442,13 @@ export interface TableFK {
      */
     "onUpdate": string;
     "onDelete": string;
+}
+
+/**
+ * TableOptions: settings of a table beyond its columns. Engine and Engines
+ * (the ones the server offers) are MySQL/MariaDB only, "" / nil elsewhere.
+ */
+export interface TableOptions {
+    "engine": string;
+    "engines": string[] | null;
 }

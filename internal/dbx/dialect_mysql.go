@@ -146,6 +146,9 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 	if n.Comment != "" {
 		def += " COMMENT " + sqlQuote(n.Comment, true)
 	}
+	if a.Old.Name != n.Name { // CHANGE: renamed, the definition restated
+		return []string{"ALTER TABLE " + target + " CHANGE COLUMN " + quoteWith(a.Old.Name, "`", "`") + " " + def}, nil
+	}
 	return []string{"ALTER TABLE " + target + " MODIFY COLUMN " + def}, nil
 }
 
@@ -154,6 +157,23 @@ func (mysqlDialect) placeAfter(after string) string {
 		return " FIRST"
 	}
 	return " AFTER " + quoteWith(after, "`", "`")
+}
+
+func (mysqlDialect) tableEngine(ctx context.Context, q Querier, schema string, t Table) (TableOptions, error) {
+	var o TableOptions
+	var e sql.NullString
+	if err := q.QueryRowContext(ctx, `SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`, schema, t.Name).Scan(&e); err != nil {
+		return o, err
+	}
+	o.Engine = e.String
+	rows, err := rowStrings(ctx, q, `SELECT ENGINE FROM information_schema.ENGINES WHERE SUPPORT IN ('YES', 'DEFAULT') ORDER BY ENGINE`)
+	if err != nil {
+		return o, err
+	}
+	for _, r := range rows {
+		o.Engines = append(o.Engines, r[0])
+	}
+	return o, nil
 }
 
 func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []string {

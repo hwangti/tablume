@@ -5,13 +5,15 @@
   // another order: the changes become ALTER statements that are shown
   // before they run.
   import { t } from '../lib/i18n.svelte'
-  import { api, errText } from '../lib/api'
+  import { api, errText, type TableOptions } from '../lib/api'
   import { copyText } from '../lib/clipboard'
   import { toast, openConsole, retargetTable } from '../lib/state.svelte'
   import type { Column, Table } from '../lib/types'
   import Icon from './Icon.svelte'
   import SqlPreview from './SqlPreview.svelte'
   import Modal from './Modal.svelte'
+  import Dropdown from './Dropdown.svelte'
+  import CellViewer from './CellViewer.svelte'
 
   let {
     connId,
@@ -33,10 +35,17 @@
     cols = null
     error = ''
     revert()
+    opts = null
+    const tb = $state.snapshot(table)
     api
-      .ListColumns(connId, schema, $state.snapshot(table))
+      .ListColumns(connId, schema, tb)
       .then((c) => key === loadedFor && (cols = c ?? []))
       .catch((e) => key === loadedFor && (error = errText(e)))
+    if (driver === 'mysql' || driver === 'mariadb')
+      api
+        .TableOptions(connId, schema, tb)
+        .then((o) => key === loadedFor && (opts = o))
+        .catch(() => {})
   }
 
   // version: bumped after index changes (unique flags) — reloads unless
@@ -53,8 +62,8 @@
   let sel = $state(-1)
 
   // ---- editing
-  type Field = 'type' | 'nullable' | 'default' | 'comment'
-  type Draft = { type: string; nullable: boolean; default: string; comment: string }
+  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment'
+  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string }
   let draft = $state<Record<string, Draft>>({})
   let editing = $state<{ name: string; field: Exclude<Field, 'nullable'>; value: string } | null>(null)
 
@@ -75,7 +84,9 @@
     else dropped[c.name] = true
   }
 
-  // ---- the table's name and comment (null = unchanged)
+  // ---- the table's name, comment and engine (null = unchanged)
+  let opts = $state<TableOptions | null>(null)
+  let engineDraft = $state<string | null>(null)
   let nameDraft = $state<string | null>(null)
   let tcDraft = $state<string | null>(null)
   let tableComment = $derived(table.comment ?? '')
@@ -89,12 +100,13 @@
   let find = $state('')
 
   function current(c: Column): Draft {
-    return draft[c.name] ?? { type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '' }
+    return draft[c.name] ?? { name: c.name, type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '' }
   }
 
   function changed(c: Column, f: Field): boolean {
     const d = draft[c.name]
     if (!d) return false
+    if (f === 'name') return d.name.trim() !== c.name
     if (f === 'nullable') return d.nullable !== c.nullable
     if (f === 'default') return d.default.trim() !== def(c)
     if (f === 'type') return d.type.trim().toLowerCase() !== c.type.toLowerCase()
@@ -104,7 +116,7 @@
   function setField(c: Column, f: Field, v: string | boolean) {
     const d = { ...current(c), [f]: v }
     draft[c.name] = d
-    if (!(['type', 'nullable', 'default', 'comment'] as Field[]).some((x) => changed(c, x))) delete draft[c.name]
+    if (!(['name', 'type', 'nullable', 'default', 'comment'] as Field[]).some((x) => changed(c, x))) delete draft[c.name]
   }
 
   // new columns; id keeps a row's place while its name is being typed
@@ -123,7 +135,14 @@
   }
   let addError = $derived.by(() => {
     if (nameDraft !== null && !nameDraft.trim()) return t('테이블 이름이 비어 있습니다')
-    const seen = new Set((cols ?? []).map((c) => c.name.toLowerCase()))
+    const seen = new Set<string>()
+    for (const c of cols ?? []) {
+      if (dropped[c.name]) continue
+      const n = current(c).name.trim()
+      if (!n) return t('{name}: 새 이름이 비어 있습니다', { name: c.name })
+      if (seen.has(n.toLowerCase())) return t('같은 이름의 컬럼이 이미 있습니다: {name}', { name: n })
+      seen.add(n.toLowerCase())
+    }
     for (const a of added) {
       const n = a.name.trim()
       if (!n) return t('새 컬럼의 이름이 비어 있습니다')
@@ -141,6 +160,7 @@
     dropped = {}
     tcDraft = null
     nameDraft = null
+    engineDraft = null
   }
 
   // ---- order (MySQL/MariaDB): a row is dragged by its number
@@ -233,7 +253,7 @@
   }
 
   let edits = $derived((cols ? cols.filter((c) => draft[c.name] && !dropped[c.name]).length : 0) + added.length + Object.keys(dropped).length)
-  let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0) + (nameDraft !== null ? 1 : 0))
+  let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0) + (nameDraft !== null ? 1 : 0) + (engineDraft !== null ? 1 : 0))
 
   function startEdit(c: Column, field: Exclude<Field, 'nullable'>) {
     if (readOnlyReason || dropped[c.name]) return
@@ -248,9 +268,29 @@
     if (c) setField(c, e.field, e.value)
   }
 
+  // ---- "…": a comment in the large editor (as in the data grid)
+  let viewing = $state<{ title: string; value: string; save: (v: string) => void } | null>(null)
+  function bigComment(c: Column) {
+    commitEdit()
+    viewing = { title: `${c.name} — ${t('코멘트')}`, value: current(c).comment, save: (v) => setField(c, 'comment', v) }
+  }
+
+  // ⌘C / Ctrl+C on a selected row: the row as tab-separated text
+  function wrapKey(e: KeyboardEvent) {
+    const r = shown[sel]
+    if ((e.metaKey || e.ctrlKey) && e.key === 'c' && r?.col && !editing && !(e.target instanceof HTMLInputElement)) {
+      e.preventDefault()
+      copyRow(r.col)
+    }
+  }
+
   function inputKey(e: KeyboardEvent) {
     e.stopPropagation()
-    if (e.key === 'Enter') {
+    if (e.key === 'F2' && editing?.field === 'comment') {
+      e.preventDefault()
+      const c = cols?.find((x) => x.name === editing!.name)
+      if (c) bigComment(c)
+    } else if (e.key === 'Enter') {
       e.preventDefault()
       commitEdit()
     } else if (e.key === 'Escape') {
@@ -272,7 +312,7 @@
         const d = current(c)
         return {
           old: $state.snapshot(c),
-          new: { ...$state.snapshot(c), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
+          new: { ...$state.snapshot(c), name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
         }
       })
   }
@@ -290,6 +330,7 @@
       drop: Object.keys(dropped),
       tableComment: tcDraft ?? undefined,
       rename: nameDraft?.trim() || undefined,
+      engine: engineDraft ?? undefined,
     }
   }
 
@@ -358,7 +399,8 @@
 {:else if cols === null}
   <div class="placeholder"><span class="spin"></span> {t('컬럼 불러오는 중…')}</div>
 {:else}
-  <div class="wrap">
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
+  <div class="wrap" tabindex="-1" onkeydown={wrapKey}>
     <div class="props">
       <label class="prop">
         <span>{t('테이블')}</span>
@@ -374,15 +416,37 @@
       </label>
       <label class="prop wide">
         <span>{t('코멘트')}</span>
-        <input
-          class:edited={tcDraft !== null}
-          value={tcDraft ?? tableComment}
-          placeholder={readOnlyReason ? '' : t('테이블 코멘트 없음')}
-          disabled={!!readOnlyReason}
-          oninput={(e) => (tcDraft = e.currentTarget.value === tableComment ? null : e.currentTarget.value)}
-          onkeydown={(e) => propKey(e, () => (tcDraft = null))}
-        />
+        <span class="with-dots">
+          <input
+            class:edited={tcDraft !== null}
+            value={tcDraft ?? tableComment}
+            placeholder={readOnlyReason ? '' : t('테이블 코멘트 없음')}
+            disabled={!!readOnlyReason}
+            oninput={(e) => (tcDraft = e.currentTarget.value === tableComment ? null : e.currentTarget.value)}
+            onkeydown={(e) => propKey(e, () => (tcDraft = null))}
+          />
+          {#if !readOnlyReason}
+            <button
+              class="dots"
+              title={t('큰 창에서 편집')}
+              onclick={(e) => (e.preventDefault(), (viewing = { title: t('테이블 코멘트'), value: tcDraft ?? tableComment, save: (v) => (tcDraft = v === tableComment ? null : v) }))}>…</button
+            >
+          {/if}
+        </span>
       </label>
+      {#if opts?.engines?.length}
+        <div class="prop">
+          <span>{t('엔진')}</span>
+          <span class="engine" class:edited={engineDraft !== null}>
+            <Dropdown
+              value={engineDraft ?? opts.engine}
+              options={opts.engines.map((e) => ({ value: e, label: e }))}
+              onchange={(v) => (engineDraft = v === opts?.engine ? null : v)}
+              width="140px"
+            />
+          </span>
+        </div>
+      {/if}
     </div>
     <div class="bar">
       <span class="title">{t('컬럼')} <span class="count">{cols.length}</span></span>
@@ -399,10 +463,11 @@
         {#if order}<span class="pending">{t('순서 변경')}</span>{/if}
         {#if nameDraft !== null}<span class="pending">{t('이름 변경')}</span>{/if}
         {#if tcDraft !== null}<span class="pending">{t('테이블 코멘트 변경')}</span>{/if}
+        {#if engineDraft !== null}<span class="pending">{t('엔진 변경')}</span>{/if}
         <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('적용')}</button>
         <button class="btn mini" onclick={revert}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
       {:else}
-        <span class="hint">{canMove ? t('타입·NULL·기본값·코멘트는 더블클릭, 순서는 번호를 끌어서 바꿀 수 있습니다') : t('타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
+        <span class="hint">{canMove ? t('이름·타입·NULL·기본값·코멘트는 더블클릭, 순서는 번호를 끌어서 바꿀 수 있습니다') : t('이름·타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
       {/if}
     </div>
     <table>
@@ -435,14 +500,21 @@
               {#if c.fk}<span title={t('외래 키 (FK)')}><Icon name="link" size={12} color="var(--key-fk)" /></span>{/if}
               {#if c.unique}<span title={t('유니크 (UK)')}><Icon name="unique" size={12} color="var(--key-uk)" /></span>{/if}
             </td>
-            <td class="name mono" ondblclick={() => copyRow(c)} title={t('더블클릭: 행 복사')}>{c.name}</td>
-            {#snippet cell(field: 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
+            {#snippet cell(field: 'name' | 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
               <td class="{cls} edit" class:edited={changed(c, field)} ondblclick={() => startEdit(c, field)}>
                 {#if editing?.name === c.name && editing.field === field}
-                  <input class="cell-input mono" bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
+                  <input class="cell-input mono" class:with-dots={field === 'comment'} bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
+                  {#if field === 'comment'}<button
+                      class="dots"
+                      title="{t('큰 창에서 편집')} (F2)"
+                      onmousedown={(e) => e.preventDefault()}
+                      ondblclick={(e) => e.stopPropagation()}
+                      onclick={(e) => (e.stopPropagation(), bigComment(c))}>…</button
+                    >{/if}
                 {:else if shown}{shown}{:else}<span class="dim">{empty}</span>{/if}
               </td>
             {/snippet}
+            {@render cell('name', 'name mono', cur.name)}
             {@render cell('type', 'type mono', cur.type.toLowerCase())}
             <td class="c" class:edited={changed(c, 'nullable')}>
               <label class="nullbox" title={readOnlyReason || t('NULL 허용')}>
@@ -480,7 +552,10 @@
             <td class="new"><input class="new-input mono" placeholder={t('기본값')} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td></td>
             <td></td>
-            <td class="new"><input class="new-input" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} /></td>
+            <td class="new rel">
+              <input class="new-input with-dots" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} />
+              <button class="dots" title={t('큰 창에서 편집')} onclick={() => (viewing = { title: `${a.name || t('새 컬럼')} — ${t('코멘트')}`, value: a.comment, save: (v) => (a.comment = v) })}>…</button>
+            </td>
             <td class="act"><button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button></td>
           </tr>
           {/if}
@@ -488,6 +563,17 @@
       </tbody>
     </table>
   </div>
+{/if}
+
+{#if viewing}
+  <CellViewer
+    column={viewing.title}
+    value={viewing.value}
+    editable
+    nullable={false}
+    onsave={(v) => viewing?.save(v ?? '')}
+    onclose={() => (viewing = null)}
+  />
 {/if}
 
 {#if apply}
@@ -498,7 +584,9 @@
       {:else}
         {t('아래 문장을 차례로 실행합니다. 이 DB는 DDL을 되돌릴 수 없어서, 중간에 실패하면 그 앞까지는 적용된 채로 남습니다.')}
       {/if}
-      {#if order}
+      {#if engineDraft !== null}
+        {t('엔진을 바꾸면 테이블을 통째로 다시 씁니다. 행이 많으면 오래 걸리고 그동안 쓰기가 막힐 수 있습니다.')}
+      {:else if order}
         {t('컬럼 위치를 옮기면 테이블을 통째로 다시 쓸 수 있습니다. 행이 많으면 오래 걸리고 그동안 쓰기가 막힐 수 있습니다.')}
       {/if}
     </p>
@@ -615,8 +703,51 @@
   }
   .props {
     display: flex;
-    gap: 16px;
-    padding: 8px 12px 2px;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    padding: 10px 12px 14px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--grid-line);
+  }
+  .wrap:focus {
+    outline: none;
+  }
+  .with-dots {
+    position: relative;
+    display: flex;
+    flex: 1;
+  }
+  .rel {
+    position: relative;
+  }
+  input.with-dots,
+  .with-dots input {
+    padding-right: 28px;
+  }
+  .dots {
+    position: absolute;
+    top: 50%;
+    right: 3px;
+    transform: translateY(-50%);
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .dots:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+  td.edit:has(.dots) {
+    position: relative;
+  }
+  .engine.edited :global(.dd) {
+    background: color-mix(in srgb, var(--warn) 18%, var(--bg-input));
   }
   .prop {
     display: flex;

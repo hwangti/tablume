@@ -415,6 +415,9 @@ func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Tab
 			out = append(out, "EXEC "+proc+"sp_updateextendedproperty "+args+", @value = "+nq(a.New.Comment))
 		}
 	}
+	if d.name { // last: the statements above name the column as it was
+		out = append(out, "EXEC "+msq(db)+".sys.sp_rename "+nq(msq(sch)+"."+msq(t.Name)+"."+col)+", "+nq(a.New.Name)+", N'COLUMN'")
+	}
 	return out, nil
 }
 

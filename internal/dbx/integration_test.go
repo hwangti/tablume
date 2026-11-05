@@ -3,6 +3,7 @@ package dbx
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -862,14 +863,64 @@ func TestAlterColumns(t *testing.T) {
 					t.Fatalf("rename back: %+v %v", r, err)
 				}
 			}
+			{ // rename a column with a comment change; then back
+				up := func(x string) string {
+					if name == "oracle" {
+						return strings.ToUpper(x)
+					}
+					return x
+				}
+				c = cols()
+				old := c["b"]
+				nw := old
+				nw.Name, nw.Comment = "b_renamed", "rn"
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: old, New: nw}}}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("rename column: %+v %v", r, err)
+				}
+				c = cols()
+				if x, ok := c["b_renamed"]; !ok || x.Comment != "rn" || x.Name != up("b_renamed") {
+					t.Errorf("renamed: %+v", c)
+				}
+				back := c["b_renamed"]
+				nb := back
+				nb.Name = old.Name
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: back, New: nb}}}); err != nil || r.Error != "" {
+					t.Fatalf("rename back: %+v %v", r, err)
+				}
+				c = cols()
+			}
+			if name == "mariadb" { // engine
+				o, err := m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+				if err != nil || o.Engine != "InnoDB" || !slices.Contains(o.Engines, "MyISAM") {
+					t.Fatalf("options: %+v %v", o, err)
+				}
+				for _, e := range []string{"MyISAM", "InnoDB"} {
+					if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Engine: e}); err != nil || r.Error != "" {
+						t.Fatalf("engine %s: %+v %v", e, r, err)
+					}
+					if o, _ := m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Engine != e {
+						t.Errorf("engine: %q, want %s", o.Engine, e)
+					}
+				}
+			}
 			if name == "mariadb" { // reorder, and add in the middle
 				cs, _ := m.Columns(tg.cfg.ID, tg.schema, tbl)
 				var ch []ColumnAlter
 				for _, c := range cs {
 					ch = append(ch, ColumnAlter{Old: c, New: c})
 				}
-				want := []string{"new_n", "id", "a", "mid", "b"}
-				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: ch, Order: want,
+				// new_n first, a renamed to a2, mid added after it
+				for i := range ch {
+					if ch[i].Old.Name == "a" {
+						ch[i].New.Name = "a2"
+					}
+				}
+				order := []string{"new_n", "id", "a", "mid", "b"}
+				want := []string{"new_n", "id", "a2", "mid", "b"}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: ch, Order: order,
 					Add: []Column{{Name: "mid", Type: "int", Nullable: true}}}
 				prev, err := m.PreviewAlter(req)
 				if err != nil {
@@ -893,7 +944,10 @@ func TestAlterColumns(t *testing.T) {
 				}
 			}
 			// a failing change reports its error
-			bad := c["a"]
+			bad, ok := c["a"]
+			if !ok {
+				bad = c["a2"] // renamed by the reorder step
+			}
 			nbad := bad
 			nbad.Type = "no_such_type_xyz"
 			r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: bad, New: nbad}}})

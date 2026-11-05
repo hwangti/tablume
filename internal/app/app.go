@@ -166,6 +166,10 @@ func (a *App) PreviewAlter(req dbx.AlterRequest) ([]string, error) { return a.db
 
 func (a *App) ApplyAlter(req dbx.AlterRequest) (dbx.AlterResult, error) { return a.db.ApplyAlter(req) }
 
+func (a *App) TableOptions(id, schema string, t dbx.Table) (dbx.TableOptions, error) {
+	return a.db.TableOptions(id, schema, t)
+}
+
 func (a *App) ListForeignKeys(id, schema string, t dbx.Table) ([]dbx.TableFK, error) {
 	return a.db.ListForeignKeys(id, schema, t)
 }

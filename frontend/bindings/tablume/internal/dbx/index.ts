@@ -24,5 +24,6 @@ export type {
     SchemaList,
     StmtResult,
     Table,
-    TableFK
+    TableFK,
+    TableOptions
 } from "./models.js";
