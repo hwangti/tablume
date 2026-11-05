@@ -152,7 +152,14 @@ func defaultOf(s string) string {
 	return s
 }
 
-type colDiff struct{ name, typ, null, def, comment bool }
+// autoInc: the column numbers itself (Extra: MySQL "auto_increment",
+// PostgreSQL / SQL Server "identity ...").
+func autoInc(c Column) bool {
+	e := strings.ToLower(c.Extra)
+	return strings.Contains(e, "auto_increment") || strings.Contains(e, "identity")
+}
+
+type colDiff struct{ name, typ, null, def, comment, auto bool }
 
 func diffOf(a ColumnAlter) colDiff {
 	return colDiff{
@@ -161,10 +168,11 @@ func diffOf(a ColumnAlter) colDiff {
 		null:    a.Old.Nullable != a.New.Nullable,
 		def:     defaultOf(a.Old.Default) != defaultOf(a.New.Default),
 		comment: a.Old.Comment != a.New.Comment,
+		auto:    autoInc(a.Old) != autoInc(a.New),
 	}
 }
 
-func (d colDiff) any() bool { return d.name || d.typ || d.null || d.def || d.comment }
+func (d colDiff) any() bool { return d.name || d.typ || d.null || d.def || d.comment || d.auto }
 
 // plainIdent: a name the database would take unquoted. Oracle and
 // PostgreSQL fold those (upper / lower), so a typed "new_col" is given that

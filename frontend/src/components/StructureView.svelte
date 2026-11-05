@@ -14,6 +14,7 @@
   import Modal from './Modal.svelte'
   import Dropdown from './Dropdown.svelte'
   import CellViewer from './CellViewer.svelte'
+  import ColumnDialog, { type ColumnForm } from './ColumnDialog.svelte'
 
   let {
     connId,
@@ -23,9 +24,20 @@
     version = 0,
     onchanged,
     onlog,
-  }: { connId: string; schema: string; table: Table; driver?: string; version?: number; onchanged?: () => void; onlog?: (sql: string[], outcome: string, error?: string) => void } = $props()
+    onkey,
+  }: {
+    connId: string
+    schema: string
+    table: Table
+    driver?: string
+    version?: number
+    onchanged?: () => void
+    onlog?: (sql: string[], outcome: string, error?: string) => void
+    onkey?: (kind: 'fk' | 'index', column: string) => void // a key icon was clicked
+  } = $props()
 
   let cols = $state<Column[] | null>(null)
+  let indexed = $state(new Set<string>())
   let error = $state('')
   let loadedFor = ''
 
@@ -41,6 +53,15 @@
       .ListColumns(connId, schema, tb)
       .then((c) => key === loadedFor && (cols = c ?? []))
       .catch((e) => key === loadedFor && (error = errText(e)))
+    // columns in a plain (not unique) index, for the index icon
+    api
+      .ListIndexes(connId, schema, tb)
+      .then((ix) => {
+        if (key !== loadedFor) return
+        const plain = (s: string) => s.replace(/ DESC$/, '').replace(/\(\d+\)$/, '').replace(/^["`[](.*)["`\]]$/, '$1')
+        indexed = new Set((ix ?? []).filter((x) => !x.unique).flatMap((x) => x.columns.map(plain)))
+      })
+      .catch(() => {})
     if (driver === 'mysql' || driver === 'mariadb')
       api
         .TableOptions(connId, schema, tb)
@@ -62,10 +83,11 @@
   let sel = $state(-1)
 
   // ---- editing
-  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment'
-  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string }
+  type Field = 'name' | 'type' | 'nullable' | 'default' | 'comment' | 'auto'
+  type Draft = { name: string; type: string; nullable: boolean; default: string; comment: string; auto: boolean }
+  const isAuto = (c: Column) => /auto_increment|identity/i.test(c.extra ?? '')
   let draft = $state<Record<string, Draft>>({})
-  let editing = $state<{ name: string; field: Exclude<Field, 'nullable'>; value: string } | null>(null)
+  let editing = $state<{ name: string; field: Exclude<Field, 'nullable' | 'auto'>; value: string } | null>(null)
 
   let readOnlyReason = $derived(
     driver === 'sqlite'
@@ -100,23 +122,53 @@
   let find = $state('')
 
   function current(c: Column): Draft {
-    return draft[c.name] ?? { name: c.name, type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '' }
+    return draft[c.name] ?? { name: c.name, type: c.type, nullable: c.nullable, default: def(c), comment: c.comment ?? '', auto: isAuto(c) }
   }
 
   function changed(c: Column, f: Field): boolean {
     const d = draft[c.name]
     if (!d) return false
     if (f === 'name') return d.name.trim() !== c.name
+    if (f === 'auto') return d.auto !== isAuto(c)
     if (f === 'nullable') return d.nullable !== c.nullable
     if (f === 'default') return d.default.trim() !== def(c)
     if (f === 'type') return d.type.trim().toLowerCase() !== c.type.toLowerCase()
     return d.comment !== (c.comment ?? '')
   }
 
+  const FIELDS: Field[] = ['name', 'type', 'nullable', 'default', 'comment', 'auto']
   function setField(c: Column, f: Field, v: string | boolean) {
-    const d = { ...current(c), [f]: v }
+    setDraft(c, { ...current(c), [f]: v })
+  }
+  function setDraft(c: Column, d: Draft) {
     draft[c.name] = d
-    if (!(['name', 'type', 'nullable', 'default', 'comment'] as Field[]).some((x) => changed(c, x))) delete draft[c.name]
+    if (!FIELDS.some((x) => changed(c, x))) delete draft[c.name]
+  }
+
+  // ---- ✎: a column in the detail dialog
+  let detail = $state<{ title: string; value: ColumnForm; autoReason: string; info: [string, string][]; save: (v: ColumnForm) => void } | null>(null)
+  const autoEditable = $derived(driver === 'mysql' || driver === 'mariadb' || driver === 'postgres')
+  function openDetail(c: Column) {
+    const info: [string, string][] = []
+    const keys = [c.pk && 'PK', c.unique && 'UNIQUE', c.fk && 'FK', indexed.has(c.name) && 'INDEX'].filter(Boolean).join(', ')
+    if (keys) info.push([t('키'), keys])
+    if (c.fk) info.push([t('참조'), c.fk])
+    if (c.extra) info.push([t('기타'), c.extra])
+    detail = {
+      title: `${t('컬럼 수정')} — ${c.name}`,
+      value: current(c),
+      autoReason: autoEditable ? '' : t('이 DB에서는 기존 컬럼의 자동 증가를 바꿀 수 없습니다 (테이블을 새로 만들어야 합니다)'),
+      info,
+      save: (v) => setDraft(c, v),
+    }
+  }
+  function openDetailNew(a: NewCol) {
+    detail = { title: t('새 컬럼'), value: { ...a }, autoReason: '', info: [], save: (v) => Object.assign(a, v) }
+  }
+  // what the 기타 column shows: the auto increment as it will be
+  function extraShown(c: Column, d: Draft): string {
+    if (d.auto === isAuto(c)) return c.extra ?? ''
+    return d.auto ? (driver === 'postgres' ? 'identity by default' : 'auto_increment') : ''
   }
 
   // new columns; id keeps a row's place while its name is being typed
@@ -125,7 +177,7 @@
   let nextId = 0
   const newKey = (a: NewCol) => '\0' + a.id
   function addRow() {
-    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '' }
+    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '', auto: false }
     added.push(a)
     order?.push(newKey(a))
   }
@@ -255,7 +307,7 @@
   let edits = $derived((cols ? cols.filter((c) => draft[c.name] && !dropped[c.name]).length : 0) + added.length + Object.keys(dropped).length)
   let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0) + (nameDraft !== null ? 1 : 0) + (engineDraft !== null ? 1 : 0))
 
-  function startEdit(c: Column, field: Exclude<Field, 'nullable'>) {
+  function startEdit(c: Column, field: Exclude<Field, 'nullable' | 'auto'>) {
     if (readOnlyReason || dropped[c.name]) return
     editing = { name: c.name, field, value: current(c)[field] }
   }
@@ -312,13 +364,13 @@
         const d = current(c)
         return {
           old: $state.snapshot(c),
-          new: { ...$state.snapshot(c), name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
+          new: { ...$state.snapshot(c), extra: d.auto === isAuto(c) ? c.extra : d.auto ? 'auto_increment' : '', name: d.name.trim(), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
         }
       })
   }
 
   function request() {
-    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: '' }))
+    const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: a.auto ? 'auto_increment' : '' }))
     const names = order ? rows.filter((r) => !(r.col && dropped[r.col.name])).map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
     return {
       connId,
@@ -480,7 +532,6 @@
           <th class="c">NULL</th>
           <th>{t('기본값')}</th>
           <th>{t('기타')}</th>
-          <th>{t('참조 (FK)')}</th>
           <th>{t('코멘트')}</th>
           <th class="act"></th>
         </tr>
@@ -496,9 +547,10 @@
           <tr class:sel={sel === i} class:dropped={dropped[c.name]} class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key} onclick={() => (sel = i)}>
             {@render num(i, r.key, rowNo.get(r.key) ?? i + 1)}
             <td class="k">
-              {#if c.pk}<span title={t('기본 키 (PK)')}><Icon name="key" size={12} color="var(--key-pk)" /></span>{/if}
-              {#if c.fk}<span title={t('외래 키 (FK)')}><Icon name="link" size={12} color="var(--key-fk)" /></span>{/if}
-              {#if c.unique}<span title={t('유니크 (UK)')}><Icon name="unique" size={12} color="var(--key-uk)" /></span>{/if}
+              {#if c.pk}<button class="kb" title={t('기본 키 (PK)')} onclick={() => onkey?.('index', c.name)}><Icon name="key" size={12} color="var(--key-pk)" /></button>{/if}
+              {#if c.fk}<button class="kb" title="{t('외래 키 (FK)')} → {c.fk}" onclick={() => onkey?.('fk', c.name)}><Icon name="link" size={12} color="var(--key-fk)" /></button>{/if}
+              {#if c.unique}<button class="kb" title={t('유니크 (UK)')} onclick={() => onkey?.('index', c.name)}><Icon name="unique" size={12} color="var(--key-uk)" /></button>{/if}
+              {#if indexed.has(c.name)}<button class="kb" title={t('인덱스')} onclick={() => onkey?.('index', c.name)}><Icon name="sortLines" size={12} color="var(--text-dim)" /></button>{/if}
             </td>
             {#snippet cell(field: 'name' | 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
               <td class="{cls} edit" class:edited={changed(c, field)} ondblclick={() => startEdit(c, field)}>
@@ -523,14 +575,14 @@
               </label>
             </td>
             {@render cell('default', 'mono def', cur.default, c.default?.toUpperCase() === 'NULL' ? 'NULL' : '')}
-            <td class="dim">{c.extra ?? ''}</td>
-            <td class="mono fk">{c.fk ?? ''}</td>
+            <td class="dim" class:edited={changed(c, 'auto')}>{extraShown(c, cur)}</td>
             {@render cell('comment', 'comment', cur.comment)}
             <td class="act">
               {#if !readOnlyReason}
                 {#if dropped[c.name]}
                   <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(c)}><Icon name="undo" size={13} /></button>
                 {:else}
+                  <button class="icon-btn sm" title={t('자세히 수정')} onclick={() => openDetail(c)}><Icon name="edit" size={13} /></button>
                   <button class="icon-btn sm" title={t('컬럼 삭제')} onclick={() => toggleDrop(c)}><Icon name="trash" size={13} /></button>
                 {/if}
               {/if}
@@ -550,19 +602,25 @@
               </label>
             </td>
             <td class="new"><input class="new-input mono" placeholder={t('기본값')} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
-            <td></td>
-            <td></td>
+            <td class="dim">{a.auto ? 'auto_increment' : ''}</td>
             <td class="new rel">
               <input class="new-input with-dots" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} />
               <button class="dots" title={t('큰 창에서 편집')} onclick={() => (viewing = { title: `${a.name || t('새 컬럼')} — ${t('코멘트')}`, value: a.comment, save: (v) => (a.comment = v) })}>…</button>
             </td>
-            <td class="act"><button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button></td>
+            <td class="act">
+              <button class="icon-btn sm" title={t('자세히 수정')} onclick={() => openDetailNew(a)}><Icon name="edit" size={13} /></button>
+              <button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button>
+            </td>
           </tr>
           {/if}
         {/each}
       </tbody>
     </table>
   </div>
+{/if}
+
+{#if detail}
+  <ColumnDialog title={detail.title} value={detail.value} autoReason={detail.autoReason} info={detail.info} onsave={detail.save} onclose={() => (detail = null)} />
 {/if}
 
 {#if viewing}
@@ -835,9 +893,17 @@
   .k {
     width: 1%;
   }
-  td.k span {
+  .kb {
     display: inline-flex;
     vertical-align: middle;
+    padding: 2px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+  }
+  .kb:hover {
+    background: var(--bg-hover);
   }
   .c {
     width: 1%;
@@ -851,13 +917,17 @@
   .def {
     color: var(--syn-string);
   }
-  .fk {
-    color: var(--key-fk);
-  }
+  /* a comment over several lines keeps the rows' spacing above and below */
   .comment {
-    white-space: normal;
+    white-space: pre-wrap;
     min-width: 200px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    line-height: 1.45;
     color: var(--text-dim);
+  }
+  .comment:has(.cell-input) {
+    padding: 0;
   }
   .dim {
     color: var(--text-faint);

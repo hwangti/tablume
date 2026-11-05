@@ -892,6 +892,57 @@ func TestAlterColumns(t *testing.T) {
 				}
 				c = cols()
 			}
+			{ // auto increment: off and on again where an existing column can
+				// change (MySQL/MariaDB, PostgreSQL); refused elsewhere. A new
+				// identity column everywhere but MySQL (one per table, id has it).
+				c = cols()
+				id := c["id"]
+				flip := func(on bool) ColumnAlter {
+					cur := cols()["id"]
+					nw := cur
+					nw.Extra = ""
+					if on {
+						nw.Extra = "auto_increment"
+					}
+					return ColumnAlter{Old: cur, New: nw}
+				}
+				switch name {
+				case "mariadb", "postgres":
+					want := name == "postgres" // pg: id starts without identity
+					for _, on := range []bool{want, !want} {
+						req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{flip(on)}}
+						prev, _ := m.PreviewAlter(req)
+						t.Logf("%s", strings.Join(prev, ";\n"))
+						if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+							t.Fatalf("auto %v: %+v %v", on, r, err)
+						}
+						if got := autoInc(cols()["id"]); got != on {
+							t.Errorf("auto: %v, want %v (%+v)", got, on, cols()["id"])
+						}
+					}
+				default:
+					if _, err := m.PreviewAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{flip(!autoInc(id))}}); err == nil {
+						t.Errorf("auto on an existing column: no error")
+					}
+				}
+				if name != "mariadb" {
+					typ := map[string]string{"postgres": "int", "mssql": "int", "oracle": "NUMBER"}[name]
+					req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Add: []Column{{Name: "seq_no", Type: typ, Extra: "auto_increment"}}}
+					prev, _ := m.PreviewAlter(req)
+					t.Logf("%s", strings.Join(prev, ";\n"))
+					if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+						t.Fatalf("add identity: %+v %v", r, err)
+					}
+					if name != "oracle" && !autoInc(cols()["seq_no"]) { // (Oracle's list shows no identity)
+						t.Errorf("seq_no: %+v", cols()["seq_no"])
+					}
+					sq := cols()["seq_no"].Name
+					if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Drop: []string{sq}}); err != nil || r.Error != "" {
+						t.Fatalf("drop identity col: %+v %v", r, err)
+					}
+				}
+				c = cols()
+			}
 			if name == "mariadb" { // engine
 				o, err := m.TableOptions(tg.cfg.ID, tg.schema, tbl)
 				if err != nil || o.Engine != "InnoDB" || !slices.Contains(o.Engines, "MyISAM") {
