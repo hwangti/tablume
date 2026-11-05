@@ -551,12 +551,12 @@
         </tr>
       </thead>
       <tbody bind:this={tbody}>
-        <!-- marked when moved, or changed where the table doesn't show it (hidden: what) -->
-        {#snippet num(i: number, key: string, label: string | number, hidden = '')}
+        <!-- marked when moved or changed (hidden: what changed that the table doesn't show) -->
+        {#snippet num(i: number, key: string, label: string | number, hidden = '', touched = false)}
           <td
             class="n"
             class:grip={canMove}
-            class:edited={moved[key] || !!hidden}
+            class:edited={moved[key] || touched || !!hidden}
             title={[hidden && t('바뀜: {what}', { what: hidden }), canMove && t('끌어서 순서 바꾸기')].filter(Boolean).join('\n') || undefined}
             onpointerdown={(e) => grab(e, key)}>{label}</td
           >
@@ -566,7 +566,7 @@
           {@const c = r.col}
           {@const cur = current(c)}
           <tr class:sel={sel === i} class:dropped={dropped[c.name]} class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key} onclick={() => (sel = i)}>
-            {@render num(i, r.key, rowNo.get(r.key) ?? i + 1, hiddenChanges(c))}
+            {@render num(i, r.key, rowNo.get(r.key) ?? i + 1, hiddenChanges(c), !!draft[c.name])}
             <td class="k">
               {#if c.pk}<button class="kb" title={t('기본 키 (PK)')} onclick={() => onkey?.('index', c.name)}><Icon name="key" size={12} color="var(--key-pk)" /></button>{/if}
               {#if c.fk}<button class="kb" title="{t('외래 키 (FK)')} → {c.fk}" onclick={() => onkey?.('fk', c.name)}><Icon name="link" size={12} color="var(--key-fk)" /></button>{/if}
