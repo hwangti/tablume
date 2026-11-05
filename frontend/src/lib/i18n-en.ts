@@ -418,4 +418,9 @@ export default {
   '이 상자만 원래대로': 'Put this box back',
   '자동 정렬': 'Auto arrange',
   '자동 정렬 — 옮기거나 넓힌 상자를 되돌립니다': 'Auto arrange: puts moved or widened boxes back',
+  '실행#timing': 'Execution',
+  '가져오기': 'Fetching',
+  '앱 전달': 'In the app',
+  '그리기': 'Rendering',
+  '합계': 'Total',
 } as Record<string, string>

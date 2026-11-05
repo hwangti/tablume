@@ -393,6 +393,11 @@ export interface StmtResult {
      */
     "rowsAffected": number;
     "elapsedMs": number;
+
+    /**
+     * the part of ElapsedMs spent reading rows
+     */
+    "fetchMs": number;
     "error": string;
     "notice": string;
 

@@ -127,6 +127,12 @@ export interface StmtResult {
   cursorId: string
   rowsAffected: number
   elapsedMs: number
+  fetchMs: number // the part of elapsedMs spent reading rows
+  // Measured here: the app's own share of the wait (the round trip between
+  // the window and the Go side, the session's bookkeeping) and the time
+  // until the grid was painted.
+  appMs?: number
+  renderMs?: number
   error: string
   notice: string
   source: string[] | null
