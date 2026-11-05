@@ -11,6 +11,7 @@ export type {
     EditInfo,
     ExecRequest,
     ExecResponse,
+    FKRequest,
     FetchResponse,
     ForeignKey,
     GraphTable,
@@ -25,5 +26,6 @@ export type {
     SchemaGraph,
     SchemaList,
     StmtResult,
-    Table
+    Table,
+    TableFK
 } from "./models.js";

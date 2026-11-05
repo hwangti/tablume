@@ -32,6 +32,11 @@ type AlterRequest struct {
 	// order, and Changes lists every existing column in its current order
 	// (Old = New where only the place changes). MySQL/MariaDB only.
 	Order []string `json:"order"`
+	// Drop: columns to drop (by name; not in Changes or Order).
+	Drop []string `json:"drop"`
+	// TableComment: the table's new comment; nil = unchanged (Table.Comment
+	// is the current one).
+	TableComment *string `json:"tableComment"`
 }
 
 type AlterResult struct {
@@ -46,6 +51,8 @@ type AlterResult struct {
 type alterDialect interface {
 	alterColumn(ctx context.Context, q Querier, schema string, t Table, target string, a ColumnAlter) ([]string, error)
 	addColumn(schema string, t Table, target string, c Column) []string
+	dropColumn(ctx context.Context, q Querier, schema string, t Table, target, name string) ([]string, error)
+	tableComment(schema string, t Table, target, comment string) []string
 	// transactionalDDL: the statements can run in one transaction.
 	transactionalDDL() bool
 }
@@ -154,6 +161,17 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	defer cancel()
 	target := p.d.QualifiedName(req.Schema, req.Table)
 	var out []string
+	for _, n := range req.Drop {
+		stmts, err := ad.dropColumn(ctx, p.db, req.Schema, req.Table, target, n)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("%s: %w", n, err)
+		}
+		out = append(out, stmts...)
+	}
+	var tail []string // after the column statements
+	if c := req.TableComment; c != nil && *c != req.Table.Comment {
+		tail = ad.tableComment(req.Schema, req.Table, target, *c)
+	}
 	for _, a := range req.Changes {
 		if strings.TrimSpace(a.New.Type) == "" {
 			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
@@ -191,7 +209,7 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 		for _, c := range req.Add {
 			out = append(out, ad.addColumn(req.Schema, req.Table, target, c)...)
 		}
-		return p, ad, out, nil
+		return p, ad, append(out, tail...), nil
 	}
 
 	pl, ok := p.d.(columnPlacer)
@@ -236,7 +254,7 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 			}
 		}
 	}
-	return p, ad, out, nil
+	return p, ad, append(out, tail...), nil
 }
 
 // PreviewAlter returns the statements ApplyAlter would run.

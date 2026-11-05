@@ -171,6 +171,18 @@ func (a *App) SchemaGraph(id, schema string) (dbx.SchemaGraph, error) {
 	return a.db.SchemaGraph(id, schema)
 }
 
+func (a *App) ListForeignKeys(id, schema string, t dbx.Table) ([]dbx.TableFK, error) {
+	return a.db.ListForeignKeys(id, schema, t)
+}
+
+func (a *App) PreviewForeignKeys(req dbx.FKRequest) ([]string, error) {
+	return a.db.PreviewForeignKeys(req)
+}
+
+func (a *App) ApplyForeignKeys(req dbx.FKRequest) (dbx.AlterResult, error) {
+	return a.db.ApplyForeignKeys(req)
+}
+
 func (a *App) ListIndexes(id, schema string, t dbx.Table) ([]dbx.Index, error) {
 	return a.db.ListIndexes(id, schema, t)
 }

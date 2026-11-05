@@ -343,6 +343,14 @@ func (oracleDialect) addColumn(_ string, _ Table, target string, c Column) []str
 	return out
 }
 
+func (oracleDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {
+	return []string{"ALTER TABLE " + target + " DROP COLUMN " + quoteWith(name, `"`, `"`)}, nil
+}
+
+func (oracleDialect) tableComment(_ string, _ Table, target, comment string) []string {
+	return []string{"COMMENT ON TABLE " + target + " IS " + sqlQuote(comment, false)}
+}
+
 func (oracleDialect) Routines(ctx context.Context, q Querier, schema string) ([]Routine, error) {
 	return scanRoutines(ctx, q, `SELECT owner, object_name, object_type, '', ''
 		FROM all_objects WHERE owner = :1 AND object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE')
