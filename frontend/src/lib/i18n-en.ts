@@ -377,4 +377,9 @@ export default {
   '추가': 'Add',
   '인덱스 변경 적용 — {n}개 문장': 'Apply index changes — {n} {n|statement|statements}',
   '큰 테이블은 인덱스를 만드는 동안 시간이 걸리고 쓰기가 막힐 수 있습니다.': 'On a large table, creating an index takes time and may block writes.',
+  '실행#timing': 'Execution',
+  '가져오기': 'Fetching',
+  '앱 전달': 'In the app',
+  '그리기': 'Rendering',
+  '합계': 'Total',
 } as Record<string, string>

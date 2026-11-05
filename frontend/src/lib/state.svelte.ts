@@ -653,6 +653,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   tab.running = true
   tab.startedAt = Date.now()
   try {
+    const t0 = performance.now()
     const res = await api.Execute({
       tabId: tab.id,
       connId: tab.connId,
@@ -661,8 +662,11 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       cursor,
       fetch: app.pageSize,
     })
+    const wait = performance.now() - t0
+    const appMs = Math.max(0, Math.round(wait - (res.results ?? []).reduce((a, r) => a + r.elapsedMs, 0)))
     const results = (res.results ?? []).map((r) => ({
       ...r,
+      appMs,
       from: r.from + offset,
       to: r.to + offset,
       rows: r.rows ?? [],
@@ -684,6 +688,11 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     const failed = results.some((r) => r.error)
     tab.results = grids
     tab.activeResult = failed || grids.length === 0 ? -1 : grids.length - 1
+    // Until the next paint: the frame runs after the DOM update, the timeout
+    // after that frame is drawn.
+    const shown = tab.results
+    const t1 = performance.now()
+    requestAnimationFrame(() => setTimeout(() => shown.forEach((r) => (r.renderMs = Math.round(performance.now() - t1)))))
     return results
   } catch (e) {
     log(tab, 'error', errText(e))

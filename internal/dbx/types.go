@@ -93,6 +93,7 @@ type StmtResult struct {
 	Paged        bool   `json:"paged"`
 	RowsAffected int64  `json:"rowsAffected"` // -1 when unknown
 	ElapsedMs    int64  `json:"elapsedMs"`
+	FetchMs      int64  `json:"fetchMs"` // the part of ElapsedMs spent reading rows
 	Error        string `json:"error"`
 	Notice       string `json:"notice"`
 	// Source is the table a plain single-table SELECT reads from, as written.

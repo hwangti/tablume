@@ -636,6 +636,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			out, abandoned = s.runStmt(ctx, st.SQL, query, fetch)
 		}
 		r.ElapsedMs = time.Since(start).Milliseconds()
+		r.FetchMs = min(out.fetch.Milliseconds(), r.ElapsedMs)
 		if abandoned {
 			r.Error = i18n.T("사용자에 의해 취소됨 (서버가 취소에 응답하지 않아 이 탭의 연결을 새로 엽니다)")
 			resp.Results = append(resp.Results, r)
@@ -708,6 +709,9 @@ type stmtOut struct {
 	more bool
 	res  sql.Result
 	err  error
+	// time spent reading rows (the rest of the statement's time is
+	// running it until the first result arrives)
+	fetch time.Duration
 }
 
 // runStmt runs one statement on the session connection. If the context is
@@ -723,7 +727,9 @@ func (s *session) runStmt(ctx context.Context, q string, query bool, fetch int) 
 			o.rows, o.err = conn.QueryContext(ctx, q)
 			if o.err == nil {
 				o.cols, _ = o.rows.ColumnTypes()
+				t := time.Now()
 				o.data, o.more, o.err = readRows(o.rows, o.cols, fetch)
+				o.fetch = time.Since(t)
 			}
 		} else {
 			o.res, o.err = conn.ExecContext(ctx, q)
