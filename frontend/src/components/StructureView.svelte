@@ -1,7 +1,8 @@
 <script lang="ts">
   // The table's columns as a table (the "컬럼" side of the structure tab). Type,
-  // NULL, default and comment can be edited, and columns added at the end:
-  // the changes become ALTER statements that are shown before they run.
+  // NULL, default and comment can be edited, columns added, and on
+  // MySQL/MariaDB the rows dragged into another order: the changes become
+  // ALTER statements that are shown before they run.
   import { t } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
   import { copyText } from '../lib/clipboard'
@@ -30,8 +31,7 @@
     loadedFor = key
     cols = null
     error = ''
-    draft = {}
-    added = []
+    revert()
     api
       .ListColumns(connId, schema, $state.snapshot(table))
       .then((c) => key === loadedFor && (cols = c ?? []))
@@ -45,7 +45,7 @@
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
     const v = version
     if (key !== loadedFor) load()
-    else if (v !== loadedVersion && !Object.keys(draft).length && !added.length) load()
+    else if (v !== loadedVersion && !Object.keys(draft).length && !added.length && !order) load()
     loadedVersion = v
   })
 
@@ -86,9 +86,20 @@
     if (!(['type', 'nullable', 'default', 'comment'] as Field[]).some((x) => changed(c, x))) delete draft[c.name]
   }
 
-  // new columns, appended at the end
-  let added = $state<(Draft & { name: string })[]>([])
-  const addRow = () => added.push({ name: '', type: '', nullable: true, default: '', comment: '' })
+  // new columns; id keeps a row's place while its name is being typed
+  type NewCol = Draft & { name: string; id: number }
+  let added = $state<NewCol[]>([])
+  let nextId = 0
+  const newKey = (a: NewCol) => '\0' + a.id
+  function addRow() {
+    const a = { id: ++nextId, name: '', type: '', nullable: true, default: '', comment: '' }
+    added.push(a)
+    order?.push(newKey(a))
+  }
+  function removeNew(a: NewCol) {
+    added = added.filter((x) => x.id !== a.id)
+    if (order) order = order.filter((k) => k !== newKey(a))
+  }
   let addError = $derived.by(() => {
     const seen = new Set((cols ?? []).map((c) => c.name.toLowerCase()))
     for (const a of added) {
@@ -100,9 +111,98 @@
     }
     return ''
   })
-  const revert = () => ((draft = {}), (added = []))
+  function revert() {
+    draft = {}
+    added = []
+    order = null
+    moved = {}
+  }
 
-  let pending = $derived((cols ? cols.filter((c) => draft[c.name]).length : 0) + added.length)
+  // ---- order (MySQL/MariaDB): a row is dragged by its number
+  const canMove = $derived(!readOnlyReason && (driver === 'mysql' || driver === 'mariadb'))
+  let order = $state<string[] | null>(null) // row keys; null = as loaded, new ones last
+  let moved = $state<Record<string, true>>({}) // rows the user dragged
+  type Row = { key: string; col?: Column; add?: NewCol }
+  let rows = $derived.by((): Row[] => {
+    const all: Row[] = [...(cols ?? []).map((c) => ({ key: c.name, col: c })), ...added.map((a) => ({ key: newKey(a), add: a }))]
+    if (!order) return all
+    const by = new Map(all.map((r) => [r.key, r]))
+    return order.flatMap((k) => by.get(k) ?? [])
+  })
+
+  let tbody = $state<HTMLTableSectionElement>()
+  let drag = $state<{ key: string; to: number } | null>(null)
+
+  function grab(e: PointerEvent, key: string) {
+    if (!canMove || e.button !== 0 || !tbody) return
+    e.preventDefault()
+    const body = tbody
+    let sc = body.parentElement
+    while (sc && !(sc.scrollHeight > sc.clientHeight && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement
+    let y = e.clientY
+    drag = { key, to: -1 }
+    let raf = 0
+    // the row the pointer is above the middle of (rows.length = after the last)
+    const aim = () => {
+      const trs = body.rows
+      let to = trs.length
+      for (let i = 0; i < trs.length; i++) {
+        const r = trs[i].getBoundingClientRect()
+        if (y < r.top + r.height / 2) {
+          to = i
+          break
+        }
+      }
+      if (drag) drag.to = to
+    }
+    const tick = () => {
+      if (sc) {
+        // near the top (under the sticky header) or bottom edge: scroll
+        const r = sc.getBoundingClientRect()
+        if (y < r.top + 56) sc.scrollTop -= 14
+        else if (y > r.bottom - 28) sc.scrollTop += 14
+      }
+      aim()
+      raf = requestAnimationFrame(tick)
+    }
+    const move = (ev: PointerEvent) => (y = ev.clientY)
+    const end = (drop: boolean) => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('keydown', key_, true)
+      document.body.classList.remove('dragging-row')
+      if (drop && drag && drag.to >= 0) moveTo(drag.key, drag.to)
+      drag = null
+    }
+    const up = (ev: PointerEvent) => ((y = ev.clientY), aim(), end(true))
+    const key_ = (ev: KeyboardEvent) => ev.key === 'Escape' && (ev.stopPropagation(), end(false))
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('keydown', key_, true)
+    document.body.classList.add('dragging-row')
+    tick()
+  }
+
+  function moveTo(key: string, to: number) {
+    const keys = rows.map((r) => r.key)
+    const from = keys.indexOf(key)
+    if (from < 0 || to === from || to === from + 1) return
+    keys.splice(from, 1)
+    keys.splice(to > from ? to - 1 : to, 0, key)
+    const natural = [...(cols ?? []).map((c) => c.name), ...added.map(newKey)]
+    if (keys.every((k, i) => k === natural[i])) {
+      order = null
+      moved = {}
+    } else {
+      order = keys
+      moved[key] = true
+    }
+    sel = keys.indexOf(key)
+  }
+
+  let edits = $derived((cols ? cols.filter((c) => draft[c.name]).length : 0) + added.length)
+  let pending = $derived(edits + (order ? 1 : 0))
 
   function startEdit(c: Column, field: Exclude<Field, 'nullable'>) {
     if (readOnlyReason) return
@@ -133,11 +233,12 @@
     node.select()
   }
 
+  // with a new order the server needs every column (it restates the moved ones)
   function changes() {
     return (cols ?? [])
-      .filter((c) => draft[c.name])
+      .filter((c) => order || draft[c.name])
       .map((c) => {
-        const d = draft[c.name]
+        const d = current(c)
         return {
           old: $state.snapshot(c),
           new: { ...$state.snapshot(c), type: d.type.trim(), nullable: d.nullable, default: d.default.trim(), comment: d.comment },
@@ -147,7 +248,8 @@
 
   function request() {
     const add = added.map((a) => ({ name: a.name.trim(), type: a.type.trim(), nullable: a.nullable, default: a.default.trim(), comment: a.comment, pk: false, unique: false, fk: '', extra: '' }))
-    return { connId, schema, table: $state.snapshot(table), changes: changes(), add }
+    const names = order ? rows.map((r) => (r.col ? r.col.name : r.add!.name.trim())) : undefined
+    return { connId, schema, table: $state.snapshot(table), changes: changes(), add, order: names }
   }
 
   // ---- apply: preview the statements, then run them
@@ -221,11 +323,12 @@
         <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> {t('읽기 전용')}</span>
       {:else if pending > 0}
         {#if addError}<span class="adderr">{addError}</span>{/if}
-        <span class="pending">{t('컬럼 {n}개 변경', { n: pending })}</span>
+        {#if edits}<span class="pending">{t('컬럼 {n}개 변경', { n: edits })}</span>{/if}
+        {#if order}<span class="pending">{t('순서 변경')}</span>{/if}
         <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('적용')}</button>
         <button class="btn mini" onclick={revert}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
       {:else}
-        <span class="hint">{t('타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
+        <span class="hint">{canMove ? t('타입·NULL·기본값·코멘트는 더블클릭, 순서는 번호를 끌어서 바꿀 수 있습니다') : t('타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
       {/if}
     </div>
     <table>
@@ -242,11 +345,16 @@
           <th>{t('코멘트')}</th>
         </tr>
       </thead>
-      <tbody>
-        {#each cols as c, i (c.name)}
+      <tbody bind:this={tbody}>
+        {#snippet num(i: number, key: string, label: string | number)}
+          <td class="n" class:grip={canMove} class:edited={moved[key]} title={canMove ? t('끌어서 순서 바꾸기') : undefined} onpointerdown={(e) => grab(e, key)}>{label}</td>
+        {/snippet}
+        {#each rows as r, i (r.key)}
+          {#if r.col}
+          {@const c = r.col}
           {@const cur = current(c)}
-          <tr class:sel={sel === i} onclick={() => (sel = i)}>
-            <td class="n">{i + 1}</td>
+          <tr class:sel={sel === i} class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key} onclick={() => (sel = i)}>
+            {@render num(i, r.key, i + 1)}
             <td class="k">
               {#if c.pk}<span title={t('기본 키 (PK)')}><Icon name="key" size={12} color="var(--key-pk)" /></span>{/if}
               {#if c.fk}<span title={t('외래 키 (FK)')}><Icon name="link" size={12} color="var(--key-fk)" /></span>{/if}
@@ -272,10 +380,10 @@
             <td class="mono fk">{c.fk ?? ''}</td>
             {@render cell('comment', 'comment', cur.comment)}
           </tr>
-        {/each}
-        {#each added as a, i (i)}
-          <tr class="added">
-            <td class="n">+</td>
+          {:else if r.add}
+          {@const a = r.add}
+          <tr class="added" class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key}>
+            {@render num(i, r.key, '+')}
             <td class="k"></td>
             <td class="new"><input class="new-input mono" placeholder={t('이름')} bind:value={a.name} use:focus onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td class="new"><input class="new-input mono" placeholder="varchar(50)" bind:value={a.type} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
@@ -286,10 +394,11 @@
               </label>
             </td>
             <td class="new"><input class="new-input mono" placeholder={t('기본값')} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
-            <td><button class="icon-btn sm" title={t('추가 취소')} onclick={() => added.splice(i, 1)}><Icon name="close" size={13} /></button></td>
+            <td><button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button></td>
             <td></td>
             <td class="new"><input class="new-input" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} /></td>
           </tr>
+          {/if}
         {/each}
       </tbody>
     </table>
@@ -303,6 +412,9 @@
         {t('아래 문장을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.')}
       {:else}
         {t('아래 문장을 차례로 실행합니다. 이 DB는 DDL을 되돌릴 수 없어서, 중간에 실패하면 그 앞까지는 적용된 채로 남습니다.')}
+      {/if}
+      {#if order}
+        {t('컬럼 위치를 옮기면 테이블을 통째로 다시 쓸 수 있습니다. 행이 많으면 오래 걸리고 그동안 쓰기가 막힐 수 있습니다.')}
       {/if}
     </p>
     <SqlPreview sql={apply.sql} driver={driver} />
@@ -410,6 +522,25 @@
     border: 2px solid var(--accent);
     border-radius: 0;
     font-size: 12.5px;
+  }
+  td.grip {
+    cursor: grab;
+  }
+  td.grip:hover {
+    color: var(--text);
+  }
+  :global(body.dragging-row) {
+    cursor: grabbing;
+    user-select: none;
+  }
+  tr.dragging {
+    opacity: 0.45;
+  }
+  tr.drop td {
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  tr.drop-end td {
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   tr.added {
     background: color-mix(in srgb, var(--ok) 12%, transparent);

@@ -25,6 +25,7 @@ export interface AlterRequest {
   table: Table
   changes: { old: Column; new: Column }[]
   add: Column[]
+  order?: string[]
 }
 
 // Typed view over the generated Wails bindings, using our own types

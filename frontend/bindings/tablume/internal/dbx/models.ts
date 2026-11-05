@@ -6,6 +6,19 @@ export interface AlterRequest {
     "schema": string;
     "table": Table;
     "changes": ColumnAlter[] | null;
+
+    /**
+     * Add: new columns, appended after the existing ones (Name, Type,
+     * Nullable, Default, Comment).
+     */
+    "add": Column[] | null;
+
+    /**
+     * Order: when set, every column name (existing and new) in the wanted
+     * order, and Changes lists every existing column in its current order
+     * (Old = New where only the place changes). MySQL/MariaDB only.
+     */
+    "order": string[] | null;
 }
 
 export interface AlterResult {

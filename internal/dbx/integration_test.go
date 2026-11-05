@@ -802,6 +802,36 @@ func TestAlterColumns(t *testing.T) {
 			if n, ok := c["new_n"]; !ok || !n.Nullable {
 				t.Errorf("new_n: %+v", n)
 			}
+			if name == "mariadb" { // reorder, and add in the middle
+				cs, _ := m.Columns(tg.cfg.ID, tg.schema, tbl)
+				var ch []ColumnAlter
+				for _, c := range cs {
+					ch = append(ch, ColumnAlter{Old: c, New: c})
+				}
+				want := []string{"new_n", "id", "a", "mid", "b", "new_z"}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: ch, Order: want,
+					Add: []Column{{Name: "mid", Type: "int", Nullable: true}}}
+				prev, err := m.PreviewAlter(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("reorder: %+v %v", r, err)
+				}
+				cs, _ = m.Columns(tg.cfg.ID, tg.schema, tbl)
+				var got []string
+				for _, c := range cs {
+					got = append(got, c.Name)
+				}
+				if strings.Join(got, ",") != strings.Join(want, ",") {
+					t.Errorf("order: %v", got)
+				}
+				c = cols()
+				if !strings.Contains(strings.ToLower(c["id"].Extra), "auto_increment") {
+					t.Errorf("auto_increment lost: %+v", c["id"])
+				}
+			}
 			// a failing change reports its error
 			bad := c["a"]
 			nbad := bad
