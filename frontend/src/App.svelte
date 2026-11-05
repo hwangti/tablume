@@ -91,8 +91,42 @@
     }
   }
 
+  // A phone: the tree is a drawer over the content, folded away by default.
+  // Not app.sidebarHidden: the workspace is shared with the desktop's browser.
+  const narrowMq = matchMedia('(max-width: 700px)')
+  let narrow = $state(narrowMq.matches)
+  narrowMq.addEventListener('change', (e) => ((narrow = e.matches), (drawer = false)))
+  let drawer = $state(false)
+  // Opening a table or a console from it is what it was opened for: a tap
+  // on a table (the one already shown too) or a tab opened from a menu. A
+  // moment later, so a double tap still reaches the tree (it pins the tab).
+  let closing: ReturnType<typeof setTimeout> | undefined
+  const closeDrawerSoon = () => {
+    clearTimeout(closing)
+    closing = setTimeout(() => (drawer = false), 300)
+  }
+  const shownKey = () => {
+    const t = app.tabs.find((x) => x.id === app.activeTab)
+    return `${app.activeTab}|${app.tabs.length}|${t?.schema}|${t?.title}`
+  }
+  let shown = shownKey()
+  $effect(() => {
+    const k = shownKey()
+    if (k !== shown && narrow && drawer) closeDrawerSoon()
+    shown = k
+  })
+  function drawerClick(e: MouseEvent) {
+    const el = e.target as Element
+    if (narrow && el.closest('.node.table, .node.routine') && !el.closest('.chev')) closeDrawerSoon()
+  }
+
   // The sidebar button and Ctrl/⌘+B; in 넓게 보기 they bring everything back.
   function sideToggle() {
+    if (narrow) {
+      drawer = app.wide || !drawer
+      app.wide = false
+      return
+    }
     if (app.wide) {
       app.wide = false
       if (app.sidebarHidden) toggleSidebar()
@@ -294,7 +328,8 @@
     document.title = t ? `${t.title} — Tablume` : 'Tablume'
   })
 
-  const sideGone = $derived(app.sidebarHidden || app.wide)
+  const sideHidden = $derived(narrow ? !drawer : app.sidebarHidden)
+  const sideGone = $derived(sideHidden || app.wide)
 
   // A tab window is titled after its tab.
   $effect(() => {
@@ -333,11 +368,19 @@
     </div>
   </div>
 {:else}
-<div class="layout" style:grid-template-columns={sideGone ? '1fr' : `${sideW}px 1px 1fr`}>
+<div class="layout" style:grid-template-columns={sideGone || narrow ? '1fr' : `${sideW}px 1px 1fr`}>
   <!-- hidden, not removed: the tree keeps what is expanded, the filter, … -->
-  <div class="side" class:gone={sideGone}><Sidebar /></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="vdivider" class:gone={sideGone} onmousedown={startDrag}></div>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="side" class:gone={sideGone} class:drawer={narrow} onclick={drawerClick}><Sidebar /></div>
+  {#if narrow}
+    {#if !sideGone}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="scrim" onclick={() => (drawer = false)}></div>
+    {/if}
+  {:else}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="vdivider" class:gone={sideGone} onmousedown={startDrag}></div>
+  {/if}
 
   <main>
     {#if app.wide}
@@ -358,10 +401,10 @@
     <div class="strip">
     <button
       class="icon-btn strip-btn"
-      title="{tr(app.sidebarHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)"
+      title="{tr(sideHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)"
       onclick={sideToggle}
     >
-      <Icon name={app.sidebarHidden ? 'sidebarOff' : 'sidebar'} />
+      <Icon name={sideHidden ? 'sidebarOff' : 'sidebar'} />
     </button>
     <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
     <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel} onscroll={tabsEdges}>
@@ -546,6 +589,21 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  /* a phone: over the content from the left, the rest dimmed */
+  .side.drawer {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(86vw, 360px);
+    z-index: 40;
+    background: var(--bg-panel);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.28);
+  }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: rgba(0, 0, 0, 0.28);
   }
   .gone {
     display: none;
