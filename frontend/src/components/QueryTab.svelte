@@ -25,6 +25,7 @@
     toast,
     confirmBox,
     reloadTable,
+    connect,
     countResult,
     fetchPrev,
     jumpTo,
@@ -105,7 +106,7 @@
   }
   $effect(() => {
     const ref = tab.tableRef
-    if (!ref || tableView !== 'ddl') return
+    if (!ref || tableView !== 'ddl' || !connected) return // (restored tab: after "연결하고 불러오기")
     const key = `${tab.connId}|${ref.schema}|${ref.table.schema}.${ref.table.name}|${ddlVersion}`
     if (key === ddlFor) return
     ddlFor = key
@@ -774,7 +775,16 @@
             <div class="loading-pill"><span class="spin"></span> {t('데이터 불러오는 중…')} {elapsed}</div>
           </div>
         {/if}
-        {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
+        {#if isTable && tableView === 'ddl' && !connected}
+          <!-- a tab restored from the last session: as for the data -->
+          <div class="reload-blank">
+            <button class="btn primary" disabled={st?.status === 'connecting'} onclick={() => connect(tab.connId)}>
+              <Icon name="plug" size={14} />
+              {st?.status === 'connecting' ? t('연결 중…') : t('연결하고 불러오기')}
+            </button>
+            {#if conn}<span class="dim">{conn.name}</span>{/if}
+          </div>
+        {:else if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
           <div class="structure">
             <StructureView
               connId={tab.connId}

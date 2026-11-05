@@ -360,6 +360,7 @@ export default {
   '고치기': 'Change',
   '추가 취소': 'Remove',
   '컬럼 추가': 'Add column',
+  '연결 중…': 'Connecting…',
   "SQL 식 (예: 0, 'a', CURRENT_TIMESTAMP) · 비우면 기본값 없음": "An SQL expression (e.g. 0, 'a', CURRENT_TIMESTAMP) · empty: no default",
   "SQL 식입니다. 문자열은 'a'처럼 따옴표로 감쌉니다. 비우거나 NULL이면 기본값 없음 (NULL 허용 컬럼은 NULL)": "An SQL expression: quote text like 'a'. Empty or NULL: no default (NULL for a nullable column)",
   '바뀜: {what}': 'Changed: {what}',
