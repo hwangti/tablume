@@ -833,6 +833,35 @@ func TestAlterColumns(t *testing.T) {
 					t.Errorf("table comment: %q", x.Comment)
 				}
 			}
+			{ // comment and rename together, then the name back
+				cur, tc := tbl, "tc3"
+				cur.Comment = "tc2"
+				to := "alt_r"
+				if name == "oracle" {
+					to = "ALT_R"
+				}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: cur, TableComment: &tc, Rename: to}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("rename: %+v %v", r, err)
+				}
+				found := false
+				ts, _ := m.Tables(tg.cfg.ID, tg.schema)
+				for _, x := range ts {
+					if x.Name == to {
+						found = x.Comment == "tc3"
+					}
+				}
+				if !found {
+					t.Errorf("renamed table with its comment not found")
+				}
+				back := cur
+				back.Name = to
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: back, Rename: tbl.Name}); err != nil || r.Error != "" {
+					t.Fatalf("rename back: %+v %v", r, err)
+				}
+			}
 			if name == "mariadb" { // reorder, and add in the middle
 				cs, _ := m.Columns(tg.cfg.ID, tg.schema, tbl)
 				var ch []ColumnAlter

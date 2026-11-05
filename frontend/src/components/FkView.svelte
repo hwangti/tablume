@@ -10,6 +10,7 @@
   import Icon from './Icon.svelte'
   import SqlPreview from './SqlPreview.svelte'
   import Modal from './Modal.svelte'
+  import Dropdown from './Dropdown.svelte'
 
   let {
     connId,
@@ -69,6 +70,9 @@
           ? ['NO ACTION', 'CASCADE', 'SET NULL', 'SET DEFAULT']
           : ['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'],
   )
+
+  const ruleOpts = $derived(rules.map((r) => ({ value: r, label: r })))
+  const colOpts = (cs: Column[]) => cs.map((c) => ({ value: c.name, label: c.name, hint: c.type.toLowerCase() }))
 
   // ---- add dialog
   type Form = { name: string; named: boolean; ref: number; pairs: { col: string; ref: string }[]; onDelete: string; onUpdate: string }
@@ -269,28 +273,24 @@
   <Modal title={t('외래 키 추가')} onclose={() => (form = null)} width={620} dismissible={false} onsubmit={saveForm}>
     <div class="form">
       <div class="frow">
-        <label class="lbl" for="fk-ref">{t('참조 테이블')}</label>
-        <select id="fk-ref" value={form.ref} onchange={(e) => pickRef(Number(e.currentTarget.value))}>
-          <option value={-1}>{t('고르세요')}</option>
-          {#each tables as tb, i (i)}
-            <option value={i}>{tb.schema && driver === 'mssql' ? tb.schema + '.' : ''}{tb.name}</option>
-          {/each}
-        </select>
+        <span class="lbl">{t('참조 테이블')}</span>
+        <Dropdown
+          value={form.ref}
+          options={tables.map((tb, i) => ({ value: i, label: (tb.schema && driver === 'mssql' ? tb.schema + '.' : '') + tb.name, hint: tb.comment }))}
+          onchange={pickRef}
+          placeholder={t('고르세요')}
+          mono
+          width="100%"
+        />
       </div>
       <div class="frow top">
         <span class="lbl">{t('컬럼')}</span>
         <div class="pairs">
           {#each form.pairs as p, i (i)}
             <div class="pair">
-              <select bind:value={p.col}>
-                <option value="">{t('이 테이블 컬럼')}</option>
-                {#each cols as c (c.name)}<option value={c.name}>{c.name}</option>{/each}
-              </select>
+              <Dropdown value={p.col} options={colOpts(cols)} onchange={(v) => (p.col = v)} placeholder={t('이 테이블 컬럼')} mono width="100%" />
               <Icon name="chevron" size={12} />
-              <select bind:value={p.ref}>
-                <option value="">{t('참조할 컬럼')}</option>
-                {#each refCols as c (c.name)}<option value={c.name}>{c.name}</option>{/each}
-              </select>
+              <Dropdown value={p.ref} options={colOpts(refCols)} onchange={(v) => (p.ref = v)} placeholder={t('참조할 컬럼')} mono width="100%" />
               <button class="icon-btn sm" title={t('빼기')} onclick={() => form?.pairs.splice(i, 1)}><Icon name="close" size={12} /></button>
             </div>
           {/each}
@@ -301,10 +301,10 @@
       </div>
       <div class="frow">
         <span class="lbl">ON DELETE</span>
-        <select bind:value={form.onDelete}>{#each rules as r (r)}<option value={r}>{r}</option>{/each}</select>
+        <Dropdown value={form.onDelete} options={ruleOpts} onchange={(v) => form && (form.onDelete = v)} width="130px" />
         {#if driver !== 'oracle'}
           <span class="lbl right">ON UPDATE</span>
-          <select bind:value={form.onUpdate}>{#each rules as r (r)}<option value={r}>{r}</option>{/each}</select>
+          <Dropdown value={form.onUpdate} options={ruleOpts} onchange={(v) => form && (form.onUpdate = v)} width="130px" />
         {/if}
       </div>
       <div class="frow">
@@ -491,9 +491,8 @@
     align-items: center;
     gap: 6px;
   }
-  .pair select {
-    flex: 1;
-    min-width: 0;
+  .frow input {
+    height: 26px;
   }
   .addpair {
     align-self: flex-start;

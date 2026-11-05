@@ -36,6 +36,7 @@ export interface AlterRequest {
   order?: string[]
   drop?: string[]
   tableComment?: string
+  rename?: string
 }
 
 // Typed view over the generated Wails bindings, using our own types
