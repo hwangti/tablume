@@ -101,6 +101,7 @@ export interface StmtResult {
   rowsAffected: number
   elapsedMs: number
   fetchMs: number // the part of elapsedMs spent reading rows
+  sentSql?: string // the statement as sent when it differs (paged: LIMIT/OFFSET added)
   // Measured here: the app's own share of the wait (the round trip between
   // the window and the Go side, the session's bookkeeping) and the time
   // until the grid was painted.

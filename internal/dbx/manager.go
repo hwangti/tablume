@@ -623,6 +623,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			out, abandoned = s.runStmt(ctx, q, true, fetch+1)
 			paged = out.err == nil && !abandoned
 			if paged {
+				r.SentSQL = q
 				out.rows.Close()
 				out.more = len(out.data) > fetch
 				out.data = out.data[:min(len(out.data), fetch)]
@@ -837,6 +838,7 @@ func (m *Manager) FetchPage(tabID, connID, stmt string, offset, n int) (FetchRes
 		out, abandoned := s.runStmt(ctx, q, true, n+1)
 		resp.ElapsedMs = time.Since(start).Milliseconds()
 		resp.FetchMs = min(out.fetch.Milliseconds(), resp.ElapsedMs)
+		resp.SentSQL = q
 		if abandoned {
 			return i18n.Error("사용자에 의해 취소됨")
 		}

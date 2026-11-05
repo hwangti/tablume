@@ -382,4 +382,5 @@ export default {
   '앱 전달': 'In the app',
   '그리기': 'Rendering',
   '합계': 'Total',
+  '열어 둔 결과에서 이어서 읽음': 'read on from the open result',
 } as Record<string, string>
