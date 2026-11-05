@@ -18,7 +18,16 @@
     driver = '',
     onchanged,
     onlog,
-  }: { connId: string; schema: string; table: Table; driver?: string; onchanged?: () => void; onlog?: (sql: string[], outcome: string, error?: string) => void } = $props()
+    highlight = null,
+  }: {
+    connId: string
+    schema: string
+    table: Table
+    driver?: string
+    onchanged?: () => void
+    onlog?: (sql: string[], outcome: string, error?: string) => void
+    highlight?: { column: string; n: number } | null
+  } = $props()
 
   let indexes = $state<Index[] | null>(null)
   let cols = $state<Column[]>([])
@@ -50,6 +59,21 @@
   $effect(() => {
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
     if (key !== loadedFor) load()
+  })
+
+
+  // ---- a key icon clicked in the columns: flash the rows with that column
+  let flash = $state(new Set<string>())
+  let flashTimer = 0
+  $effect(() => {
+    const h = highlight
+    const list = indexes
+    if (!h || !list) return
+    const col = h.column.toLowerCase()
+    flash = new Set(list.filter((x) => x.columns.map((c) => c.replace(/ DESC$/, '').replace(/\(\d+\)$/, '').replace(/^["`[](.*)["`\]]$/, '$1')).some((c) => c.toLowerCase() === col)).map((x) => x.name))
+    clearTimeout(flashTimer)
+    flashTimer = window.setTimeout(() => (flash = new Set()), 1800)
+    requestAnimationFrame(() => document.querySelector(`[data-flash="${h.n}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   })
 
   let readOnlyReason = $derived(table.type.toUpperCase().includes('VIEW') ? t('뷰의 인덱스는 여기서 바꿀 수 없습니다') : '')
@@ -258,6 +282,8 @@
           {@const blockEdit = editBlock(ix)}
           {@const blockDrop = dropBlock(ix)}
           <tr
+            class:flash={flash.has(ix.name)}
+            data-flash={flash.has(ix.name) && i === indexes.findIndex((x) => flash.has(x.name)) ? highlight?.n : undefined}
             class:sel={sel === ix.name}
             class:dropped={dropped[ix.name]}
             onclick={() => (sel = ix.name)}
@@ -660,5 +686,17 @@
   .err-note {
     margin-top: 6px;
     color: var(--text-dim);
+  }
+  tr.flash td {
+    animation: flash 1.8s ease-out;
+  }
+  @keyframes flash {
+    0%,
+    40% {
+      background: color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    100% {
+      background: transparent;
+    }
   }
 </style>

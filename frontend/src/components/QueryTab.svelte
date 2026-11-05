@@ -108,6 +108,8 @@
   let ddlError = $state('')
   let ddlFor = ''
   let ddlVersion = $state(0) // bumped when the columns were altered
+  // a key icon clicked in the columns: the index / foreign key rows to show
+  let keyHl = $state<{ kind: 'fk' | 'index'; column: string; n: number } | null>(null)
   $effect(() => {
     const ref = tab.tableRef
     if (!ref || tableView !== 'ddl') return
@@ -789,8 +791,10 @@
               version={ddlVersion}
               onchanged={structureChanged}
               onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+              onkey={(kind, column) => (keyHl = { kind, column, n: (keyHl?.n ?? 0) + 1 })}
             />
             <IndexView
+              highlight={keyHl?.kind === 'index' ? keyHl : null}
               connId={tab.connId}
               schema={tab.tableRef.schema}
               table={tab.tableRef.table}
@@ -800,6 +804,7 @@
             />
             {#if conn?.driver !== 'sqlite'}
               <FkView
+                highlight={keyHl?.kind === 'fk' ? keyHl : null}
                 connId={tab.connId}
                 schema={tab.tableRef.schema}
                 table={tab.tableRef.table}

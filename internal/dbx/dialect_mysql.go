@@ -140,7 +140,7 @@ func (mysqlDialect) alterColumn(ctx context.Context, q Querier, schema string, t
 		def += " DEFAULT " + d
 	}
 	ex := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(extra.String, "DEFAULT_GENERATED", "")))
-	if strings.Contains(ex, "auto_increment") {
+	if autoInc(n) { // as wanted: on, off or kept
 		def += " AUTO_INCREMENT"
 	}
 	if i := strings.Index(ex, "on update "); i >= 0 {
@@ -186,6 +186,9 @@ func (mysqlDialect) addColumn(_ string, _ Table, target string, c Column) []stri
 	}
 	if c.Default != "" {
 		def += " DEFAULT " + c.Default
+	}
+	if autoInc(c) {
+		def += " AUTO_INCREMENT"
 	}
 	if c.Comment != "" {
 		def += " COMMENT " + sqlQuote(c.Comment, true)

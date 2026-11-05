@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"tablume/internal/i18n"
 
 	_ "github.com/microsoft/go-mssqldb"
 )
@@ -372,6 +373,9 @@ func nq(s string) string { return "N" + sqlQuote(s, false) }
 
 func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Table, target string, a ColumnAlter) ([]string, error) {
 	d := diffOf(a)
+	if d.auto {
+		return nil, i18n.Error("이 DB에서는 기존 컬럼의 자동 증가를 바꿀 수 없습니다 (테이블을 새로 만들어야 합니다)")
+	}
 	sch := t.Schema
 	if sch == "" {
 		sch = "dbo"
@@ -423,6 +427,9 @@ func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Tab
 
 func (mssqlDialect) addColumn(db string, t Table, target string, c Column) []string {
 	def := "ALTER TABLE " + target + " ADD " + msq(c.Name) + " " + c.Type
+	if autoInc(c) {
+		def += " IDENTITY(1,1)"
+	}
 	if c.Nullable {
 		def += " NULL"
 	} else {
