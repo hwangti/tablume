@@ -1076,16 +1076,29 @@ export async function renameTable(connId: string, schema: string, t: Table) {
     return
   }
   toast(`${t.name} → ${name}`)
+  for (const tab of retargetTable(connId, schema, t, { name })) logStatements(tab, [st], tr(view ? '뷰 이름 바꿈' : '테이블 이름 바꿈'))
+  await treeChanged(connId, [schema], st)
+}
+
+/**
+ * A table was renamed or its comment changed: the tabs showing it follow
+ * (renamed: their data is read again, its SELECT has the old name).
+ * Returns those tabs.
+ */
+export function retargetTable(connId: string, schema: string, t: Table, patch: Partial<Table>): Tab[] {
+  const hit: Tab[] = []
   for (const tab of app.tabs) {
     const ref = tab.tableRef
     if (tab.connId !== connId || !ref || ref.schema !== schema || !sameTable(ref.table, t)) continue
-    ref.table = { ...$state.snapshot(ref.table), name }
-    if (tab.title === t.name) tab.title = name
-    logStatements(tab, [st], tr(view ? '뷰 이름 바꿈' : '테이블 이름 바꿈'))
-    if (!tabPending(tab) && tab.results.length) reloadTable(tab) // its SELECT has the old name
+    ref.table = { ...$state.snapshot(ref.table), ...patch }
+    if (patch.name) {
+      if (tab.title === t.name) tab.title = patch.name
+      if (!tabPending(tab) && tab.results.length) reloadTable(tab)
+    }
+    hit.push(tab)
   }
   saveWorkspaceSoon()
-  await treeChanged(connId, [schema], st)
+  return hit
 }
 
 /** Default sort for newly opened tables: primary key, descending. */

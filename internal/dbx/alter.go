@@ -37,6 +37,8 @@ type AlterRequest struct {
 	// TableComment: the table's new comment; nil = unchanged (Table.Comment
 	// is the current one).
 	TableComment *string `json:"tableComment"`
+	// Rename: the table's new name ("" = unchanged), renamed last.
+	Rename string `json:"rename"`
 }
 
 type AlterResult struct {
@@ -171,6 +173,13 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	var tail []string // after the column statements
 	if c := req.TableComment; c != nil && *c != req.Table.Comment {
 		tail = ad.tableComment(req.Schema, req.Table, target, *c)
+	}
+	if n := strings.TrimSpace(req.Rename); n != "" && n != req.Table.Name {
+		rd, ok := p.d.(renameDialect)
+		if !ok {
+			return nil, nil, nil, i18n.Error("이 DB에서는 이름을 바꿀 수 없습니다")
+		}
+		tail = append(tail, rd.renameTable(req.Schema, req.Table, n))
 	}
 	for _, a := range req.Changes {
 		if strings.TrimSpace(a.New.Type) == "" {

@@ -560,6 +560,7 @@
   }
   .row input[type='text'] {
     flex: 1;
+    height: 26px;
   }
   .chk {
     display: flex;

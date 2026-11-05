@@ -7,7 +7,7 @@
   import { t } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
   import { copyText } from '../lib/clipboard'
-  import { toast, openConsole } from '../lib/state.svelte'
+  import { toast, openConsole, retargetTable } from '../lib/state.svelte'
   import type { Column, Table } from '../lib/types'
   import Icon from './Icon.svelte'
   import SqlPreview from './SqlPreview.svelte'
@@ -45,10 +45,8 @@
   $effect(() => {
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
     const v = version
-    if (key !== loadedFor) {
-      savedComment = null
-      load()
-    } else if (v !== loadedVersion && !pending) load()
+    if (key !== loadedFor) load()
+    else if (v !== loadedVersion && !pending) load()
     loadedVersion = v
   })
 
@@ -77,15 +75,14 @@
     else dropped[c.name] = true
   }
 
-  // ---- the table comment: tcDraft while changed, savedComment once applied
-  // (the table prop keeps the comment it was opened with)
+  // ---- the table's name and comment (null = unchanged)
+  let nameDraft = $state<string | null>(null)
   let tcDraft = $state<string | null>(null)
-  let savedComment = $state<string | null>(null)
-  let tableComment = $derived(savedComment ?? table.comment ?? '')
-  let tcEditing = $state(false)
-  function commitComment(v: string) {
-    tcEditing = false
-    tcDraft = v === tableComment ? null : v
+  let tableComment = $derived(table.comment ?? '')
+  function propKey(e: KeyboardEvent & { currentTarget: HTMLInputElement }, reset: () => void) {
+    e.stopPropagation()
+    if (e.key === 'Enter') e.currentTarget.blur()
+    if (e.key === 'Escape') (reset(), e.currentTarget.blur())
   }
 
   // ---- finding a column (name or comment)
@@ -125,6 +122,7 @@
     if (order) order = order.filter((k) => k !== newKey(a))
   }
   let addError = $derived.by(() => {
+    if (nameDraft !== null && !nameDraft.trim()) return t('테이블 이름이 비어 있습니다')
     const seen = new Set((cols ?? []).map((c) => c.name.toLowerCase()))
     for (const a of added) {
       const n = a.name.trim()
@@ -142,6 +140,7 @@
     moved = {}
     dropped = {}
     tcDraft = null
+    nameDraft = null
   }
 
   // ---- order (MySQL/MariaDB): a row is dragged by its number
@@ -234,7 +233,7 @@
   }
 
   let edits = $derived((cols ? cols.filter((c) => draft[c.name] && !dropped[c.name]).length : 0) + added.length + Object.keys(dropped).length)
-  let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0))
+  let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0) + (nameDraft !== null ? 1 : 0))
 
   function startEdit(c: Column, field: Exclude<Field, 'nullable'>) {
     if (readOnlyReason || dropped[c.name]) return
@@ -284,12 +283,13 @@
     return {
       connId,
       schema,
-      table: { ...$state.snapshot(table), comment: tableComment },
+      table: $state.snapshot(table),
       changes: changes(),
       add,
       order: names,
       drop: Object.keys(dropped),
       tableComment: tcDraft ?? undefined,
+      rename: nameDraft?.trim() || undefined,
     }
   }
 
@@ -326,10 +326,15 @@
         return
       }
       apply = null
-      if (tcDraft !== null) savedComment = tcDraft
       onlog?.(a.sql, t('컬럼 변경 {n}건 적용', { n: r.applied }))
       toast(t('컬럼 변경 {n}건 적용됨', { n: r.applied }))
+      // the tab's table follows (this view's table prop is that object)
+      const patch: { name?: string; comment?: string } = {}
+      if (tcDraft !== null) patch.comment = tcDraft
+      if (nameDraft?.trim()) patch.name = nameDraft.trim()
+      const old = $state.snapshot(table)
       revert()
+      if (patch.name || patch.comment !== undefined) retargetTable(connId, schema, old, patch)
       onchanged ? onchanged() : load()
     } catch (e) {
       a.busy = false
@@ -354,26 +359,33 @@
   <div class="placeholder"><span class="spin"></span> {t('컬럼 불러오는 중…')}</div>
 {:else}
   <div class="wrap">
+    <div class="props">
+      <label class="prop">
+        <span>{t('테이블')}</span>
+        <input
+          class="mono"
+          class:edited={nameDraft !== null}
+          value={nameDraft ?? table.name}
+          disabled={!!readOnlyReason}
+          oninput={(e) => (nameDraft = e.currentTarget.value === table.name ? null : e.currentTarget.value)}
+          onkeydown={(e) => propKey(e, () => (nameDraft = null))}
+          spellcheck="false"
+        />
+      </label>
+      <label class="prop wide">
+        <span>{t('코멘트')}</span>
+        <input
+          class:edited={tcDraft !== null}
+          value={tcDraft ?? tableComment}
+          placeholder={readOnlyReason ? '' : t('테이블 코멘트 없음')}
+          disabled={!!readOnlyReason}
+          oninput={(e) => (tcDraft = e.currentTarget.value === tableComment ? null : e.currentTarget.value)}
+          onkeydown={(e) => propKey(e, () => (tcDraft = null))}
+        />
+      </label>
+    </div>
     <div class="bar">
       <span class="title">{t('컬럼')} <span class="count">{cols.length}</span></span>
-      {#if tcEditing}
-        <input
-          class="tc-input"
-          value={tcDraft ?? tableComment}
-          use:focus
-          onkeydown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') commitComment(e.currentTarget.value)
-            if (e.key === 'Escape') tcEditing = false
-          }}
-          onblur={(e) => tcEditing && commitComment(e.currentTarget.value)}
-        />
-      {:else if tcDraft !== null || tableComment || !readOnlyReason}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span class="tcomment" class:edited={tcDraft !== null} class:dim={!(tcDraft ?? tableComment)} title={readOnlyReason ? '' : t('더블클릭: 테이블 코멘트 바꾸기')} ondblclick={() => !readOnlyReason && (tcEditing = true)}
-          >{(tcDraft ?? tableComment) || t('테이블 코멘트 없음')}</span
-        >
-      {/if}
       {#if !readOnlyReason}
         <button class="btn mini" onclick={addRow}><Icon name="plus" size={13} /> {t('컬럼 추가')}</button>
       {/if}
@@ -385,6 +397,7 @@
         {#if addError}<span class="adderr">{addError}</span>{/if}
         {#if edits}<span class="pending">{t('컬럼 {n}개 변경', { n: edits })}</span>{/if}
         {#if order}<span class="pending">{t('순서 변경')}</span>{/if}
+        {#if nameDraft !== null}<span class="pending">{t('이름 변경')}</span>{/if}
         {#if tcDraft !== null}<span class="pending">{t('테이블 코멘트 변경')}</span>{/if}
         <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('적용')}</button>
         <button class="btn mini" onclick={revert}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
@@ -522,9 +535,6 @@
     min-height: 32px;
     padding: 4px 12px;
   }
-  .tcomment {
-    color: var(--text-dim);
-  }
   .grow {
     flex: 1;
   }
@@ -603,25 +613,38 @@
     text-decoration: line-through;
     opacity: 0.5;
   }
-  .tcomment {
-    cursor: default;
+  .props {
+    display: flex;
+    gap: 16px;
+    padding: 8px 12px 2px;
   }
-  .tcomment.edited {
-    padding: 0 4px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--warn) 22%, transparent);
+  .prop {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
   }
-  .tc-input {
-    width: 260px;
-    height: 22px;
-    padding: 0 6px;
-    font-size: 12.5px;
+  .prop.wide {
+    flex: 1;
+    max-width: 640px;
+  }
+  .prop input {
+    height: 26px;
+    width: 240px;
+    color: var(--text);
+  }
+  .prop.wide input {
+    flex: 1;
+    width: auto;
+  }
+  .prop input.edited {
+    background: color-mix(in srgb, var(--warn) 18%, var(--bg-input));
   }
   .find {
-    width: 150px;
-    height: 22px;
-    padding: 0 6px;
-    font-size: 12px;
+    width: 160px;
+    height: 26px;
+    padding: 0 7px;
+    font-size: 12.5px;
   }
   td.grip {
     cursor: grab;

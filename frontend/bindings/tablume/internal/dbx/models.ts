@@ -30,6 +30,11 @@ export interface AlterRequest {
      * is the current one).
      */
     "tableComment": string | null;
+
+    /**
+     * Rename: the table's new name ("" = unchanged), renamed last.
+     */
+    "rename": string;
 }
 
 export interface AlterResult {
