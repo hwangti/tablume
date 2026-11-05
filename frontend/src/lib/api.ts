@@ -98,6 +98,7 @@ export interface FetchedPage {
   hasMore: boolean
   elapsedMs: number
   fetchMs: number
+  sentSql: string // the page's query; '' when rows came from the open cursor
 }
 
 export interface FileList {

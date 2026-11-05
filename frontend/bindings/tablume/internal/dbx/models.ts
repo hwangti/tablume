@@ -191,6 +191,11 @@ export interface FetchResponse {
      */
     "elapsedMs": number;
     "fetchMs": number;
+
+    /**
+     * the page's query; "" when rows came from the open cursor
+     */
+    "sentSql": string;
 }
 
 export interface ForeignKey {
@@ -404,6 +409,11 @@ export interface StmtResult {
      * the part of ElapsedMs spent reading rows
      */
     "fetchMs": number;
+
+    /**
+     * the statement as sent when it differs (paged: LIMIT/OFFSET added)
+     */
+    "sentSql": string;
     "error": string;
     "notice": string;
 

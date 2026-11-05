@@ -684,7 +684,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     for (const r of results) {
       if (r.error) log(tab, 'error', r.error, short(r.sql))
       else if (r.columns && r.columns.length)
-        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql))
+        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sentSql || r.sql))
       else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql))
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
@@ -728,7 +728,10 @@ async function timedPage(tab: Tab, r: StmtResult, from: number, call: () => Prom
   r.fetchMs = res.fetchMs
   r.appMs = Math.max(0, Math.round(performance.now() - t0 - res.elapsedMs))
   r.renderMs = undefined
-  log(tab, 'info', tr('{n}행 조회', { n: n + (res.hasMore ? '+' : '') }) + (n ? ` (${from + 1}–${from + n})` : '') + ` (${res.elapsedMs}ms)`, short(r.sql))
+  // the query as sent (with its LIMIT/OFFSET); none when the open cursor was read further
+  const text = tr('{n}행 조회', { n: n + (res.hasMore ? '+' : '') }) + (n ? ` (${from + 1}–${from + n})` : '') + ` (${res.elapsedMs}ms)`
+  if (res.sentSql) log(tab, 'info', text, short(res.sentSql))
+  else log(tab, 'info', text + ' · ' + tr('열어 둔 결과에서 이어서 읽음'))
   timePaint([r])
   return res
 }

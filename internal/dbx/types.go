@@ -94,6 +94,7 @@ type StmtResult struct {
 	RowsAffected int64  `json:"rowsAffected"` // -1 when unknown
 	ElapsedMs    int64  `json:"elapsedMs"`
 	FetchMs      int64  `json:"fetchMs"` // the part of ElapsedMs spent reading rows
+	SentSQL      string `json:"sentSql"` // the statement as sent when it differs (paged: LIMIT/OFFSET added)
 	Error        string `json:"error"`
 	Notice       string `json:"notice"`
 	// Source is the table a plain single-table SELECT reads from, as written.
@@ -120,4 +121,5 @@ type FetchResponse struct {
 	HasMore   bool    `json:"hasMore"`
 	ElapsedMs int64   `json:"elapsedMs"` // as in StmtResult
 	FetchMs   int64   `json:"fetchMs"`
+	SentSQL   string  `json:"sentSql"` // the page's query; "" when rows came from the open cursor
 }
