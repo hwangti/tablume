@@ -25,6 +25,7 @@
     toast,
     confirmBox,
     reloadTable,
+    tableCreated,
     connect,
     countResult,
     fetchPrev,
@@ -66,7 +67,7 @@
   // its connection is already up (otherwise it offers "connect and load").
   let autoLoaded = false
   $effect(() => {
-    if (autoLoaded || !isTable || current || tab.running || tab.opening) return
+    if (autoLoaded || !isTable || tab.creating || current || tab.running || tab.opening) return
     if (app.activeTab !== tab.id || !connected) return
     autoLoaded = true
     reloadTable(tab)
@@ -612,7 +613,9 @@
     {/if}
     <div class="results">
       <div class="rtabs">
-        {#if isTable}
+        {#if tab.creating}
+          <span class="rtab on"><Icon name="table" size={13} /> {t('새 테이블')}</span>
+        {:else if isTable}
           <button class="rtab" class:on={tableView === 'data'} onclick={() => (tableView = 'data')}>
             <Icon name="table" size={13} /> {t('데이터')}
           </button>
@@ -700,7 +703,7 @@
             {/if}
           </div>
         {/if}
-        {#if isTable && tableView !== 'data'}
+        {#if isTable && tableView !== 'data' && !tab.creating}
           <div class="grp">
             {#if tableView === 'ddl'}
               <div class="seg" role="group">
@@ -775,7 +778,19 @@
             <div class="loading-pill"><span class="spin"></span> {t('데이터 불러오는 중…')} {elapsed}</div>
           </div>
         {/if}
-        {#if isTable && tableView === 'ddl' && !connected}
+        {#if tab.creating && tab.tableRef}
+          <div class="structure">
+            <StructureView
+              create
+              connId={tab.connId}
+              schema={tab.tableRef.schema}
+              table={tab.tableRef.table}
+              driver={conn?.driver}
+              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+              oncreated={(made) => ((tableView = 'ddl'), tableCreated(tab, made))}
+            />
+          </div>
+        {:else if isTable && tableView === 'ddl' && !connected}
           <!-- a tab restored from the last session: as for the data -->
           <div class="reload-blank">
             <button class="btn primary" disabled={st?.status === 'connecting'} onclick={() => connect(tab.connId)}>

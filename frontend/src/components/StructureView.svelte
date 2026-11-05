@@ -25,6 +25,8 @@
     onchanged,
     onlog,
     onkey,
+    create = false,
+    oncreated,
   }: {
     connId: string
     schema: string
@@ -34,6 +36,9 @@
     onchanged?: () => void
     onlog?: (sql: string[], outcome: string, error?: string) => void
     onkey?: (kind: 'fk' | 'index', column: string) => void // a key icon was clicked
+    // create: a table being designed (no columns yet; "만들기" runs CREATE TABLE)
+    create?: boolean
+    oncreated?: (t: Table) => void
   } = $props()
 
   let cols = $state<Column[] | null>(null)
@@ -49,6 +54,16 @@
     revert()
     opts = null
     const tb = $state.snapshot(table)
+    if (create) {
+      cols = []
+      firstRow()
+      if (driver === 'mysql' || driver === 'mariadb')
+        api
+          .TableOptions(connId, schema, tb)
+          .then((o) => key === loadedFor && (opts = o))
+          .catch(() => {})
+      return
+    }
     api
       .ListColumns(connId, schema, tb)
       .then((c) => key === loadedFor && (cols = c ?? []))
@@ -191,7 +206,9 @@
   }
 
   // new columns; id keeps a row's place while its name is being typed
-  type NewCol = Draft & { name: string; id: number }
+  // pk: part of the primary key (a table being made); prefill: the row a new
+  // table starts with (not focused: the table's name is typed first)
+  type NewCol = Draft & { name: string; id: number; pk?: boolean; prefill?: boolean }
   let added = $state<NewCol[]>([])
   let nextId = 0
   const newKey = (a: NewCol) => '\0' + a.id
@@ -200,11 +217,21 @@
     added.push(a)
     order?.push(newKey(a))
   }
+  function firstRow() {
+    const type = driver === 'oracle' ? 'NUMBER' : driver === 'sqlite' ? 'integer' : 'bigint'
+    added.push({ id: ++nextId, name: 'id', type, nullable: false, default: '', comment: '', auto: true, collation: '', onUpdate: '', invisible: false, pk: true, prefill: true })
+  }
+  function togglePk(a: NewCol) {
+    a.pk = !a.pk
+    if (a.pk) a.nullable = false // a key column is NOT NULL
+  }
   function removeNew(a: NewCol) {
     added = added.filter((x) => x.id !== a.id)
     if (order) order = order.filter((k) => k !== newKey(a))
   }
   let addError = $derived.by(() => {
+    if (create && !(nameDraft ?? '').trim()) return t('테이블 이름을 넣으세요')
+    if (create && !added.length) return t('컬럼을 하나 이상 넣으세요')
     if (nameDraft !== null && !nameDraft.trim()) return t('테이블 이름이 비어 있습니다')
     const seen = new Set<string>()
     for (const c of cols ?? []) {
@@ -235,7 +262,8 @@
   }
 
   // ---- order (MySQL/MariaDB): a row is dragged by its number
-  const canMove = $derived(!readOnlyReason && !find && (driver === 'mysql' || driver === 'mariadb'))
+  // (a table being made: the order is just the columns' order)
+  const canMove = $derived(!readOnlyReason && !find && (create || driver === 'mysql' || driver === 'mariadb'))
   let order = $state<string[] | null>(null) // row keys; null = as loaded, new ones last
   let moved = $state<Record<string, true>>({}) // rows the user dragged
   type Row = { key: string; col?: Column; add?: NewCol }
@@ -374,6 +402,9 @@
     node.focus()
     node.select()
   }
+  function focusIf(node: HTMLInputElement, on: boolean) {
+    if (on) focus(node)
+  }
 
   // with a new order the server needs every column (it restates the moved ones)
   function changes() {
@@ -409,9 +440,34 @@
   let apply = $state<{ sql: string[]; busy: boolean; error: string; note: string } | null>(null)
   const transactional = $derived(driver === 'postgres' || driver === 'mssql')
 
+  const newColumn = (a: NewCol): Column => ({
+    name: a.name.trim(),
+    type: a.type.trim(),
+    nullable: a.nullable,
+    default: noDefault(a.default),
+    comment: a.comment,
+    pk: !!a.pk,
+    unique: false,
+    fk: '',
+    extra: a.auto ? 'auto_increment' : '',
+    collation: a.collation,
+    onUpdate: a.onUpdate.trim(),
+    invisible: a.invisible,
+  })
+
+  function createRequest() {
+    return {
+      connId,
+      schema,
+      table: { ...$state.snapshot(table), name: (nameDraft ?? '').trim(), comment: tcDraft ?? '' },
+      columns: rows.flatMap((r) => (r.add ? [newColumn(r.add)] : [])),
+      engine: engineDraft ?? '',
+    }
+  }
+
   async function openApply() {
     try {
-      const sql = await api.PreviewAlter(request())
+      const sql = create ? await api.PreviewCreateTable(createRequest()) : await api.PreviewAlter(request())
       apply = { sql: sql ?? [], busy: false, error: '', note: '' }
     } catch (e) {
       toast(errText(e), 'error')
@@ -422,6 +478,7 @@
     const a = apply
     if (!a) return
     a.busy = true
+    if (create) return made(a)
     try {
       const r = await api.ApplyAlter(request())
       if (r.error) {
@@ -454,6 +511,30 @@
     }
   }
 
+  // CREATE TABLE ran (all of it, or the table and some comments): the tab
+  // becomes the new table's
+  async function made(a: NonNullable<typeof apply>) {
+    try {
+      const res = await api.CreateTable(createRequest())
+      const r = res.result
+      if (r.error) {
+        onlog?.(a.sql.slice(0, r.rolledBack ? a.sql.length : r.applied + 1), '', r.error)
+        a.busy = false
+        a.error = r.error
+        a.note = r.rolledBack || !r.applied ? t('하나라도 실패하면 전부 취소됩니다. 아무것도 바뀌지 않았습니다.') : t('테이블은 만들어졌고, 뒤의 문장 일부가 실패했습니다.')
+        if (!r.rolledBack && r.applied > 0) oncreated?.(res.table)
+        return
+      }
+      apply = null
+      onlog?.(a.sql, t('테이블 만듦: {name}', { name: res.table.name }))
+      toast(t('테이블 만듦: {name}', { name: res.table.name }))
+      oncreated?.(res.table)
+    } catch (e) {
+      a.busy = false
+      a.error = errText(e)
+    }
+  }
+
   function openSql(sql: string[]) {
     apply = null
     openConsole(connId, { schema, sql: sql.join(';\n') + ';\n', title: `${t('컬럼 변경')}: ${table.name}` })
@@ -479,6 +560,8 @@
           class="mono"
           class:edited={nameDraft !== null}
           value={nameDraft ?? table.name}
+          placeholder={create ? t('새 테이블 이름') : ''}
+          use:focusIf={create}
           disabled={!!readOnlyReason}
           oninput={(e) => (nameDraft = e.currentTarget.value === table.name ? null : e.currentTarget.value)}
           onkeydown={(e) => propKey(e, () => (nameDraft = null))}
@@ -511,6 +594,7 @@
           <span class="engine" class:edited={engineDraft !== null}>
             <Dropdown
               value={engineDraft ?? opts.engine}
+              placeholder={t('기본값')}
               options={opts.engines.map((e) => ({ value: e, label: e }))}
               onchange={(v) => (engineDraft = v === opts?.engine ? null : v)}
               width="140px"
@@ -520,7 +604,7 @@
       {/if}
     </div>
     <div class="bar">
-      <span class="title">{t('컬럼')} <span class="count">{cols.length}</span></span>
+      <span class="title">{t('컬럼')} <span class="count">{create ? added.length : cols.length}</span></span>
       {#if !readOnlyReason}
         <button class="btn mini" onclick={addRow}><Icon name="plus" size={13} /> {t('컬럼 추가')}</button>
       {/if}
@@ -528,6 +612,9 @@
       <span class="grow"></span>
       {#if readOnlyReason}
         <span class="ro" title={readOnlyReason}><Icon name="lock" size={12} /> {t('읽기 전용')}</span>
+      {:else if create}
+        {#if addError}<span class="adderr">{addError}</span>{/if}
+        <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('만들기')}</button>
       {:else if pending > 0}
         {#if addError}<span class="adderr">{addError}</span>{/if}
         {#if edits}<span class="pending">{t('컬럼 {n}개 변경', { n: edits })}</span>{/if}
@@ -620,8 +707,12 @@
           {@const a = r.add}
           <tr class="added" class:drop={drag?.to === i} class:drop-end={drag?.to === rows.length && i === rows.length - 1} class:dragging={drag?.key === r.key}>
             {@render num(i, r.key, '+')}
-            <td class="k"></td>
-            <td class="new"><input class="new-input mono" placeholder={t('이름')} bind:value={a.name} use:focus onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
+            <td class="k">
+              {#if create}<button class="kb" title={t('기본 키 (PK)')} onclick={() => togglePk(a)}
+                  ><Icon name="key" size={12} color={a.pk ? 'var(--key-pk)' : 'var(--text-faint)'} /></button
+                >{/if}
+            </td>
+            <td class="new"><input class="new-input mono" placeholder={t('이름')} bind:value={a.name} use:focusIf={!a.prefill} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td class="new"><input class="new-input mono" placeholder="varchar(50)" bind:value={a.type} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td class="c">
               <label class="nullbox" title={t('NULL 허용')}>
@@ -671,14 +762,14 @@
 {/if}
 
 {#if apply}
-  <Modal title={t('컬럼 변경 적용 — {n}개 문장', { n: apply.sql.length })} onclose={() => (apply = null)} width={760} dismissible={false} onsubmit={() => apply && !apply.busy && !apply.error && doApply()}>
+  <Modal title={create ? t('테이블 만들기 — {n}개 문장', { n: apply.sql.length }) : t('컬럼 변경 적용 — {n}개 문장', { n: apply.sql.length })} onclose={() => (apply = null)} width={760} dismissible={false} onsubmit={() => apply && !apply.busy && !apply.error && doApply()}>
     <p class="note">
       {#if transactional}
         {t('아래 문장을 하나의 트랜잭션으로 실행합니다. 하나라도 실패하면 모두 취소됩니다.')}
       {:else}
         {t('아래 문장을 차례로 실행합니다. 이 DB는 DDL을 되돌릴 수 없어서, 중간에 실패하면 그 앞까지는 적용된 채로 남습니다.')}
       {/if}
-      {#if engineDraft !== null}
+      {#if engineDraft !== null && !create}
         {t('엔진을 바꾸면 테이블을 통째로 다시 씁니다. 행이 많으면 오래 걸리고 그동안 쓰기가 막힐 수 있습니다.')}
       {:else if order}
         {t('컬럼 위치를 옮기면 테이블을 통째로 다시 쓸 수 있습니다. 행이 많으면 오래 걸리고 그동안 쓰기가 막힐 수 있습니다.')}

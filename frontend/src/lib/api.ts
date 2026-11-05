@@ -27,6 +27,14 @@ export interface FKRequest {
   create: TableFK[]
 }
 
+export interface CreateRequest {
+  connId: string
+  schema: string
+  table: Table
+  columns: Column[]
+  engine: string
+}
+
 export interface AlterRequest {
   connId: string
   schema: string
@@ -68,6 +76,8 @@ interface Api {
   ListRoutines(id: string, schema: string): Promise<Routine[]>
   RoutineSource(id: string, schema: string, r: Routine): Promise<string>
   PreviewAlter(req: AlterRequest): Promise<string[]>
+  PreviewCreateTable(req: CreateRequest): Promise<string[] | null>
+  CreateTable(req: CreateRequest): Promise<{ table: Table; result: AlterResult }>
   TableOptions(id: string, schema: string, t: Table): Promise<TableOptions>
   ApplyAlter(req: AlterRequest): Promise<AlterResult>
   ListIndexes(id: string, schema: string, t: Table): Promise<Index[] | null>

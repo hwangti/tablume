@@ -76,6 +76,9 @@ export interface Tab {
   // Shown in a window of its own (main window only; not saved, so after a
   // restart the tab is back in the main window).
   detached?: boolean
+  // A table being designed (the structure view only; nothing in the
+  // database yet, not saved with the workspace).
+  creating?: boolean
 }
 
 export interface TableRef {
@@ -858,6 +861,26 @@ const sameTable = (a: Table, b: Table) => a.schema === b.schema && a.name === b.
  * Opens a table's data in a tab. With where (following a foreign key), a
  * tab already showing the table gets that filter.
  */
+/** A new tab to design a table in (the structure view), made with CREATE TABLE. */
+export async function openCreateTable(connId: string, schema: string) {
+  if (!(await connect(connId))) return
+  const mssql = connById(connId)?.driver === 'mssql'
+  const tab = openConsole(connId, { schema, sql: '', title: tr('새 테이블') })
+  tab.layout = 'results'
+  tab.tableRef = { schema, table: { name: '', type: 'TABLE', schema: mssql ? 'dbo' : '', comment: '', rows: -1 }, where: '', orderBy: '' }
+  tab.creating = true
+}
+
+/** The designed table was made: the tab becomes that table's tab. */
+export function tableCreated(tab: Tab, t: Table) {
+  if (!tab.tableRef) return
+  tab.creating = false
+  tab.tableRef.table = t
+  tab.title = t.name
+  saveWorkspaceSoon()
+  treeChanged(tab.connId, [tab.tableRef.schema], t.name)
+}
+
 export async function openTableData(connId: string, schema: string, t: Table, where?: string): Promise<Tab> {
   // The table is already open in a tab (pinned or preview): go there.
   const open = app.tabs.find(
@@ -1141,7 +1164,7 @@ export function saveWorkspaceSoon() {
       theme: app.theme,
       lang: i18n.lang,
       sidebarHidden: app.sidebarHidden,
-      tabs: app.tabs.map(savedTab),
+      tabs: app.tabs.filter((t) => !t.creating).map(savedTab),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
   }, 600)

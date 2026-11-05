@@ -179,6 +179,30 @@ export interface ConnConfig {
     "schemas"?: SchemaFilter | null;
 }
 
+export interface CreateRequest {
+    "connId": string;
+    "schema": string;
+
+    /**
+     * Name, Comment; Schema on SQL Server
+     */
+    "table": Table;
+    "columns": Column[] | null;
+
+    /**
+     * MySQL/MariaDB, "" = the server's default
+     */
+    "engine": string;
+}
+
+export interface CreateResult {
+    /**
+     * as made (the name folded where the database folds it)
+     */
+    "table": Table;
+    "result": AlterResult;
+}
+
 export interface EditInfo {
     "editable": boolean;
 

@@ -8,6 +8,7 @@ package dbx
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"tablume/internal/i18n"
@@ -174,7 +175,8 @@ func (mysqlDialect) placeAfter(after string) string {
 func (mysqlDialect) tableEngine(ctx context.Context, q Querier, schema string, t Table) (TableOptions, error) {
 	var o TableOptions
 	var e sql.NullString
-	if err := q.QueryRowContext(ctx, `SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`, schema, t.Name).Scan(&e); err != nil {
+	// (a table not made yet: no engine, but the lists)
+	if err := q.QueryRowContext(ctx, `SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`, schema, t.Name).Scan(&e); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return o, err
 	}
 	o.Engine = e.String
