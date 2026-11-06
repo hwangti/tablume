@@ -24,6 +24,8 @@
     pinTab,
     openDDL,
     renameTable,
+    dropTable,
+    truncateTable,
     saveWorkspaceSoon,
     schemaShown,
     ensureStats,
@@ -41,7 +43,7 @@
   import { api } from '../lib/api'
   import { setTheme, type ThemeMode } from '../lib/theme'
   import { copyText, isMac } from '../lib/clipboard'
-  import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine } from '../lib/types'
+  import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine, type Table } from '../lib/types'
   import SchemaPicker from './SchemaPicker.svelte'
 
   let filter = $state('')
@@ -494,16 +496,15 @@
       x: e.clientX,
       y: e.clientY,
       items: [
+        // open · the connection · what the tree shows · the saved connection · its place
         { label: tr('새 콘솔'), icon: 'console', run: () => openConsole(c.id) },
-        on
-          ? { label: tr('새로고침'), icon: 'refresh', run: () => refreshSchemas(c.id) }
-          : { label: tr('연결'), icon: 'plug', run: () => connect(c.id) },
         ...(on
           ? [
-              { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
+              { label: tr('새로고침'), icon: 'refresh', run: () => refreshSchemas(c.id), sep: true },
               { label: tr('연결 해제'), icon: 'unplug', run: () => disconnect(c.id) },
+              ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e), sep: true }] : []),
             ]
-          : []),
+          : [{ label: tr('연결'), icon: 'plug', run: () => connect(c.id), sep: true }]),
         { label: tr('편집…'), icon: 'edit', run: () => (app.editing = { ...c }), sep: true },
         { label: tr('복제'), icon: 'copy', run: () => (app.editing = { ...c, id: '', name: c.name + tr(' 복사본') }) },
         { label: tr('맨 위로'), icon: 'toTop', run: () => moveConnection(c.id, 0), sep: true, disabled: i === 0 },
@@ -521,6 +522,8 @@
     }
   }
 
+  const isView = (t: Table) => t.type.toUpperCase().includes('VIEW')
+
   function tableMenu(e: MouseEvent, c: ConnConfig, s: SchemaNode, t: TableNode) {
     e.preventDefault()
     closeMenus()
@@ -528,13 +531,14 @@
       x: e.clientX,
       y: e.clientY,
       items: [
+        // open · SQL · copy · change (the ones that can't be undone last)
         { label: tr('데이터 보기'), icon: 'table', run: () => openTable(c.id, s.name, t), kbd: 'Enter' },
         { label: tr('새 탭에서 데이터 보기'), icon: 'plus', run: () => pinTable(c.id, s.name, t) },
         { label: tr('DDL 보기'), icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
-        { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2' },
         {
           label: tr('SELECT 문을 콘솔에 넣기'),
           icon: 'console',
+          sep: true,
           run: async () => {
             const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100, 0)
             if (activeTab()?.connId === c.id) insertText(sql + ';')
@@ -543,6 +547,9 @@
         },
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(t.t.name), sep: true },
         { label: tr('전체 이름 복사'), icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
+        { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2', sep: true },
+        ...(isView(t.t) ? [] : [{ label: tr('테이블 비우기…'), icon: 'eraser', run: () => truncateTable(c.id, s.name, t.t), danger: true }]),
+        { label: tr(isView(t.t) ? '뷰 삭제…' : '테이블 삭제…'), icon: 'trash', run: () => dropTable(c.id, s.name, t.t), danger: true },
       ],
     }
   }
@@ -556,9 +563,9 @@
       items: [
         { label: tr('이 스키마로 새 콘솔'), icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
         ...(ERD_DRIVERS.includes(c.driver) ? [{ label: tr('ERD 보기'), icon: 'erd', run: () => openErd(c.id, s.name) }] : []),
-        ...(c.driver !== 'sqlite' ? [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name) }] : []),
-        { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s) },
-        { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
+        { label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true },
+        { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
+        ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },
       ],
     }

@@ -106,13 +106,13 @@
   let draft = $state<Record<string, Draft>>({})
   let editing = $state<{ name: string; field: Exclude<Field, 'nullable' | 'auto' | 'invisible'>; value: string } | null>(null)
 
-  let readOnlyReason = $derived(
-    driver === 'sqlite'
-      ? t('SQLite는 컬럼을 바꾸려면 테이블을 새로 만들어야 해서 여기서는 편집할 수 없습니다')
-      : table.type.toUpperCase().includes('VIEW')
-        ? t('뷰는 편집할 수 없습니다')
-        : '',
-  )
+  let readOnlyReason = $derived(table.type.toUpperCase().includes('VIEW') ? t('뷰는 편집할 수 없습니다') : '')
+  // SQLite's ALTER TABLE adds, renames and drops a column: of a column it
+  // has, only the name changes here (the rest takes making the table again).
+  // It has no comments.
+  const lite = $derived(driver === 'sqlite')
+  const liteFixed = t('SQLite에서는 컬럼 이름만 바꿀 수 있습니다 (타입 · NULL · 기본값은 테이블을 새로 만들어야 합니다)')
+  const noComment = t('SQLite에는 코멘트가 없습니다')
 
   // a default is an SQL expression; NULL (or nothing) is no default, which a
   // nullable column reads as DEFAULT NULL (the text 'NULL' is quoted)
@@ -188,7 +188,9 @@
     }
   }
   function openDetailNew(a: NewCol) {
-    detail = { title: t('새 컬럼'), value: { ...a }, autoReason: '', info: [], save: (v) => Object.assign(a, v) }
+    // SQLite: an auto increment only on the INTEGER key of a table being made
+    const autoReason = lite && !create ? t('SQLite에서는 있는 테이블에 자동 증가 컬럼을 더할 수 없습니다') : ''
+    detail = { title: t('새 컬럼'), value: { ...a }, autoReason, info: [], save: (v) => Object.assign(a, v) }
   }
   // changes the table has no column for (the number cell is marked)
   function hiddenChanges(c: Column): string {
@@ -355,7 +357,7 @@
   let pending = $derived(edits + (order ? 1 : 0) + (tcDraft !== null ? 1 : 0) + (nameDraft !== null ? 1 : 0) + (engineDraft !== null ? 1 : 0))
 
   function startEdit(c: Column, field: Exclude<Field, 'nullable' | 'auto' | 'invisible'>) {
-    if (readOnlyReason || dropped[c.name]) return
+    if (readOnlyReason || dropped[c.name] || (lite && field !== 'name')) return
     editing = { name: c.name, field, value: current(c)[field] }
   }
 
@@ -438,7 +440,7 @@
 
   // ---- apply: preview the statements, then run them
   let apply = $state<{ sql: string[]; busy: boolean; error: string; note: string } | null>(null)
-  const transactional = $derived(driver === 'postgres' || driver === 'mssql')
+  const transactional = $derived(driver === 'postgres' || driver === 'mssql' || driver === 'sqlite')
 
   const newColumn = (a: NewCol): Column => ({
     name: a.name.trim(),
@@ -574,12 +576,12 @@
           <input
             class:edited={tcDraft !== null}
             value={tcDraft ?? tableComment}
-            placeholder={readOnlyReason ? '' : t('테이블 코멘트 없음')}
-            disabled={!!readOnlyReason}
+            placeholder={lite ? noComment : readOnlyReason ? '' : t('테이블 코멘트 없음')}
+            disabled={!!readOnlyReason || lite}
             oninput={(e) => (tcDraft = e.currentTarget.value === tableComment ? null : e.currentTarget.value)}
             onkeydown={(e) => propKey(e, () => (tcDraft = null))}
           />
-          {#if !readOnlyReason}
+          {#if !readOnlyReason && !lite}
             <button
               class="dots"
               title={t('큰 창에서 편집')}
@@ -625,7 +627,7 @@
         <button class="btn mini primary" onclick={openApply} disabled={!!addError} title={addError}><Icon name="check" size={13} /> {t('적용')}</button>
         <button class="btn mini" onclick={revert}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
       {:else}
-        <span class="hint">{canMove ? t('이름·타입·NULL·기본값·코멘트는 더블클릭, 순서는 번호를 끌어서 바꿀 수 있습니다') : t('이름·타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
+        <span class="hint">{lite ? t('이름은 더블클릭해서 바꿀 수 있습니다 · 타입 · NULL · 기본값은 SQLite에서 바꿀 수 없습니다') : canMove ? t('이름·타입·NULL·기본값·코멘트는 더블클릭, 순서는 번호를 끌어서 바꿀 수 있습니다') : t('이름·타입·NULL·기본값·코멘트를 더블클릭해서 바꿀 수 있습니다')}</span>
       {/if}
     </div>
     <table>
@@ -666,10 +668,17 @@
               {#if indexed.has(c.name)}<button class="kb" title={t('인덱스')} onclick={() => onkey?.('index', c.name)}><Icon name="sortLines" size={12} color="var(--text-dim)" /></button>{/if}
             </td>
             {#snippet cell(field: 'name' | 'type' | 'default' | 'comment', cls: string, shown: string, empty = '')}
-              <td class="{cls} edit" class:edited={changed(c, field)} title={field === 'default' ? defaultHint : undefined} ondblclick={() => startEdit(c, field)}>
+              <td
+                class="{cls} edit"
+                class:edited={changed(c, field)}
+                class:fixed={lite && field !== 'name'}
+                title={lite && field !== 'name' ? (field === 'comment' ? noComment : liteFixed) : field === 'default' ? defaultHint : undefined}
+                ondblclick={() => startEdit(c, field)}
+              >
                 {#if editing?.name === c.name && editing.field === field}
                   <span class="edit-wrap">
-                    <input class="cell-input mono" class:with-dots={field === 'comment'} bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
+                    <!-- size=1: its own width (20 characters) would widen the column -->
+                    <input size="1" class="cell-input mono" class:with-dots={field === 'comment'} bind:value={editing.value} use:focus onkeydown={inputKey} onblur={commitEdit} spellcheck="false" />
                     {#if field === 'comment'}<button
                         class="dots"
                         title="{t('큰 창에서 편집')} (F2)"
@@ -684,8 +693,8 @@
             {@render cell('name', 'name mono', cur.name)}
             {@render cell('type', 'type mono', cur.type.toLowerCase())}
             <td class="c" class:edited={changed(c, 'nullable')}>
-              <label class="nullbox" title={readOnlyReason || t('NULL 허용')}>
-                <input type="checkbox" checked={cur.nullable} disabled={!!readOnlyReason} onchange={(e) => setField(c, 'nullable', (e.currentTarget as HTMLInputElement).checked)} />
+              <label class="nullbox" title={readOnlyReason || (lite ? liteFixed : t('NULL 허용'))}>
+                <input type="checkbox" checked={cur.nullable} disabled={!!readOnlyReason || lite} onchange={(e) => setField(c, 'nullable', (e.currentTarget as HTMLInputElement).checked)} />
                 {#if cur.nullable}<span class="dim">NULL</span>{:else}<b>NOT NULL</b>{/if}
               </label>
             </td>
@@ -698,7 +707,7 @@
                 {#if dropped[c.name]}
                   <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(c)}><Icon name="undo" size={13} /></button>
                 {:else}
-                  <button class="icon-btn sm" title={t('수정')} onclick={() => openDetail(c)}><Icon name="edit" size={13} /></button>
+                  {#if !lite}<button class="icon-btn sm" title={t('수정')} onclick={() => openDetail(c)}><Icon name="edit" size={13} /></button>{/if}
                   <button class="icon-btn sm" title={t('컬럼 삭제')} onclick={() => toggleDrop(c)}><Icon name="trash" size={13} /></button>
                 {/if}
               </td>
@@ -723,10 +732,14 @@
             </td>
             <td class="new"><input class="new-input mono" placeholder={t('기본값')} title={defaultHint} bind:value={a.default} onkeydown={(e) => e.stopPropagation()} spellcheck="false" /></td>
             <td class="dim">{a.auto ? 'auto_increment' : ''}</td>
-            <td class="new rel">
-              <input class="new-input with-dots" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} />
-              <button class="dots" title={t('큰 창에서 편집')} onclick={() => (viewing = { title: `${a.name || t('새 컬럼')} — ${t('코멘트')}`, value: a.comment, save: (v) => (a.comment = v) })}>…</button>
-            </td>
+            {#if lite}
+              <td class="dim" title={noComment}></td>
+            {:else}
+              <td class="new rel">
+                <input class="new-input with-dots" placeholder={t('코멘트')} bind:value={a.comment} onkeydown={(e) => e.stopPropagation()} />
+                <button class="dots" title={t('큰 창에서 편집')} onclick={() => (viewing = { title: `${a.name || t('새 컬럼')} — ${t('코멘트')}`, value: a.comment, save: (v) => (a.comment = v) })}>…</button>
+              </td>
+            {/if}
             <td class="act">
               <button class="icon-btn sm" title={t('수정')} onclick={() => openDetailNew(a)}><Icon name="edit" size={13} /></button>
               <button class="icon-btn sm" title={t('추가 취소')} onclick={() => removeNew(a)}><Icon name="close" size={13} /></button>
@@ -744,6 +757,7 @@
     title={detail.title}
     value={detail.value}
     autoReason={detail.autoReason}
+    commentless={lite}
     info={detail.info}
     collations={mysqlish ? (opts?.collations ?? []) : null}
     onsave={detail.save}
@@ -864,15 +878,19 @@
   td.edit {
     cursor: text;
   }
+  td.edit.fixed {
+    cursor: default;
+  }
   td.edited {
     background: color-mix(in srgb, var(--warn) 22%, transparent);
   }
   td:has(.cell-input) {
     padding: 0;
   }
+  /* the cell's width as it is: editing doesn't widen the column */
   .cell-input {
     width: 100%;
-    min-width: 120px;
+    min-width: 0;
     height: 24px;
     padding: 0 8px;
     border: 2px solid var(--accent);
@@ -938,6 +956,7 @@
   }
   .edit-wrap .cell-input {
     flex: 1;
+    min-width: 0;
   }
   .engine.edited :global(.dd) {
     background: color-mix(in srgb, var(--warn) 18%, var(--bg-input));

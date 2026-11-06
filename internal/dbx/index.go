@@ -195,7 +195,46 @@ func (m *Manager) RenameTable(id, schema string, t Table, name string) (string, 
 	if name == t.Name {
 		return "", i18n.Error("이름이 같습니다")
 	}
-	st := rd.renameTable(schema, t, name)
+	return runOne(p, schema, rd.renameTable(schema, t, name))
+}
+
+// ---- dropping and emptying tables
+
+// DropTable drops a table or view and returns the statement it ran.
+func (m *Manager) DropTable(id, schema string, t Table) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	kind := "TABLE"
+	switch ty := strings.ToUpper(t.Type); {
+	case ty == "MATERIALIZED VIEW", ty == "FOREIGN TABLE":
+		kind = ty
+	case strings.Contains(ty, "VIEW"):
+		kind = "VIEW"
+	}
+	return runOne(p, schema, "DROP "+kind+" "+p.d.QualifiedName(schema, t))
+}
+
+// TruncateTable deletes every row of a table (SQLite has no TRUNCATE:
+// DELETE without WHERE, which it does the same fast way) and returns the
+// statement it ran.
+func (m *Manager) TruncateTable(id, schema string, t Table) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	if strings.Contains(strings.ToUpper(t.Type), "VIEW") {
+		return "", i18n.Error("뷰는 비울 수 없습니다")
+	}
+	st := "TRUNCATE TABLE " + p.d.QualifiedName(schema, t)
+	if p.cfg.Driver == "sqlite" {
+		st = "DELETE FROM " + p.d.QualifiedName(schema, t)
+	}
+	return runOne(p, schema, st)
+}
+
+func runOne(p *pool, schema, st string) (string, error) {
 	r, err := runDDL(p, schema, []string{st})
 	if err != nil {
 		return st, err

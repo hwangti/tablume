@@ -198,3 +198,83 @@ func (sqliteDialect) dropIndex(schema string, t Table, ix Index) (string, error)
 func (d sqliteDialect) renameTable(schema string, t Table, name string) string {
 	return fmt.Sprintf("ALTER TABLE %s RENAME TO %s", d.QualifiedName(schema, t), quoteWith(name, `"`, `"`))
 }
+
+// ---- columns (the structure view)
+//
+// SQLite's ALTER TABLE adds, renames and drops a column, nothing more: a
+// type, NULL or default changes only by making the table again and copying
+// it over, which isn't done here. SQLite has no comments either.
+
+func (sqliteDialect) alterColumn(_ context.Context, _ Querier, _ string, _ Table, target string, a ColumnAlter) ([]string, error) {
+	d := diffOf(a)
+	if d.typ || d.null || d.def || d.auto || d.comment || d.opt {
+		return nil, i18n.Error("SQLite에서는 컬럼 이름만 바꿀 수 있습니다 (타입 · NULL · 기본값은 테이블을 새로 만들어야 합니다)")
+	}
+	if !d.name {
+		return nil, nil
+	}
+	return []string{"ALTER TABLE " + target + " RENAME COLUMN " + quoteWith(a.Old.Name, `"`, `"`) + " TO " + quoteWith(a.New.Name, `"`, `"`)}, nil
+}
+
+func (d sqliteDialect) addColumn(schema string, t Table, target string, c Column) []string {
+	def, _ := d.columnDef(schema, t, target, c)
+	return []string{"ALTER TABLE " + target + " ADD COLUMN " + def}
+}
+
+// An auto increment is INTEGER PRIMARY KEY AUTOINCREMENT, on the column
+// itself (CREATE TABLE leaves out its PRIMARY KEY clause then).
+func (sqliteDialect) columnDef(_ string, _ Table, _ string, c Column) (string, []string) {
+	def := quoteWith(c.Name, `"`, `"`) + " " + c.Type
+	if autoInc(c) {
+		return def + " PRIMARY KEY AUTOINCREMENT", nil
+	}
+	if !c.Nullable {
+		def += " NOT NULL"
+	}
+	if c.Default != "" {
+		def += " DEFAULT " + c.Default
+	}
+	return def, nil
+}
+
+func (sqliteDialect) dropColumn(_ context.Context, _ Querier, _ string, _ Table, target, name string) ([]string, error) {
+	return []string{"ALTER TABLE " + target + " DROP COLUMN " + quoteWith(name, `"`, `"`)}, nil
+}
+
+// (none: refused before it gets here)
+func (sqliteDialect) tableComment(string, Table, string, string) []string { return nil }
+
+// sqliteCheck: what SQLite can't do, said before anything runs. New
+// columns: no comment; added to a table, no key or auto increment (ADD
+// COLUMN takes neither); made with it, an auto increment is the one
+// INTEGER primary key.
+func sqliteCheck(tableComment string, cols []Column, creating bool) error {
+	if strings.TrimSpace(tableComment) != "" {
+		return i18n.Error("SQLite에는 코멘트가 없습니다")
+	}
+	var pk, auto int
+	for _, c := range cols {
+		if c.Comment != "" {
+			return i18n.Error("SQLite에는 코멘트가 없습니다")
+		}
+		if c.PK {
+			pk++
+		}
+		if autoInc(c) {
+			auto++
+			if !creating {
+				return i18n.Errorf("%s: SQLite에서는 있는 테이블에 자동 증가 컬럼을 더할 수 없습니다", c.Name)
+			}
+			if !c.PK || !strings.EqualFold(strings.TrimSpace(c.Type), "integer") {
+				return i18n.Errorf("%s: SQLite의 자동 증가는 INTEGER 기본 키 컬럼 하나에만 됩니다", c.Name)
+			}
+		}
+		if c.PK && !creating {
+			return i18n.Errorf("%s: SQLite에서는 있는 테이블에 기본 키 컬럼을 더할 수 없습니다", c.Name)
+		}
+	}
+	if auto > 0 && pk > 1 {
+		return i18n.Error("SQLite의 자동 증가는 INTEGER 기본 키 컬럼 하나에만 됩니다")
+	}
+	return nil
+}

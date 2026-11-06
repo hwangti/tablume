@@ -235,6 +235,15 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	if c := req.TableComment; c != nil && *c != req.Table.Comment {
 		tail = append(tail, ad.tableComment(req.Schema, req.Table, target, *c)...)
 	}
+	if p.cfg.Driver == "sqlite" {
+		tc := ""
+		if req.TableComment != nil {
+			tc = *req.TableComment
+		}
+		if err := sqliteCheck(tc, req.Add, false); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	if n := strings.TrimSpace(req.Rename); n != "" && n != req.Table.Name {
 		rd, ok := p.d.(renameDialect)
 		if !ok {
