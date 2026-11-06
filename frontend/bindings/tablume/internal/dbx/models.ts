@@ -62,6 +62,12 @@ export interface ApplyRequest {
     "schema": string;
     "table": Table;
     "changes": RowChange[] | null;
+
+    /**
+     * Manual: run in the tab's open transaction instead of committing (txn.go).
+     */
+    "tabId": string;
+    "manual": boolean;
 }
 
 export interface Column {

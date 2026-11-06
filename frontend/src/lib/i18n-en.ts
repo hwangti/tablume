@@ -41,6 +41,8 @@ export default {
   '언어': 'Language',
   '테마': 'Theme',
   '자동': 'Auto',
+  '수동': 'Manual',
+  '{n}건 적용됨 · 커밋해야 반영됩니다': '{n} applied · commit to make them permanent',
   '다크': 'Dark',
   '라이트': 'Light',
   'OS 설정을 따릅니다': 'Follows the OS setting',

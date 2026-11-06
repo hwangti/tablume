@@ -231,7 +231,7 @@
       sql = (await previewChanges(tab, current)) ?? []
       const { count, inserted } = await applyChanges(tab, current)
       logStatements(tab, sql, t('{n}건 적용', { n: count }))
-      toast(t('{n}건 적용됨', { n: count }))
+      toast(tab.manual ? t('{n}건 적용됨 · 커밋해야 반영됩니다', { n: count }) : t('{n}건 적용됨', { n: count }))
       if (inserted) await rerun() // show generated values (auto ids, defaults)
     } catch (e) {
       if (sql.length) logStatements(tab, sql, '', errText(e) + '\n' + t('(모두 취소됨)'))
@@ -661,6 +661,34 @@
   </div>
 {/snippet}
 
+<!-- Manual commit: the mode, and Commit / Rollback while in it. Table tabs
+     get the short form (their row of buttons is full). -->
+{#snippet txControls(short: boolean)}
+  {#if short}
+    <button
+      class="txbtn"
+      class:on={tab.manual}
+      onclick={() => setManualCommit(tab, !tab.manual)}
+      title={tab.manual ? t('수동 커밋') + ' — ' + t('커밋할 때까지 변경을 트랜잭션에 둡니다') : t('자동 커밋') + ' — ' + t('문장마다 바로 반영합니다')}
+      >Tx: {tab.manual ? t('수동') : t('자동')}</button
+    >
+  {:else}
+    <div class="seg" role="group">
+      <button class:on={!tab.manual} onclick={() => setManualCommit(tab, false)} title={t('문장마다 바로 반영합니다')}>{t('자동 커밋')}</button>
+      <button class:on={tab.manual} onclick={() => setManualCommit(tab, true)} title={t('커밋할 때까지 변경을 트랜잭션에 둡니다')}>{t('수동 커밋')}</button>
+    </div>
+  {/if}
+  {#if tab.manual}
+    <button class="txbtn commit" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title={t('변경을 반영합니다')}>
+      <Icon name="check" size={14} />{t('커밋')}
+    </button>
+    <button class="txbtn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title={t('변경을 버립니다')}>
+      <Icon name="undo" size={14} />{t('롤백')}
+    </button>
+    {#if tab.inTx && !short}<span class="txwait">{t('커밋 대기 중')}</span>{/if}
+  {/if}
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="tab">
   {#if !isTable}
@@ -703,19 +731,9 @@
       <span class="sep"></span>
       <button class="icon-btn" title={t('SQL 파일 열기')} onclick={openFile}><Icon name="open" /></button>
       <button class="icon-btn" title={t('SQL 파일로 저장')} onclick={saveFile}><Icon name="save" /></button>
-      <span class="sep"></span>
-      <div class="seg" role="group">
-        <button class:on={!tab.manual} onclick={() => setManualCommit(tab, false)} title={t('문장마다 바로 반영합니다')}>{t('자동 커밋')}</button>
-        <button class:on={tab.manual} onclick={() => setManualCommit(tab, true)} title={t('커밋할 때까지 변경을 트랜잭션에 둡니다')}>{t('수동 커밋')}</button>
-      </div>
-      {#if tab.manual}
-        <button class="txbtn commit" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title={t('변경을 반영합니다')}>
-          <Icon name="check" size={14} />{t('커밋')}
-        </button>
-        <button class="txbtn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title={t('변경을 버립니다')}>
-          <Icon name="undo" size={14} />{t('롤백')}
-        </button>
-        {#if tab.inTx}<span class="txwait">{t('커밋 대기 중')}</span>{/if}
+      {#if !conn?.readOnly}
+        <span class="sep"></span>
+        {@render txControls(false)}
       {/if}
       <span class="grow"></span>
       {#if tab.running}
@@ -808,6 +826,9 @@
               <button class="btn mini primary" onclick={openApply} title="{t('변경 적용')} ({modKey}Enter · {modKey}S)"><Icon name="check" size={13} /> {t('적용')}</button>
               <button class="btn mini" onclick={() => current && revert(current)} title={t('모든 변경 되돌리기')}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
             </div>
+          {/if}
+          {#if isTable && !conn?.readOnly}
+            <div class="grp">{@render txControls(true)}</div>
           {/if}
           {#if editInfo}
             <div class="grp">
@@ -1062,6 +1083,10 @@
     color: var(--text);
     font-size: 12px;
     cursor: pointer;
+  }
+  .txbtn.on {
+    border-color: var(--warn);
+    color: var(--warn);
   }
   .txbtn:disabled {
     color: var(--text-faint);

@@ -186,7 +186,9 @@ export async function previewChanges(tab: Tab, r: StmtResult): Promise<string[]>
 export async function applyChanges(tab: Tab, r: StmtResult): Promise<{ count: number; inserted: boolean }> {
   const info = r.edit!.info!
   const changes = buildChanges(r)
-  const count = await api.ApplyChanges({ connId: tab.connId, schema: info.schema, table: info.table, changes })
+  // manual commit: the changes join the tab's transaction
+  const count = await api.ApplyChanges({ connId: tab.connId, schema: info.schema, table: info.table, changes, tabId: tab.id, manual: !!tab.manual })
+  if (tab.manual) tab.inTx = await api.TxOpen(tab.id).catch(() => true)
   commitLocally(r)
   return { count, inserted: changes.some((c) => c.kind === 'insert') }
 }

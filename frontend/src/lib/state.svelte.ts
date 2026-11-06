@@ -695,7 +695,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   tab.running = true
   tab.startedAt = Date.now()
   try {
-    const req = { tabId: tab.id, connId: tab.connId, schema: tab.schema, sql, cursor, fetch: app.pageSize, manual: !!tab.manual && !tab.tableRef }
+    const req = { tabId: tab.id, connId: tab.connId, schema: tab.schema, sql, cursor, fetch: app.pageSize, manual: !!tab.manual }
     let t0 = performance.now()
     let res = await api.Execute(req)
     if (res.confirm?.length) {
@@ -764,6 +764,8 @@ export async function endTx(tab: Tab, commit: boolean) {
     tab.inTx = await api.TxOpen(tab.id).catch(() => false)
     tab.running = false
   }
+  // the grid shows what was rolled back
+  if (!commit && tab.tableRef) reloadTable(tab)
 }
 
 export function setManualCommit(tab: Tab, on: boolean) {

@@ -3,32 +3,29 @@ package dbx
 import (
 	"context"
 	"database/sql/driver"
+	"time"
 
 	"tablume/internal/i18n"
 )
 
-// Manual commit: a console tab keeps its changes in an open transaction
-// until Commit or Rollback. MySQL/MariaDB (autocommit=0) and SQL Server
-// (IMPLICIT_TRANSACTIONS) have a session switch for it; PostgreSQL and
-// SQLite get a BEGIN before the first change; Oracle's driver commits every
-// statement unless a transaction is open through it, so one is begun there.
+// Manual commit: a tab keeps its changes (statements it runs, grid edits)
+// in an open transaction until Commit or Rollback. A transaction is begun
+// before the first change; Oracle's driver commits every statement unless a
+// transaction is open through it, so there it is begun through the driver.
+// MySQL/MariaDB also get autocommit=0, so a change after an implicit commit
+// (DDL) still waits.
+//
+// (SQL Server's IMPLICIT_TRANSACTIONS is not used: with it, BEGIN TRANSACTION
+// nests, and a COMMIT the user types would leave the changes open.)
 
-// manualSwitch is the session setting that turns autocommit off (on) or
-// back on, where the engine has one.
 func manualSwitch(style string, on bool) string {
-	switch style {
-	case "mysql":
-		if on {
-			return "SET autocommit = 0"
-		}
-		return "SET autocommit = 1"
-	case "mssql":
-		if on {
-			return "SET IMPLICIT_TRANSACTIONS ON"
-		}
-		return "SET IMPLICIT_TRANSACTIONS OFF"
+	if style != "mysql" {
+		return ""
 	}
-	return ""
+	if on {
+		return "SET autocommit = 0"
+	}
+	return "SET autocommit = 1"
 }
 
 // Statements that control the transaction or the session themselves: no
@@ -63,12 +60,26 @@ func (s *session) beforeStmt(ctx context.Context, style, stmt string) error {
 	if kw := firstKeyword(stmt); txControl[kw] && !(kw == "BEGIN" && style == "oracle") {
 		return nil
 	}
-	switch style {
-	case "postgres", "sqlite":
-		if _, err := s.conn.ExecContext(ctx, "BEGIN"); err != nil {
+	return s.beginTx(ctx, style)
+}
+
+// beginTx opens the tab's transaction unless one is open.
+func (s *session) beginTx(ctx context.Context, style string) error {
+	if s.inTx {
+		return nil
+	}
+	q := map[string]string{
+		"postgres": "BEGIN",
+		"sqlite":   "BEGIN",
+		"mysql":    "START TRANSACTION",
+		"mssql":    "IF @@TRANCOUNT = 0 BEGIN TRANSACTION",
+	}[style]
+	switch {
+	case q != "":
+		if _, err := s.conn.ExecContext(ctx, q); err != nil {
 			return err
 		}
-	case "oracle":
+	case style == "oracle":
 		err := s.conn.Raw(func(dc any) error {
 			b, ok := dc.(driver.ConnBeginTx)
 			if !ok {
@@ -144,7 +155,10 @@ func (s *session) endTx(ctx context.Context, style string, commit bool) error {
 		q = "COMMIT"
 	}
 	if style == "mssql" {
-		q = "IF @@TRANCOUNT > 0 " + q
+		q = "IF @@TRANCOUNT > 0 ROLLBACK"
+		if commit {
+			q = "WHILE @@TRANCOUNT > 0 COMMIT" // also a BEGIN TRANSACTION the user nested
+		}
 	}
 	if _, err := s.conn.ExecContext(ctx, q); err != nil {
 		return err
@@ -184,4 +198,57 @@ func (m *Manager) TxOpen(tabID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.inTx
+}
+
+// applyInTx runs grid changes in the tab's transaction (manual commit): they
+// wait for Commit like the tab's statements. A savepoint keeps the batch
+// all-or-nothing without ending the transaction.
+func (m *Manager) applyInTx(req ApplyRequest, p *pool, stmts []stmtArgs) error {
+	s, _, err := m.session(req.TabID, req.ConnID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closeCursor()
+	style := p.d.Style()
+	if err := s.ensureConn(ctx, p); err != nil {
+		return err
+	}
+	if err := s.setManual(ctx, style, true); err != nil {
+		return err
+	}
+	if err := s.beginTx(ctx, style); err != nil {
+		return err
+	}
+	save, undo, release := "SAVEPOINT tablume_apply", "ROLLBACK TO SAVEPOINT tablume_apply", "RELEASE SAVEPOINT tablume_apply"
+	switch style {
+	case "mssql":
+		save, undo, release = "SAVE TRANSACTION tablume_apply", "ROLLBACK TRANSACTION tablume_apply", ""
+	case "oracle":
+		release = ""
+	}
+	if _, err := s.conn.ExecContext(ctx, save); err != nil {
+		return err
+	}
+	for i, st := range stmts {
+		res, err := s.conn.ExecContext(ctx, st.sql, st.args...)
+		if err == nil && st.one {
+			if n, rerr := res.RowsAffected(); rerr == nil && n != 1 {
+				err = i18n.Errorf("%d번째 변경이 %d개 행에 적용되어 모두 취소했습니다. 다른 곳에서 바뀌었을 수 있으니 새로고침하세요.\n%s", i+1, n, inlineArgs(st.sql, st.args, p))
+			}
+		} else if err != nil {
+			err = i18n.Errorf("%d번째 변경 실패 (모두 취소됨): %w\n%s", i+1, err, inlineArgs(st.sql, st.args, p))
+		}
+		if err != nil {
+			_, _ = s.conn.ExecContext(ctx, undo)
+			return err
+		}
+	}
+	if release != "" {
+		_, _ = s.conn.ExecContext(ctx, release)
+	}
+	return nil
 }
