@@ -314,25 +314,27 @@
   // WHERE | ORDER BY split, shared by all table tabs (app.orderShare)
   let filterBar = $state<HTMLDivElement>()
   let splitting = $state(false)
-  function startSplit(e: MouseEvent) {
+  function startSplit(e: PointerEvent) {
     if (e.button !== 0 || !filterBar) return
     e.preventDefault()
     const r = filterBar.getBoundingClientRect()
     splitting = true
-    const move = (ev: MouseEvent) => {
+    const move = (ev: PointerEvent) => {
       const share = (r.right - ev.clientX) / r.width
       app.orderShare = Math.round(Math.max(0.12, Math.min(0.75, share)) * 1000) / 1000
     }
     const up = () => {
       splitting = false
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
       saveWorkspaceSoon()
     }
     document.body.style.cursor = 'col-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   function setPageSize(n: number) {
@@ -414,18 +416,21 @@
     saveWorkspaceSoon()
   }
 
-  function startDrag(e: MouseEvent) {
+  function startDrag(e: PointerEvent) {
+    if (e.button !== 0) return
     e.preventDefault()
     const rect = body.getBoundingClientRect()
-    const move = (ev: MouseEvent) => {
+    const move = (ev: PointerEvent) => {
       split = Math.max(10, Math.min(90, ((ev.clientY - rect.top) / rect.height) * 100))
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
     }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   async function openFile() {
@@ -592,7 +597,7 @@
       <div
         class="divider"
         class:collapsed={tab.layout === 'results'}
-        onmousedown={startDrag}
+        onpointerdown={startDrag}
         ondblclick={toggleLayout}
         title={t('드래그: 크기 조절 · 더블클릭: 결과만 보기')}
       ></div>
@@ -673,7 +678,7 @@
                 <Icon name="download" size={14} /><Icon name="chevronDown" size={10} />
               </button>
               {#if exportMenu}
-                <div class="menu" style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
+                <div class="menu" data-menu style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
                   <button onclick={() => exportResult('csv')}>CSV <span class="dim">.csv</span></button>
                   <button onclick={() => exportResult('tsv')}>TSV <span class="dim">.tsv</span></button>
                   <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
@@ -721,7 +726,7 @@
             <button class="icon-btn sm" title={t('다음 {n}행', { n: num(app.pageSize) })} disabled={busy || whole} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
             <button class="icon-btn sm" title={t('마지막으로')} disabled={busy || whole || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
             {#if sizeMenu}
-              <div class="menu size-menu" style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
+              <div class="menu size-menu" data-menu style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
                 {#each PAGE_SIZES as n (n)}
                   <button class:on={app.pageSize === n} onclick={() => setPageSize(n)}>{num(n)}</button>
                 {/each}
@@ -744,7 +749,7 @@
           </div>
           <div class="fpart order" style:flex="0 0 {app.orderShare * 100}%">
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="fsplit" class:on={splitting} title={t('끌어서 폭 조정 · 더블클릭하면 기본값')} onmousedown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
+            <div class="fsplit" class:on={splitting} title={t('끌어서 폭 조정 · 더블클릭하면 기본값')} onpointerdown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
             <span class="ficon order"><Icon name="sortLines" size={14} /></span>
             <span class="kw" class:on={!!tab.tableRef.orderBy}>ORDER BY</span>
             <div class="fwrap">
@@ -841,6 +846,15 @@
     padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
+    /* sideways on a phone, as the results' row does */
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar > * {
+    flex-shrink: 0;
   }
   .toolbar select {
     max-width: 200px;
@@ -898,6 +912,12 @@
     cursor: row-resize;
     border-top: 1px solid var(--border);
     background: var(--bg-panel);
+    touch-action: none;
+  }
+  @media (pointer: coarse) {
+    .divider {
+      height: 12px;
+    }
   }
   .divider:hover {
     background: var(--accent);
@@ -984,6 +1004,31 @@
     width: 7px;
     cursor: col-resize;
     z-index: 2;
+    touch-action: none;
+  }
+  /* a finger needs more than 7px to land on */
+  @media (pointer: coarse) {
+    .fsplit {
+      left: -10px;
+      width: 19px;
+    }
+    .fpart .fsplit.on {
+      background: linear-gradient(to right, transparent 9px, var(--accent) 9px, var(--accent) 10px, transparent 10px);
+    }
+  }
+  /* a phone: WHERE over ORDER BY, each the full width */
+  @media (max-width: 700px) {
+    .filterbar {
+      flex-direction: column;
+    }
+    .fpart.order {
+      flex: none !important;
+      border-left: none;
+      border-top: 1px solid var(--border);
+    }
+    .fsplit {
+      display: none;
+    }
   }
   .fsplit:hover,
   .fsplit.on {

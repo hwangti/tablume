@@ -8,6 +8,13 @@
 // its own (Android Chrome), that one is used and none is made up.
 //
 // Text fields keep their own long press (caret, selection, paste).
+//
+// Also for touch: an open menu closes on a tap outside it or a scroll. The
+// menus close on a click on the window, but iOS sends no click for a tap on
+// something without a click handler of its own (a grid cell, empty space),
+// and a scroll was never a click.
+
+import { closeMenus } from './fit'
 
 const HOLD_MS = 500
 const SLOP = 10 // px the finger may drift before it counts as a scroll
@@ -17,6 +24,7 @@ let start: { x: number; y: number; id: number } | null = null
 let made = false // the event being sent is ours
 let swallowUntil = 0 // the click that ends a long press isn't a tap
 let firedUntil = 0 // ours went out: the browser's late one is the same press
+let touchedAt = 0 // a scroll soon after this is the finger's (and its fling's)
 
 const editable = (t: EventTarget | null) =>
   t instanceof Element && !!t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
@@ -31,7 +39,11 @@ export function installLongPress() {
     'pointerdown',
     (e) => {
       cancel()
-      if (e.pointerType !== 'touch' || !e.isPrimary || editable(e.target)) return
+      if (e.pointerType !== 'touch') return
+      touchedAt = Date.now()
+      // a button's click reaches the window as it does with a mouse
+      if (!(e.target as Element).closest?.('[data-menu], button')) closeMenus()
+      if (!e.isPrimary || editable(e.target)) return
       start = { x: e.clientX, y: e.clientY, id: e.pointerId }
       timer = window.setTimeout(() => {
         const s = start
@@ -64,6 +76,13 @@ export function installLongPress() {
     { capture: true, passive: true },
   )
   for (const t of ['pointerup', 'pointercancel'] as const) addEventListener(t, cancel, { capture: true, passive: true })
+  addEventListener(
+    'scroll',
+    (e) => {
+      if (Date.now() - touchedAt < 3000 && !(e.target as Element).closest?.('[data-menu]')) closeMenus()
+    },
+    { capture: true, passive: true },
+  )
   // The browser's own (Android): use it and send none; after ours, it's a
   // second one for the same press.
   addEventListener(

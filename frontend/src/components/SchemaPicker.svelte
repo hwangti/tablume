@@ -93,7 +93,7 @@
 
 <svelte:window onmousedown={outside} onkeydown={(e) => e.key === 'Escape' && !addingPattern && onclose()} />
 
-<div class="picker" bind:this={el} style:left="{pos.left}px" style:top="{pos.top}px">
+<div class="picker" data-menu bind:this={el} style:left="{pos.left}px" style:top="{pos.top}px">
   <div class="head">
     <span class="title">{t('표시할 스키마')}</span>
     <span class="cnt">{shown}/{names.length}</span>

@@ -429,7 +429,7 @@
     return null
   }
 
-  function rowEnter(e: MouseEvent, r: Row) {
+  function rowEnter(e: PointerEvent, r: Row) {
     clearTimeout(tipTimer)
     const content = tipFor(r)
     if (!content) {
@@ -611,8 +611,8 @@
       onclick={() => rowClick(r)}
       ondblclick={() => rowDblClick(r)}
       oncontextmenu={(e) => rowMenu(e, r)}
-      onmouseenter={(e) => rowEnter(e, r)}
-      onmouseleave={rowLeave}
+      onpointerenter={(e) => e.pointerType === 'mouse' && rowEnter(e, r)}
+      onpointerleave={rowLeave}
       title={r.kind === 'conn' ? `${driverLabel(r.c.driver)}${app.conn[r.c.id]?.version ? ' · ' + app.conn[r.c.id]?.version : ''}` : undefined}
     >
       {#if r.kind === 'col' || r.kind === 'routine'}
@@ -1299,18 +1299,6 @@
   }
   .col {
     gap: 6px;
-  }
-  .act {
-    display: none;
-  }
-  .conn:hover .act {
-    display: inline-flex;
-  }
-  .conn:hover .drv {
-    display: none;
-  }
-  .act {
-    margin-left: auto;
   }
   .small {
     width: 20px;
