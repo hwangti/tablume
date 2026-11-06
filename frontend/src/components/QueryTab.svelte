@@ -637,9 +637,9 @@
   </div>
 {/snippet}
 
-<!-- Manual commit: the mode (a toggle), and Commit / Rollback while in it.
-     waiting: say so in words too (the console's toolbar has the room). -->
-{#snippet txControls(waiting: boolean)}
+<!-- Manual commit: the mode (a toggle), and Commit / Rollback. Those are
+     always there (off in autocommit), so switching moves nothing. -->
+{#snippet txControls()}
   <button
     class="txbtn"
     class:on={tab.manual}
@@ -647,15 +647,12 @@
     title={tab.manual ? t('수동 커밋') + ' — ' + t('커밋할 때까지 변경을 트랜잭션에 둡니다') : t('자동 커밋') + ' — ' + t('문장마다 바로 반영합니다')}
     >Tx: {tab.manual ? t('수동') : t('자동')}</button
   >
-  {#if tab.manual}
-    <button class="txbtn commit" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title={t('변경을 반영합니다')}>
-      <Icon name="check" size={14} />{t('커밋')}
-    </button>
-    <button class="txbtn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title={t('변경을 버립니다')}>
-      <Icon name="undo" size={14} />{t('롤백')}
-    </button>
-    {#if tab.inTx && waiting}<span class="txwait">{t('커밋 대기 중')}</span>{/if}
-  {/if}
+  <button class="txbtn commit" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title={tab.manual ? t('변경을 반영합니다') : t('수동 커밋에서 씁니다')}>
+    <Icon name="check" size={14} />{t('커밋')}
+  </button>
+  <button class="txbtn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title={tab.manual ? t('변경을 버립니다') : t('수동 커밋에서 씁니다')}>
+    <Icon name="undo" size={14} />{t('롤백')}
+  </button>
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -671,6 +668,23 @@
       <button class="icon-btn stop" title={t('취소')} onclick={() => cancel(tab)} disabled={!tab.running}>
         <Icon name="stop" />
       </button>
+      {#if !conn?.readOnly}
+        <span class="sep"></span>
+        {@render txControls()}
+      {/if}
+      <span class="sep"></span>
+      <button class="icon-btn" title="{t('SQL 정렬')} ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — {t('선택 영역 또는 전체')}" onclick={() => editor?.format()}
+        ><Icon name="format" /></button
+      >
+      <span class="sep"></span>
+      <button class="icon-btn" title={t('SQL 파일 열기')} onclick={openFile}><Icon name="open" /></button>
+      <button class="icon-btn" title={t('SQL 파일로 저장')} onclick={saveFile}><Icon name="save" /></button>
+      <span class="grow"></span>
+      {#if tab.running}
+        <span class="running"><span class="spin"></span> {t('실행 중')} {elapsed}</span>
+      {:else if tab.inTx}
+        <span class="txwait">{t('커밋 대기 중')}</span>
+      {/if}
       <span class="sep"></span>
       <select
         value={tab.connId}
@@ -693,21 +707,6 @@
           <option value={s}>{s}</option>
         {/each}
       </select>
-      <span class="sep"></span>
-      <button class="icon-btn" title="{t('SQL 정렬')} ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — {t('선택 영역 또는 전체')}" onclick={() => editor?.format()}
-        ><Icon name="format" /></button
-      >
-      <span class="sep"></span>
-      <button class="icon-btn" title={t('SQL 파일 열기')} onclick={openFile}><Icon name="open" /></button>
-      <button class="icon-btn" title={t('SQL 파일로 저장')} onclick={saveFile}><Icon name="save" /></button>
-      {#if !conn?.readOnly}
-        <span class="sep"></span>
-        {@render txControls(true)}
-      {/if}
-      <span class="grow"></span>
-      {#if tab.running}
-        <span class="running"><span class="spin"></span> {t('실행 중')} {elapsed}</span>
-      {/if}
     </div>
   {/if}
 
@@ -796,7 +795,7 @@
             </div>
           {/if}
           {#if isTable && !conn?.readOnly}
-            <div class="grp">{@render txControls(false)}</div>
+            <div class="grp">{@render txControls()}</div>
           {/if}
           {#if editInfo}
             <div class="grp">
