@@ -34,6 +34,9 @@ func TestSplit(t *testing.T) {
 		{"mssql try", "mssql", "BEGIN TRY SELECT 1; END TRY BEGIN CATCH SELECT 2; END CATCH; SELECT 3", []string{"BEGIN TRY SELECT 1; END TRY BEGIN CATCH SELECT 2; END CATCH", "SELECT 3"}},
 		{"mssql tran", "mssql", "BEGIN TRAN; UPDATE t SET a=1; COMMIT", []string{"BEGIN TRAN", "UPDATE t SET a=1", "COMMIT"}},
 		{"sqlite trigger", "sqlite", "CREATE TRIGGER tr AFTER INSERT ON t BEGIN UPDATE t SET a=1; END; BEGIN IMMEDIATE; SELECT 1", []string{"CREATE TRIGGER tr AFTER INSERT ON t BEGIN UPDATE t SET a=1; END", "BEGIN IMMEDIATE", "SELECT 1"}},
+		{"trailing comment", "mysql", "UPDATE a SET x=1; -- 973행\nUPDATE b SET x=1;   -- 15행\n-- 다음 것\nSELECT 1; # m\nSELECT 2; /* c */\nSELECT 3; /* d */ SELECT 4",
+			[]string{"UPDATE a SET x=1", "UPDATE b SET x=1", "-- 다음 것\nSELECT 1", "SELECT 2", "SELECT 3", "/* d */ SELECT 4"}},
+		{"trailing comment last", "postgres", "select 1; -- done", []string{"select 1"}},
 		{"korean", "mysql", "select '한글;' as 이름; select 2", []string{"select '한글;' as 이름", "select 2"}},
 	}
 	for _, c := range cases {
@@ -61,6 +64,13 @@ func TestPickAt(t *testing.T) {
 	check(21, "select 2") // end of line 2
 	check(22, "select 3") // blank line
 	check(len(text), "select 3")
+
+	// on a statement's trailing comment: that statement
+	text = "select 1; -- one\nselect 2"
+	st = Split(text, "mysql")
+	check(14, "select 1")
+	check(16, "select 1")
+	check(17, "select 2")
 }
 
 func TestUTF16(t *testing.T) {
