@@ -446,14 +446,17 @@
     saveWorkspaceSoon()
   }
 
+  let dividing = $state(false)
   function startDrag(e: PointerEvent) {
     if (e.button !== 0) return
     e.preventDefault()
+    dividing = true
     const rect = body.getBoundingClientRect()
     const move = (ev: PointerEvent) => {
       split = Math.max(10, Math.min(90, ((ev.clientY - rect.top) / rect.height) * 100))
     }
     const up = () => {
+      dividing = false
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
@@ -626,6 +629,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="divider"
+        class:on={dividing}
         class:collapsed={tab.layout === 'results'}
         onpointerdown={startDrag}
         ondblclick={toggleLayout}
@@ -974,6 +978,7 @@
     display: none;
   }
   .divider {
+    position: relative;
     height: 5px;
     flex-shrink: 0;
     cursor: row-resize;
@@ -981,12 +986,22 @@
     background: var(--bg-panel);
     touch-action: none;
   }
+  /* a finger needs more than 5px to land on: a wider grip that isn't seen */
   @media (pointer: coarse) {
-    .divider {
-      height: 12px;
+    .divider::before {
+      content: '';
+      position: absolute;
+      inset: -9px 0;
+      z-index: 5;
     }
   }
-  .divider:hover {
+  /* (on touch a :hover stays after the finger lifts) */
+  @media (hover: hover) {
+    .divider:hover {
+      background: var(--accent);
+    }
+  }
+  .divider.on {
     background: var(--accent);
   }
   .results {
@@ -1097,9 +1112,13 @@
       display: none;
     }
   }
-  .fsplit:hover,
   .fsplit.on {
     background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 4px, transparent 4px);
+  }
+  @media (hover: hover) {
+    .fsplit:hover {
+      background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 4px, transparent 4px);
+    }
   }
   .ficon {
     display: inline-flex;
