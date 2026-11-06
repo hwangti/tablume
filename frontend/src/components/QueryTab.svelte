@@ -640,7 +640,7 @@
 
 <!-- Manual commit: the mode (a toggle), and Commit / Rollback. Those are
      always there (off in autocommit), so switching moves nothing. -->
-{#snippet txControls()}
+{#snippet txControls(size: number)}
   <button
     class="txbtn"
     class:on={tab.manual}
@@ -648,11 +648,11 @@
     title={tab.manual ? t('수동 커밋') + ' — ' + t('커밋할 때까지 변경을 트랜잭션에 둡니다') : t('자동 커밋') + ' — ' + t('문장마다 바로 반영합니다')}
     >Tx: {tab.manual ? t('수동') : t('자동')}</button
   >
-  <button class="txbtn commit" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title={tab.manual ? t('변경을 반영합니다') : t('수동 커밋에서 씁니다')}>
-    <Icon name="check" size={14} />{t('커밋')}
+  <button class="icon-btn txc" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title="{t('커밋')} — {tab.manual ? t('변경을 반영합니다') : t('수동 커밋에서 씁니다')}">
+    <Icon name="check" {size} />
   </button>
-  <button class="txbtn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title={tab.manual ? t('변경을 버립니다') : t('수동 커밋에서 씁니다')}>
-    <Icon name="undo" size={14} />{t('롤백')}
+  <button class="icon-btn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title="{t('롤백')} — {tab.manual ? t('변경을 버립니다') : t('수동 커밋에서 씁니다')}">
+    <Icon name="undo" {size} />
   </button>
 {/snippet}
 
@@ -671,7 +671,7 @@
       </button>
       {#if !conn?.readOnly}
         <span class="sep"></span>
-        {@render txControls()}
+        {@render txControls(16)}
       {/if}
       <span class="sep"></span>
       <button class="icon-btn" title="{t('SQL 정렬')} ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — {t('선택 영역 또는 전체')}" onclick={() => editor?.format()}
@@ -790,7 +790,7 @@
             </div>
           {/if}
           {#if isTable && !conn?.readOnly}
-            <div class="grp">{@render txControls()}</div>
+            <div class="grp">{@render txControls(14)}</div>
           {/if}
           {#if editInfo}
             <div class="grp">
@@ -1053,7 +1053,7 @@
   .txbtn.on {
     color: var(--warn);
   }
-  .txbtn.commit:not(:disabled) {
+  .txc:not(:disabled) {
     color: var(--ok);
   }
   .txwait {
@@ -1294,28 +1294,6 @@
     font-weight: 600;
   }
 
-  .seg {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .seg button {
-    height: 22px;
-    padding: 0 10px;
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .seg button + button {
-    border-left: 1px solid var(--border);
-  }
-  .seg button.on {
-    background: var(--bg-select);
-    color: var(--text);
-  }
   .icon-btn.split {
     width: auto;
     gap: 1px;

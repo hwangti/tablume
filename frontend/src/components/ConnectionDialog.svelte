@@ -206,8 +206,10 @@
         <input id="f-sshuser" bind:value={c.sshUser} autocomplete="off" />
         <span class="lbl">{t('인증')}</span>
         <div class="row">
-          <label class="check"><input type="radio" bind:group={c.sshAuth} value="password" /> {t('비밀번호')}</label>
-          <label class="check"><input type="radio" bind:group={c.sshAuth} value="key" /> {t('키 파일')}</label>
+          <div class="seg" role="group">
+            <button type="button" class:on={c.sshAuth !== 'key'} onclick={() => (c.sshAuth = 'password')}>{t('비밀번호')}</button>
+            <button type="button" class:on={c.sshAuth === 'key'} onclick={() => (c.sshAuth = 'key')}>{t('키 파일')}</button>
+          </div>
         </div>
         {#if c.sshAuth === 'key'}
           <label for="f-sshkey">{t('키 파일')}</label>

@@ -44,9 +44,11 @@
     {#if one}
       <div class="row">
         <span class="lbl">{t('형식')}</span>
-        <label class="chk"><input type="radio" bind:group={format} value="csv" /> CSV</label>
-        <label class="chk"><input type="radio" bind:group={format} value="json" /> JSON</label>
-        <label class="chk"><input type="radio" bind:group={format} value="sql" /> SQL</label>
+        <div class="seg" role="group">
+          {#each ['csv', 'json', 'sql'] as const as f (f)}
+            <button type="button" class:on={format === f} onclick={() => (format = f)}>{f.toUpperCase()}</button>
+          {/each}
+        </div>
       </div>
     {/if}
     {#if format === 'sql'}
