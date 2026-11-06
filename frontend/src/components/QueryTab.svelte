@@ -910,22 +910,25 @@
   .divider.collapsed {
     display: none;
   }
+  /* a 1px line, as the WHERE | ORDER BY split; the grip around it isn't seen */
   .divider {
     position: relative;
-    height: 5px;
+    height: 1px;
     flex-shrink: 0;
     cursor: row-resize;
-    border-top: 1px solid var(--border);
-    background: var(--bg-panel);
+    background: var(--border);
     touch-action: none;
   }
-  /* a finger needs more than 5px to land on: a wider grip that isn't seen */
+  .divider::before {
+    content: '';
+    position: absolute;
+    inset: -3px 0;
+    z-index: 5;
+  }
+  /* a finger needs more */
   @media (pointer: coarse) {
     .divider::before {
-      content: '';
-      position: absolute;
-      inset: -9px 0;
-      z-index: 5;
+      inset: -10px 0;
     }
   }
   /* (on touch a :hover stays after the finger lifts) */
