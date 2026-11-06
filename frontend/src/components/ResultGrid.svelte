@@ -594,9 +594,63 @@
     revertCells(result, editedInSelection())
   }
 
+  // ---- find in the loaded rows (Cmd/Ctrl+F): matching cells are marked,
+  // Enter / Shift+Enter moves between them.
+  let findOpen = $state(false)
+  let findQ = $state('')
+  let findIdx = $state(-1)
+  let findInput = $state<HTMLInputElement>()
+  let fq = $derived(findOpen ? findQ.trim().toLowerCase() : '')
+  const hit = (v: Cell) => !!fq && v !== null && v.toLowerCase().includes(fq)
+  let found = $derived.by(() => {
+    const out: { r: number; p: number }[] = []
+    if (!fq) return out
+    for (let r = 0; r < order.length; r++) for (let p = 0; p < vc.length; p++) if (hit(val(order[r], vc[p]))) out.push({ r, p })
+    return out
+  })
+
+  export function openFind() {
+    findOpen = true
+    requestAnimationFrame(() => (findInput?.focus(), findInput?.select()))
+  }
+
+  function closeFind() {
+    findOpen = false
+    findIdx = -1
+    scroller.focus({ preventScroll: true })
+  }
+
+  function goFind(d: 1 | -1) {
+    const n = found.length
+    if (!n) return
+    findIdx = (findIdx < 0 ? (d === 1 ? 0 : n - 1) : findIdx + d + n) % n
+    const m = found[findIdx]
+    anchor = focus = { r: m.r, c: m.p }
+    scrollIntoView(m.r, m.p)
+  }
+
+  function findKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      goFind(e.shiftKey ? -1 : 1)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      closeFind()
+    }
+  }
+
   function keydown(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey
-    if (e.key === 'Enter' && (mod || e.altKey)) {
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      openFind()
+      return
+    }
+    if (e.key === 'Escape' && findOpen) {
+      e.preventDefault()
+      closeFind()
+      return
+    }    if (e.key === 'Enter' && (mod || e.altKey)) {
       e.preventDefault()
       onapply?.()
       return
@@ -803,6 +857,24 @@
   onblur={() => (linkHeld = false)}
 />
 
+<div class="gwrap">
+{#if findOpen}
+  <div class="find" style:top="{HEAD_H + 6}px">
+    <input
+      bind:this={findInput}
+      bind:value={findQ}
+      oninput={() => ((findIdx = -1), goFind(1))}
+      onkeydown={findKey}
+      placeholder={t('결과에서 찾기')}
+      title={hasMore ? t('불러온 행에서만 찾습니다') : ''}
+      spellcheck="false"
+    />
+    <span class="fcount" class:none={!!fq && !found.length}>{fq ? (found.length ? `${findIdx + 1 || '-'}/${num(found.length)}` : t('없음')) : ''}</span>
+    <button class="fbtn" title="{t('이전')} (Shift+Enter)" onclick={() => goFind(-1)} disabled={!found.length}><Icon name="chevronUp" size={14} /></button>
+    <button class="fbtn" title="{t('다음')} (Enter)" onclick={() => goFind(1)} disabled={!found.length}><Icon name="chevronDown" size={14} /></button>
+    <button class="fbtn" title="{t('닫기')} (Esc)" onclick={closeFind}><Icon name="close" size={14} /></button>
+  </div>
+{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="grid"
@@ -892,6 +964,8 @@
             class:sel={isSel(vi, p)}
             class:focus={isFocus}
             class:same={!!same && same.c === c && v === same.v && !isFocus}
+            class:hit={hit(v)}
+            class:hit-cur={findIdx >= 0 && found[findIdx]?.r === vi && found[findIdx]?.p === p}
             class:right={numeric[c]}
             class:v-num={kind[c] === 'num'}
             class:v-date={kind[c] === 'date'}
@@ -948,6 +1022,7 @@
     <div class="empty">{t('결과 행이 없습니다')}</div>
   {/if}
 </div>
+</div>
 
 {#snippet mi(name: string)}<span class="mi"><Icon {name} size={14} /></span>{/snippet}
 
@@ -963,6 +1038,7 @@
       >
     {/if}
     <button onclick={selectAll}>{@render mi('selectAll')}{t('전체 선택')}</button>
+    <button onclick={openFind}>{@render mi('filter')}{t('결과에서 찾기')} <kbd>{modKey}F</kbd></button>
     {#if info?.editable || info?.insertable}
       <hr />
       {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>{@render mi('edit')}{t('편집')} <kbd>Enter</kbd></button>{/if}
@@ -1198,6 +1274,68 @@
   }
   .td.same {
     background: var(--cell-same);
+  }
+  .td.hit {
+    background: rgba(224, 168, 75, 0.28);
+  }
+  .td.hit-cur {
+    background: rgba(224, 168, 75, 0.6);
+    color: var(--text);
+  }
+  .gwrap {
+    position: relative;
+    height: 100%;
+  }
+  .find {
+    position: absolute;
+    right: 16px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+  .find input {
+    width: 180px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+  .fcount {
+    min-width: 44px;
+    padding: 0 4px;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .fcount.none {
+    color: var(--danger);
+  }
+  .fbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .fbtn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .fbtn:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .dots {
     position: absolute;

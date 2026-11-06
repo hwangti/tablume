@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1478,6 +1479,72 @@ func TestReadOnlyAndConfirm(t *testing.T) {
 				} else {
 					t.Log("session refused:", err)
 				}
+			}
+		})
+	}
+}
+
+func TestManualCommit(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			run := func(tab, q string, manual bool) ExecResponse {
+				t.Helper()
+				r, err := m.Execute(ExecRequest{TabID: tab, ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1, Manual: manual})
+				if err != nil || len(r.Results) == 0 || r.Results[len(r.Results)-1].Error != "" {
+					t.Fatalf("%s: %+v %v", q, r, err)
+				}
+				return r
+			}
+			run("a", tg.setup, false)
+			read := "SELECT name FROM " + tg.table + " WHERE id = 2"
+			// another tab, autocommit
+			name2 := func() string { return fmt.Sprint(run("b", read, false).Results[0].Rows[0][0]) }
+			set := func(v string) string { return "UPDATE " + tg.table + " SET name = '" + v + "' WHERE id = 2" }
+
+			if r := run("a", read, true); r.InTx {
+				t.Error("a read opened a transaction")
+			}
+			if r := run("a", set("x"), true); !r.InTx {
+				t.Fatal("change not held")
+			}
+			if name != "mssql" { // SQL Server's reader would wait for the lock
+				if v := name2(); v != "b" {
+					t.Errorf("uncommitted change seen by another tab: %s", v)
+				}
+			}
+			if _, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: read, Cursor: -1}); err == nil {
+				t.Error("switched to autocommit with changes pending")
+			}
+			if err := m.EndTx("a", false); err != nil || m.TxOpen("a") {
+				t.Fatal("rollback:", err)
+			}
+			if v := name2(); v != "b" {
+				t.Errorf("after rollback: %s", v)
+			}
+			run("a", set("x"), true)
+			if r := run("a", "COMMIT", true); r.InTx {
+				t.Error("COMMIT typed: still in a transaction")
+			}
+			if v := name2(); v != "x" {
+				t.Errorf("after typed COMMIT: %s", v)
+			}
+			run("a", set("y"), true)
+			if err := m.EndTx("a", true); err != nil {
+				t.Fatal("commit:", err)
+			}
+			if v := name2(); v != "y" {
+				t.Errorf("after commit: %s", v)
+			}
+			if r := run("a", set("b"), false); r.InTx {
+				t.Error("autocommit again: still in a transaction")
+			}
+			if v := name2(); v != "b" {
+				t.Errorf("autocommit again: %s", v)
 			}
 		})
 	}

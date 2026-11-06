@@ -121,12 +121,15 @@ type ExecRequest struct {
 	// Confirmed runs UPDATE/DELETE without WHERE; otherwise they come
 	// back in ExecResponse.Confirm and nothing runs.
 	Confirmed bool `json:"confirmed"`
+	// Manual: changes wait for EndTx instead of committing (txn.go).
+	Manual bool `json:"manual"`
 }
 
 type ExecResponse struct {
 	Results       []StmtResult `json:"results"`
 	CurrentSchema string       `json:"currentSchema"`
 	Confirm       []string     `json:"confirm"`
+	InTx          bool         `json:"inTx"` // manual commit: changes wait for Commit or Rollback
 }
 
 type FetchResponse struct {

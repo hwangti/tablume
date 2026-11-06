@@ -192,6 +192,7 @@ export interface ExecResponse {
   results: StmtResult[]
   currentSchema: string
   confirm?: string[] | null
+  inTx?: boolean
 }
 
 export const DRIVERS: { id: Driver; label: string; port: number }[] = [

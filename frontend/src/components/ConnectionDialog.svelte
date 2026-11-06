@@ -96,10 +96,7 @@
       const saved = await api.SaveConnection($state.snapshot(c))
       await loadConnections()
       app.editing = null
-      if (wasConnected) {
-        await disconnect(saved.id)
-        await connect(saved.id)
-      }
+      if (wasConnected && (await disconnect(saved.id))) await connect(saved.id)
       if (isNew) toast(t("'{name}' 저장됨", { name: saved.name }))
     } catch (e) {
       result = { ok: false, text: errText(e) }

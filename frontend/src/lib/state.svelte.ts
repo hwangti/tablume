@@ -80,6 +80,10 @@ export interface Tab {
   erd?: boolean
   // The log pane shows this tab's messages or the connection's saved run log.
   logScope?: 'tab' | 'conn'
+  // Manual commit (consoles): changes wait in a transaction until Commit or
+  // Rollback; inTx is whether some are waiting now.
+  manual?: boolean
+  inTx?: boolean
   // Shown in a window of its own (main window only; not saved, so after a
   // restart the tab is back in the main window).
   detached?: boolean
@@ -265,15 +269,20 @@ export async function connect(id: string): Promise<boolean> {
   }
 }
 
-export async function disconnect(id: string) {
+/** Disconnects (after asking if a console has uncommitted changes); false if the user said no. */
+export async function disconnect(id: string): Promise<boolean> {
+  const n = app.tabs.filter((t) => t.connId === id && t.inTx).length
+  if (n && !(await confirmBox(tr('커밋하지 않은 변경이 있는 콘솔이 {n}개 있습니다. 연결을 끊으면 롤백됩니다. 끊을까요?', { n })))) return false
   await api.Disconnect(id)
   Events.Emit('conn:changed', { id, connected: false }).catch(() => {})
   markDisconnected(id)
+  return true
 }
 
 function markDisconnected(id: string) {
   const st = connState(id)
   st.status = 'idle'
+  for (const t of app.tabs) if (t.connId === id) t.inTx = false
   st.schemas = []
   st.expanded = false
   for (const k of Object.keys(app.completion)) if (k.startsWith(id + '|')) delete app.completion[k]
@@ -539,6 +548,7 @@ export function sqlEdited(t: Tab): boolean {
 
 // Asks before closing a tab with unapplied grid edits or edited SQL.
 async function okToClose(t: Tab): Promise<boolean> {
+  if (t.inTx) return confirmBox(tr('“{name}” 콘솔에 커밋하지 않은 변경이 있습니다. 닫으면 롤백됩니다. 닫을까요?', { name: t.title }))
   const n = tabPending(t)
   if (n) return confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n }))
   if (sqlEdited(t)) return confirmBox(tr('“{name}” 콘솔에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?', { name: t.title }))
@@ -561,6 +571,8 @@ export async function closeTabs(ids: string[]) {
   const set = new Set(ids)
   const closing = app.tabs.filter((t) => set.has(t.id))
   if (!closing.length) return
+  const tx = closing.filter((t) => t.inTx).length
+  if (tx && !(await confirmBox(tr('닫을 탭 중 콘솔 {n}개에 커밋하지 않은 변경이 있습니다. 닫으면 롤백됩니다. 닫을까요?', { n: tx })))) return
   const n = closing.reduce((a, t) => a + tabPending(t), 0)
   const edited = closing.filter(sqlEdited)
   if (n && !(await confirmBox(tr('닫을 탭에 적용하지 않은 변경 {n}건이 있습니다. 버리고 닫을까요?', { n })))) return
@@ -683,7 +695,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   tab.running = true
   tab.startedAt = Date.now()
   try {
-    const req = { tabId: tab.id, connId: tab.connId, schema: tab.schema, sql, cursor, fetch: app.pageSize }
+    const req = { tabId: tab.id, connId: tab.connId, schema: tab.schema, sql, cursor, fetch: app.pageSize, manual: !!tab.manual && !tab.tableRef }
     let t0 = performance.now()
     let res = await api.Execute(req)
     if (res.confirm?.length) {
@@ -711,6 +723,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       start: 0,
       total: r.hasMore ? null : (r.rows ?? []).length,
     }))
+    tab.inTx = !!res.inTx
     const schemaBefore = tab.schema
     if (res.currentSchema) tab.schema = res.currentSchema
     const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
@@ -730,10 +743,33 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   } catch (e) {
     log(tab, 'error', errText(e))
     tab.activeResult = -1
+    tab.inTx = await api.TxOpen(tab.id).catch(() => false)
     return null
   } finally {
     tab.running = false
   }
+}
+
+/** Manual commit: commits or rolls back the tab's waiting changes. */
+export async function endTx(tab: Tab, commit: boolean) {
+  if (tab.running) return
+  tab.running = true
+  try {
+    await api.EndTx(tab.id, commit)
+    log(tab, 'info', commit ? tr('커밋함') : tr('롤백함'), commit ? 'COMMIT' : 'ROLLBACK')
+  } catch (e) {
+    log(tab, 'error', errText(e), commit ? 'COMMIT' : 'ROLLBACK')
+    tab.activeResult = -1
+  } finally {
+    tab.inTx = await api.TxOpen(tab.id).catch(() => false)
+    tab.running = false
+  }
+}
+
+export function setManualCommit(tab: Tab, on: boolean) {
+  if (!on && tab.inTx) return toast(tr('커밋하지 않은 변경이 있습니다. 먼저 커밋하거나 롤백하세요'), 'error')
+  tab.manual = on
+  saveWorkspaceSoon()
 }
 
 /** Loaded rows that came from the database (rows added in the grid excluded). */
@@ -1329,7 +1365,7 @@ export function pinTab(tab: Tab | undefined) {
 // ---------------------------------------------------------------- workspace
 
 // The saved form of a tab (workspace file, and what a tab window gets).
-export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef' | 'erd'>
+export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef' | 'erd' | 'manual'>
 
 function savedTab(t: Tab): SavedTab {
   return $state.snapshot({
@@ -1343,6 +1379,7 @@ function savedTab(t: Tab): SavedTab {
     layout: t.layout,
     tableRef: t.tableRef,
     erd: t.erd,
+    manual: t.manual,
   })
 }
 
@@ -1484,6 +1521,8 @@ function attach(id: string, s?: SavedTab) {
   t.results = []
   t.activeResult = 0
   app.activeTab = id
+  // (a console's open transaction lives on in its session)
+  api.TxOpen(id).then((v) => (t.inTx = v))
   saveWorkspaceSoon()
   if (t.tableRef && app.conn[t.connId]?.status === 'connected') reloadTable(t)
 }
@@ -1540,6 +1579,7 @@ export async function initTabWindow() {
   initConnEvents()
   onEvent<string>('tab-window:close', (id) => id === tabWindowId && backToMain())
   const tab = app.tabs[0]
+  tab.inTx = await api.TxOpen(tab.id).catch(() => false)
   if (await api.IsConnected(tab.connId).catch(() => false)) {
     await connect(tab.connId)
     if (tab.tableRef) reloadTable(tab)
