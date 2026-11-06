@@ -1043,32 +1043,33 @@
   .run {
     color: var(--ok);
   }
+  /* like .icon-btn, with text */
   .txbtn {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    height: 24px;
-    padding: 0 8px;
-    border: 1px solid var(--border);
+    height: 26px;
+    padding: 0 6px;
+    border: none;
     border-radius: 4px;
-    background: none;
-    color: var(--text);
+    background: transparent;
+    color: var(--text-dim);
     font-size: 12px;
     cursor: pointer;
   }
-  .txbtn.on {
-    border-color: var(--warn);
-    color: var(--warn);
+  .txbtn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
   }
   .txbtn:disabled {
-    color: var(--text-faint);
+    opacity: 0.4;
     cursor: default;
+  }
+  .txbtn.on {
+    color: var(--warn);
   }
   .txbtn.commit:not(:disabled) {
     color: var(--ok);
-  }
-  .txbtn:not(:disabled):hover {
-    background: var(--bg-hover);
   }
   .txwait {
     color: var(--warn);
