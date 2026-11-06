@@ -1,7 +1,6 @@
 <script lang="ts">
   import { t, num } from '../lib/i18n.svelte'
   import type { Cell } from '../lib/types'
-  import { copyText } from '../lib/clipboard'
   import Modal from './Modal.svelte'
   import TextEditor from './TextEditor.svelte'
   import { untrack } from 'svelte'
@@ -66,7 +65,6 @@
       <button class="btn" onclick={onclose}>{t('취소')}</button>
       <button class="btn primary" onclick={save} title="Ctrl+Enter / Cmd+Enter">{t('적용')}</button>
     {:else}
-      <button class="btn" onclick={() => copyText(shown)} disabled={isNull}>{t('복사')}</button>
       <button class="btn primary" onclick={onclose}>{t('닫기')}</button>
     {/if}
   {/snippet}

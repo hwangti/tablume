@@ -1,6 +1,7 @@
 <script lang="ts">
   // Plain text editor for a cell value (CellViewer). Text that looks like
   // JSON gets JSON highlighting and bracket matching.
+  import CopyOverlay from './CopyOverlay.svelte'
   import { onMount, untrack } from 'svelte'
   import { EditorState, Compartment } from '@codemirror/state'
   import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine, highlightSpecialChars, placeholder as cmPlaceholder } from '@codemirror/view'
@@ -94,10 +95,11 @@
   })
 </script>
 
-<div class="te" bind:this={host}></div>
+<div class="te" bind:this={host}><CopyOverlay view={() => view} /></div>
 
 <style>
   .te {
+    position: relative;
     height: 420px;
     border: 1px solid var(--border);
     border-radius: 6px;
