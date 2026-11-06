@@ -14,6 +14,8 @@
     placeholder = '',
     mono = false,
     width = '',
+    disabled = false,
+    title = '',
   }: {
     value: V
     options: { value: V; label: string; hint?: string }[]
@@ -21,6 +23,8 @@
     placeholder?: string
     mono?: boolean
     width?: string
+    disabled?: boolean
+    title?: string
   } = $props()
 
   let btn: HTMLButtonElement
@@ -90,7 +94,7 @@
 
 <svelte:window onpointerdown={(e) => pos && !btn.contains(e.target as Node) && !listEl?.contains(e.target as Node) && (pos = null)} />
 
-<button bind:this={btn} type="button" class="dd" class:open={!!pos} style:width onclick={open} onkeydown={key}>
+<button bind:this={btn} type="button" class="dd" class:open={!!pos} style:width {disabled} {title} onclick={open} onkeydown={key}>
   <span class="val" class:ph={!current} class:mono={mono && !!current}>{current?.label ?? placeholder}</span>
   <Icon name="chevronDown" size={12} />
 </button>
@@ -128,6 +132,10 @@
     color: var(--text);
     text-align: left;
     cursor: pointer;
+  }
+  .dd:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .dd:focus-visible,
   .dd.open {
