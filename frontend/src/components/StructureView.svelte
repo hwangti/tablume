@@ -948,9 +948,9 @@
     gap: 8px;
     color: var(--text-dim);
   }
+  /* the rest of the row (onto its own line below 320px) */
   .prop.wide {
-    flex: 1;
-    max-width: 640px;
+    flex: 1 1 320px;
   }
   .prop input {
     height: 26px;
