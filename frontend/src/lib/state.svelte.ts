@@ -596,15 +596,14 @@ export async function duplicateTab(id: string) {
 const SECRET_RE = /\bidentified\s+by\b|\bpassword\b/i
 
 /**
- * Adds a line to the tab's log. With SQL it is also saved to the
- * connection's run log, unless `keep` is false (pages read on, the SELECTs
- * a table tab builds). `full` is the whole statement when `sql` is short.
+ * Adds a line to the tab's log; a line with SQL is also saved to the
+ * connection's run log (the whole statement: `fullSql` when `sql` is short).
  */
-function log(tab: Tab, kind: Message['kind'], text: string, sql?: string, opts: { full?: string; keep?: boolean } = {}) {
-  tab.messages.push({ time: now(), kind, text, sql, full: opts.full })
+function log(tab: Tab, kind: Message['kind'], text: string, sql?: string, fullSql?: string) {
+  tab.messages.push({ time: now(), kind, text, sql, full: fullSql })
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)
-  const full = opts.full ?? sql
-  if (full && opts.keep !== false && !SECRET_RE.test(full)) {
+  const full = fullSql ?? sql
+  if (full && !SECRET_RE.test(full)) {
     api.AppendLog(tab.connId, [{ time: Date.now(), tab: tab.title, kind, text, sql: full }]).catch(() => {})
     app.logVersion++
   }
@@ -684,7 +683,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       tab.running = false
       const ok = await confirmBox(tr('WHERE 없는 UPDATE·DELETE는 테이블의 모든 행을 바꿉니다. 실행할까요?'), res.confirm, connById(tab.connId)?.driver)
       if (!ok) {
-        log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]), { keep: false })
+        log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]), res.confirm.join(';\n'))
         return null
       }
       tab.running = true
@@ -705,11 +704,10 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
     if (ddl.length) treeChanged(tab.connId, [schemaBefore, tab.schema], ddl.join('\n'), ddl.some((x) => SCHEMA_DDL_RE.test(x)))
     for (const r of results) {
-      const opts = { full: r.sql, keep: !tab.tableRef } // a table tab's own SELECT isn't kept
-      if (r.error) log(tab, 'error', r.error, short(r.sql), opts)
+      if (r.error) log(tab, 'error', r.error, short(r.sql), r.sql)
       else if (r.columns && r.columns.length)
-        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql), opts)
-      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql), opts)
+        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql), r.sql)
+      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql), r.sql)
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
     const failed = results.some((r) => r.error)
