@@ -172,3 +172,12 @@ export const DRIVERS: { id: Driver; label: string; port: number }[] = [
 export function driverLabel(d: Driver): string {
   return DRIVERS.find((x) => x.id === d)?.label ?? d
 }
+
+// An entry of a connection's saved run log.
+export interface LogEntry {
+  time: number // Unix ms
+  tab: string
+  kind: 'info' | 'error'
+  text: string
+  sql: string
+}

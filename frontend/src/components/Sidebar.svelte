@@ -25,6 +25,7 @@
     truncateTable,
     createSchema,
     openObjectList,
+    openRunLog,
     dropSchema,
     isSystemSchema,
     SCHEMA_DRIVERS,
@@ -518,6 +519,7 @@
       items: [
         // open · the connection · what the tree shows · the saved connection · its place
         { label: tr('새 콘솔'), icon: 'console', run: () => openConsole(c.id) },
+        { label: tr('실행 로그'), icon: 'list', run: () => openRunLog(c.id) },
         ...(on && !c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
         ...(on
           ? [

@@ -34,12 +34,13 @@
     PAGE_SIZES,
     openConsole,
     type Tab,
+    type Message,
     followForeignKey,
     logStatements,
     treeChanged,
   } from '../lib/state.svelte'
   import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
-  import type { Cell, StmtResult } from '../lib/types'
+  import type { Cell, LogEntry, StmtResult } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
 
@@ -59,6 +60,64 @@
   let completion = $derived(app.completion[tab.connId + '|' + tab.schema] ?? {})
   // Table data tabs (opened from the tree) show only the data, its DDL and a log.
   let isTable = $derived(!!tab.tableRef)
+
+  // ---- the log pane: this tab's lines, or the connection's saved run log
+  let logQuery = $state('')
+  let connLog = $state<LogEntry[] | null>(null)
+  let logTimer: ReturnType<typeof setTimeout> | undefined
+  $effect(() => {
+    if (tab.logScope !== 'conn') return
+    const id = tab.connId
+    const q = logQuery
+    void app.logVersion // a new entry was saved
+    clearTimeout(logTimer)
+    logTimer = setTimeout(async () => {
+      try {
+        connLog = (await api.ReadLog(id, q, 500)) ?? []
+      } catch (e) {
+        toast(errText(e), 'error')
+      }
+    }, 250)
+  })
+  let tabLog = $derived.by(() => {
+    const q = logQuery.trim().toLowerCase()
+    const all = tab.messages.slice().reverse()
+    return q ? all.filter((m) => `${m.full ?? m.sql ?? ''}\n${m.text}`.toLowerCase().includes(q)) : all
+  })
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  function logTime(ms: number) {
+    const d = new Date(ms)
+    const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+    return d.toDateString() === new Date().toDateString() ? time : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${time}`
+  }
+  // a long script in one line of the log: its start (the button puts it all)
+  const clip = (sql: string) => {
+    const lines = sql.split('\n')
+    const head = lines.slice(0, 8).join('\n')
+    return head.length > 800 ? head.slice(0, 800) + '…' : lines.length > 8 ? head + '\n…' : head
+  }
+  /** Puts a logged statement in this console's editor (a table tab: a new console). */
+  function useSql(sql: string) {
+    sql = sql.trim()
+    if (!/;\s*$/.test(sql)) sql += ';' // the next statement typed after it stays apart
+    if (isTable) {
+      openConsole(tab.connId, { schema: tab.schema, sql })
+      return
+    }
+    tab.sql = tab.sql.trim() ? tab.sql.replace(/\s*$/, '\n\n') + sql : sql
+    if (tab.layout === 'results') tab.layout = 'split'
+    saveWorkspaceSoon()
+  }
+  async function clearConnLog() {
+    if (!(await confirmBox(t('이 연결에 저장된 실행 로그를 모두 지울까요?')))) return
+    try {
+      await api.ClearLog(tab.connId)
+      connLog = []
+    } catch (e) {
+      toast(errText(e), 'error')
+    }
+  }
+  const msgSql = (m: Message) => m.full ?? m.sql ?? ''
   let tableView = $state<'data' | 'ddl' | 'log'>('data')
   let current = $derived<StmtResult | undefined>(
     isTable ? tab.results[0] : tab.activeResult >= 0 ? tab.results[tab.activeResult] : undefined,
@@ -535,21 +594,42 @@
 
 {#snippet logList(hint: boolean)}
   <div class="messages">
-    {#if tab.messages.length === 0 && hint}
-      <div class="placeholder">
-        <p>{modKey}Enter — {t('커서가 있는 문장 실행 (선택했으면 선택 영역)')}</p>
-        <p>{modKey}Shift+Enter — {t('전체 실행')}</p>
-      </div>
-    {/if}
-    {#each tab.messages.slice().reverse() as m, i (tab.messages.length - i)}
-      <div class="msg" class:error={m.kind === 'error'}>
-        <span class="time">{m.time}</span>
-        <div class="mbody">
-          {#if m.sql}<SqlPreview code={m.sql} driver={conn?.driver} bare />{/if}
-          <pre>{m.text}</pre>
+    {#if tab.logScope === 'conn'}
+      {#if connLog?.length === 0}
+        <div class="placeholder"><p>{logQuery.trim() ? t('찾는 로그가 없습니다') : t('저장된 실행 로그가 없습니다')}</p></div>
+      {/if}
+      {#each connLog ?? [] as m, i (i)}
+        <div class="msg" class:error={m.kind === 'error'}>
+          <span class="time">{logTime(m.time)}</span>
+          <div class="mbody">
+            <SqlPreview code={clip(m.sql)} driver={conn?.driver} bare />
+            <pre>{m.text}{#if m.tab}<span class="from"> · {m.tab}</span>{/if}</pre>
+          </div>
+          <button class="icon-btn use" title={t('콘솔에 넣기')} onclick={() => useSql(m.sql)}><Icon name="console" size={13} /></button>
         </div>
-      </div>
-    {/each}
+      {/each}
+    {:else}
+      {#if tab.messages.length === 0 && hint}
+        <div class="placeholder">
+          <p>{modKey}Enter — {t('커서가 있는 문장 실행 (선택했으면 선택 영역)')}</p>
+          <p>{modKey}Shift+Enter — {t('전체 실행')}</p>
+        </div>
+      {:else if tabLog.length === 0 && logQuery.trim()}
+        <div class="placeholder"><p>{t('찾는 로그가 없습니다')}</p></div>
+      {/if}
+      {#each tabLog as m, i (tabLog.length - i)}
+        <div class="msg" class:error={m.kind === 'error'}>
+          <span class="time">{m.time}</span>
+          <div class="mbody">
+            {#if m.sql}<SqlPreview code={m.sql} driver={conn?.driver} bare />{/if}
+            <pre>{m.text}</pre>
+          </div>
+          {#if msgSql(m)}
+            <button class="icon-btn use" title={t('콘솔에 넣기')} onclick={() => useSql(msgSql(m))}><Icon name="console" size={13} /></button>
+          {/if}
+        </div>
+      {/each}
+    {/if}
   </div>
 {/snippet}
 
@@ -641,6 +721,18 @@
         {/if}
         <span class="grow"></span>
         <!-- buttons in groups by role, separated by a line (.grp + .grp) -->
+        {#if !tab.creating && (isTable ? tableView === 'log' : !current)}
+          <div class="grp">
+            <input class="logq" type="search" placeholder={t('로그 검색')} bind:value={logQuery} />
+            <div class="seg" role="group">
+              <button class:on={tab.logScope !== 'conn'} onclick={() => (tab.logScope = 'tab')}>{t('이 탭')}</button>
+              <button class:on={tab.logScope === 'conn'} onclick={() => (tab.logScope = 'conn')} title={t('이 연결에서 실행한 것 전부 (저장됨)')}>{t('이 연결 전체')}</button>
+            </div>
+            {#if tab.logScope === 'conn'}
+              <button class="icon-btn" title={t('저장된 실행 로그 지우기')} onclick={clearConnLog}><Icon name="trash" size={14} /></button>
+            {/if}
+          </div>
+        {/if}
         {#if !isTable}
           <div class="grp">
             <button
@@ -1282,6 +1374,24 @@
   }
   .mbody {
     min-width: 0;
+  }
+  .msg .use {
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0.45;
+  }
+  .msg:hover .use,
+  .msg .use:focus-visible {
+    opacity: 1;
+  }
+  .msg .from {
+    color: var(--text-faint);
+  }
+  .logq {
+    width: 160px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 12px;
   }
   .msg pre {
     margin: 0;

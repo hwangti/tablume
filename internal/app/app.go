@@ -200,6 +200,17 @@ func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 	return a.db.ApplyIndexes(req)
 }
 
+// AppendLog adds what a tab ran to its connection's run log.
+func (a *App) AppendLog(id string, entries []store.LogEntry) error { return a.store.AppendLog(id, entries) }
+
+// ReadLog returns a connection's run log, newest first, filtered by q.
+func (a *App) ReadLog(id, q string, limit int) ([]store.LogEntry, error) {
+	return a.store.ReadLog(id, q, limit)
+}
+
+// ClearLog deletes a connection's run log.
+func (a *App) ClearLog(id string) error { return a.store.ClearLog(id) }
+
 // ObjectListSQL returns a query listing a schema's tables or routines ("tables", "routines").
 func (a *App) ObjectListSQL(id, schema, kind string) (string, error) {
 	return a.db.ObjectListSQL(id, schema, kind)

@@ -44,6 +44,7 @@ export interface Message {
   kind: 'info' | 'error'
   text: string
   sql?: string // the statement(s), shown with syntax colors above text
+  full?: string // the whole statement when sql is shortened (to run it again)
 }
 
 export interface Tab {
@@ -73,6 +74,8 @@ export interface Tab {
   // Set for table data tabs: the SELECT is rebuilt from these when the
   // filter bar or a column header changes. Dropped if the SQL is edited.
   tableRef?: TableRef
+  // The log pane shows this tab's messages or the connection's saved run log.
+  logScope?: 'tab' | 'conn'
   // Shown in a window of its own (main window only; not saved, so after a
   // restart the tab is back in the main window).
   detached?: boolean
@@ -119,6 +122,8 @@ export const app = $state({
   editing: null as ConnConfig | null,
   // password prompt, or a text prompt when value is set
   prompt: null as null | { title: string; value?: string; ok?: string; resolve: (v: string | null) => void },
+  // bumped when a run log entry is saved (log panes showing it reload)
+  logVersion: 0,
   confirm: null as null | { text: string; sql?: string[]; driver?: string; resolve: (v: boolean) => void },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
@@ -587,9 +592,22 @@ export async function duplicateTab(id: string) {
   if (copy.tableRef) await reloadTable(copy)
 }
 
-function log(tab: Tab, kind: Message['kind'], text: string, sql?: string) {
-  tab.messages.push({ time: now(), kind, text, sql })
+// Statements that may carry a password stay out of the saved log.
+const SECRET_RE = /\bidentified\s+by\b|\bpassword\b/i
+
+/**
+ * Adds a line to the tab's log. With SQL it is also saved to the
+ * connection's run log, unless `keep` is false (pages read on, the SELECTs
+ * a table tab builds). `full` is the whole statement when `sql` is short.
+ */
+function log(tab: Tab, kind: Message['kind'], text: string, sql?: string, opts: { full?: string; keep?: boolean } = {}) {
+  tab.messages.push({ time: now(), kind, text, sql, full: opts.full })
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)
+  const full = opts.full ?? sql
+  if (full && opts.keep !== false && !SECRET_RE.test(full)) {
+    api.AppendLog(tab.connId, [{ time: Date.now(), tab: tab.title, kind, text, sql: full }]).catch(() => {})
+    app.logVersion++
+  }
 }
 
 /** Adds statements run outside the editor (grid edits, structure changes) to the tab's log. */
@@ -666,7 +684,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       tab.running = false
       const ok = await confirmBox(tr('WHERE 없는 UPDATE·DELETE는 테이블의 모든 행을 바꿉니다. 실행할까요?'), res.confirm, connById(tab.connId)?.driver)
       if (!ok) {
-        log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]))
+        log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]), { keep: false })
         return null
       }
       tab.running = true
@@ -687,10 +705,11 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
     if (ddl.length) treeChanged(tab.connId, [schemaBefore, tab.schema], ddl.join('\n'), ddl.some((x) => SCHEMA_DDL_RE.test(x)))
     for (const r of results) {
-      if (r.error) log(tab, 'error', r.error, short(r.sql))
+      const opts = { full: r.sql, keep: !tab.tableRef } // a table tab's own SELECT isn't kept
+      if (r.error) log(tab, 'error', r.error, short(r.sql), opts)
       else if (r.columns && r.columns.length)
-        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql))
-      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql))
+        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql), opts)
+      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql), opts)
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
     const failed = results.some((r) => r.error)
@@ -1090,6 +1109,13 @@ export async function openObjectList(connId: string, schema: string, kind: 'tabl
   const tab = openConsole(connId, { schema, sql, title })
   tab.layout = 'results'
   await runSQL(tab, sql, -1)
+}
+
+/** A new console showing the connection's saved run log. */
+export function openRunLog(connId: string) {
+  const tab = openConsole(connId)
+  tab.logScope = 'conn'
+  tab.activeResult = -1
 }
 
 export const SCHEMA_DRIVERS = ['mysql', 'mariadb', 'postgres', 'mssql']
