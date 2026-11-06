@@ -1318,6 +1318,28 @@ func TestCreateTable(t *testing.T) {
 			if !found {
 				t.Errorf("table %s with its comment not listed", made.Name)
 			}
+
+			// emptied, then dropped
+			ins := "INSERT INTO made_t (code) VALUES ('a')"
+			if name == "oracle" {
+				ins = "INSERT INTO made_t (id, code) VALUES (1, 'a')"
+			}
+			if r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: ins, Cursor: -1}); err != nil || len(r.Results) == 0 || r.Results[0].Error != "" {
+				t.Fatalf("insert: %+v %v", r, err)
+			}
+			st, err := m.TruncateTable(tg.cfg.ID, tg.schema, made)
+			if n, _ := m.CountRows(tg.cfg.ID, tg.schema, made, ""); err != nil || n != 0 {
+				t.Fatalf("%s: %v, %d rows", st, err, n)
+			}
+			if st, err := m.DropTable(tg.cfg.ID, tg.schema, made); err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+			ts, _ = m.Tables(tg.cfg.ID, tg.schema)
+			for _, x := range ts {
+				if x.Name == made.Name {
+					t.Errorf("%s still listed after DROP", made.Name)
+				}
+			}
 		})
 	}
 }
