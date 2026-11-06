@@ -176,6 +176,13 @@ export function NeedsPassword(id: string): $CancellablePromise<boolean> {
     return $Call.ByID(241666948, id);
 }
 
+/**
+ * ObjectListSQL returns a query listing a schema's tables or routines ("tables", "routines").
+ */
+export function ObjectListSQL(id: string, schema: string, kind: string): $CancellablePromise<string> {
+    return $Call.ByID(543850413, id, schema, kind);
+}
+
 export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {
     return $Call.ByID(2984993726);
 }

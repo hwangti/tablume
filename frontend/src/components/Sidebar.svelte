@@ -24,6 +24,7 @@
     dropTable,
     truncateTable,
     createSchema,
+    openObjectList,
     dropSchema,
     isSystemSchema,
     SCHEMA_DRIVERS,
@@ -43,7 +44,7 @@
   } from '../lib/state.svelte'
   import { api } from '../lib/api'
   import { setTheme, type ThemeMode } from '../lib/theme'
-  import { copyText, isMac } from '../lib/clipboard'
+  import { copyText, isMac, modKey } from '../lib/clipboard'
   import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine, type Table } from '../lib/types'
   import SchemaPicker from './SchemaPicker.svelte'
 
@@ -359,6 +360,11 @@
     const r = i >= 0 ? nav[i] : null
     switch (e.key) {
       case 'ArrowDown':
+        // Cmd/Ctrl+↓ on a schema or the routines group: its list
+        if (isMac ? e.metaKey : e.ctrlKey) {
+          if (r?.kind === 'schema' || r?.kind === 'rgroup') openObjectList(r.c.id, r.s.name, r.kind === 'schema' ? 'tables' : 'routines')
+          break
+        }
         moveCursor(nav[Math.min(nav.length - 1, i + 1)].key)
         break
       case 'ArrowUp':
@@ -462,7 +468,16 @@
     if (r.kind === 'conn') connMenu(e, r.c)
     else if (r.kind === 'schema') schemaMenu(e, r.c, r.s)
     else if (r.kind === 'table') tableMenu(e, r.c, r.s, r.t)
-    else if (r.kind === 'routine') {
+    else if (r.kind === 'rgroup') {
+      e.preventDefault()
+      const g = r
+      closeMenus()
+      menu = {
+        x: e.clientX,
+        y: e.clientY,
+        items: [{ label: tr('루틴 목록'), icon: 'list', run: () => openObjectList(g.c.id, g.s.name, 'routines'), kbd: modKey + '↓' }],
+      }
+    } else if (r.kind === 'routine') {
       e.preventDefault()
       const rt = r
       closeMenus()
@@ -568,6 +583,8 @@
       y: e.clientY,
       items: [
         { label: tr('이 스키마로 새 콘솔'), icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
+        { label: tr('테이블 목록'), icon: 'list', run: () => openObjectList(c.id, s.name, 'tables'), kbd: modKey + '↓' },
+        ...(c.driver !== 'sqlite' ? [{ label: tr('루틴 목록'), icon: 'fn', run: () => openObjectList(c.id, s.name, 'routines') }] : []),
         { label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true },
         ...(SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
