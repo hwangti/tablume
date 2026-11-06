@@ -367,8 +367,8 @@
     return Math.min(w, 60)
   }
 
-  // A column's width from its header and values: the first rows and a
-  // modest cap when a result opens, every loaded row when fitted.
+  // A column's first width from its header and values (an estimate from
+  // the first rows, capped).
   function guessWidth(c: ResultColumn, i: number, scan = 200, max = 420): number {
     // name + type + padding, plus room for a key icon and the column number
     const head = c.name.length * 7.6 + c.type.length * 6.2 + 34 + 18 + (app.gridColNumbers ? 14 : 0)
@@ -378,6 +378,29 @@
       len = Math.max(len, v === null ? 6 : textWidth(v))
     }
     return Math.round(Math.max(56, Math.min(max, Math.max(head, len * 7.6 + 18))))
+  }
+
+  // Fitting a column (double-click on its border): the text measured in the
+  // grid's own fonts, the header as wide as it wants to be.
+  let measureCtx: CanvasRenderingContext2D | null = null
+  function fitWidth(c: number, th: HTMLElement): number {
+    const prev = th.style.width
+    th.style.width = 'max-content'
+    let w = th.getBoundingClientRect().width
+    th.style.width = prev
+    const td = scroller.querySelector('.td') as HTMLElement | null
+    if (!td) return Math.max(56, Math.round(w))
+    const cs = getComputedStyle(td)
+    measureCtx ??= document.createElement('canvas').getContext('2d')
+    if (!measureCtx) return guessWidth(columns[c], c, Infinity, 1000)
+    // (the computed `font` shorthand can be empty: built from its parts)
+    measureCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+    const extra = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 2 // + border, rounding
+    for (const ri of order) {
+      const v = val(ri, c)
+      w = Math.max(w, measureCtx.measureText(v === null ? '<null>' : display(v)).width + extra)
+    }
+    return Math.max(56, Math.min(1000, Math.ceil(w)))
   }
 
   // Row order: identity, or sorted by one column (only loaded rows).
@@ -832,7 +855,7 @@
             title={t('끌어서 너비 조절 · 두 번 클릭하면 내용에 맞춤')}
             onmousedown={(e) => startResize(e, c)}
             onclick={(e) => e.stopPropagation()}
-            ondblclick={(e) => (e.stopPropagation(), (widths[c] = guessWidth(col, c, Infinity, 1000)))}
+            ondblclick={(e) => (e.stopPropagation(), (widths[c] = fitWidth(c, e.currentTarget.parentElement as HTMLElement)))}
           ></span>
         </div>
       {/each}
