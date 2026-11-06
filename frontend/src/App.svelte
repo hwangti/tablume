@@ -280,7 +280,12 @@
     }
   }
 
-  function tabMouseDown(e: MouseEvent, id: string) {
+  // A finger drags a tab after holding it (the menu that opened then
+  // closes); before that, a swipe scrolls the strip.
+  const TAB_HOLD_MS = 450
+  let tabHeld = false // a finger is dragging: the strip doesn't scroll
+
+  function tabDown(e: PointerEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault()
       closeTab(id)
@@ -288,8 +293,18 @@
     }
     if (e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return
     const x0 = e.clientX
-    const move = (ev: MouseEvent) => {
-      if (!dragging && Math.abs(ev.clientX - x0) < 5) return
+    const touch = e.pointerType !== 'mouse'
+    // held: from here a move drags (the first touchmove too)
+    const hold = touch ? setTimeout(() => (tabHeld = true), TAB_HOLD_MS) : 0
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return
+      if (!dragging) {
+        if (Math.abs(ev.clientX - x0) < 5) return
+        if (touch) {
+          if (!tabHeld) return up() // a swipe
+          closeMenus()
+        }
+      }
       dragging = id
       // Positions among the shown tabs; tabs in their own windows aren't
       // in the strip and keep their place in app.tabs.
@@ -311,13 +326,26 @@
       }
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      clearTimeout(hold)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       if (dragging) saveWorkspaceSoon()
       dragging = null
+      tabHeld = false
     }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  // A drag after the hold mustn't scroll the strip (or the page) instead:
+  // only a touchmove that isn't passive can stop that, which Svelte's
+  // ontouchmove is.
+  function holdScroll(node: HTMLElement) {
+    const stop = (e: TouchEvent) => tabHeld && e.cancelable && e.preventDefault()
+    node.addEventListener('touchmove', stop, { passive: false })
+    return { destroy: () => node.removeEventListener('touchmove', stop) }
   }
 
   let renaming = $state<string | null>(null)
@@ -408,7 +436,7 @@
       <Icon name={sideHidden ? 'sidebarOff' : 'sidebar'} />
     </button>
     <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
-    <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel} onscroll={tabsEdges}>
+    <div class="tabs" bind:this={tabsEl} use:holdScroll onwheel={tabsWheel} onscroll={tabsEdges}>
       {#each app.tabs.filter((x) => !x.detached) as t (t.id)}
         {@const c = connById(t.connId)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -419,7 +447,7 @@
           class:dragging={dragging === t.id}
           style:--conn-color={c?.color || 'transparent'}
           onclick={() => (app.activeTab = t.id)}
-          onmousedown={(e) => tabMouseDown(e, t.id)}
+          onpointerdown={(e) => tabDown(e, t.id)}
           ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
           oncontextmenu={(e) => openTabMenu(e, t.id)}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
@@ -784,9 +812,14 @@
     cursor: pointer;
     visibility: hidden;
   }
-  .tab:hover .x,
   .tab.on .x {
     visibility: visible;
+  }
+  /* not on touch: a tap that reveals something is taken as a hover, not a tap */
+  @media (hover: hover) {
+    .tab:hover .x {
+      visibility: visible;
+    }
   }
   .x:hover {
     background: var(--bg-hover);

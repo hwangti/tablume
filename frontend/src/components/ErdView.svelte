@@ -272,7 +272,45 @@
   const MIN_W = 130
   const MAX_W = 900
 
+  // Two fingers zoom (and move the picture with their midpoint), whatever
+  // the first one had started: a box it moved goes back.
+  const fingers = new Map<number, { x: number; y: number }>()
+  let pinch: { d: number; z: number; mx: number; my: number; px: number; py: number } | null = null
+  function startPinch() {
+    if (drag) {
+      const { n, dx, dy, w } = drag
+      const b = L?.nodes.get(n)
+      if (dx || dy || (b && w !== b.w)) manual[n] = { dx, dy, w: b && w !== b.w ? w : undefined }
+      else delete manual[n]
+    }
+    drag = null
+    pan = null
+    const [a, b] = [...fingers.values()]
+    const r = viewEl.getBoundingClientRect()
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, px, py }
+  }
+  function movePinch() {
+    if (!pinch) return
+    const [a, b] = [...fingers.values()]
+    const r = viewEl.getBoundingClientRect()
+    const nz = Math.min(3, Math.max(0.08, (pinch.z * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.d))
+    // the point that was under the fingers' midpoint stays under it
+    const mx = (a.x + b.x) / 2 - r.left
+    const my = (a.y + b.y) / 2 - r.top
+    px = mx - ((pinch.mx - pinch.px) * nz) / pinch.z
+    py = my - ((pinch.my - pinch.py) * nz) / pinch.z
+    z = nz
+  }
+
   function down(e: PointerEvent) {
+    if (e.pointerType === 'touch') {
+      fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (fingers.size === 2) {
+        startPinch()
+        return viewEl.setPointerCapture(e.pointerId)
+      }
+      if (fingers.size > 2) return
+    }
     // not with the right button: the box would follow the menu
     if (e.button !== 0) return
     e.preventDefault()
@@ -291,6 +329,9 @@
     viewEl.setPointerCapture(e.pointerId)
   }
   function move(e: PointerEvent) {
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pinch) return movePinch()
+    if (fingers.size > 1) return
     if (drag) {
       // divided by the zoom, so the box stays under the pointer
       const ddx = (e.clientX - drag.x) / z
@@ -305,7 +346,9 @@
     }
   }
   // A pointer that's cancelled sends no pointerup: without this the cursor stays grabbing.
-  function up() {
+  function up(e?: PointerEvent) {
+    if (e) fingers.delete(e.pointerId)
+    pinch = null // the finger left behind doesn't take over
     drag = null
     pan = null
   }
@@ -583,6 +626,7 @@
   }
   .bar {
     display: flex;
+    flex-wrap: wrap; /* a phone: onto a second line, not off the edge */
     align-items: center;
     gap: 4px;
     white-space: nowrap;

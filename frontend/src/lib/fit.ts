@@ -4,6 +4,7 @@
 // off the left, right).
 // Pass the menu's position so a menu re-opened elsewhere is fitted again.
 export function fitMenu(node: HTMLElement, _pos?: unknown) {
+  node.dataset.menu = '' // see lib/longpress: a tap outside closes it
   const fit = () => {
     node.style.translate = ''
     const r = node.getBoundingClientRect()
