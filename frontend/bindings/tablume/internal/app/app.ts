@@ -14,6 +14,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as dbx$0 from "../dbx/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as store$0 from "../store/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -86,6 +89,14 @@ export function Execute(req: dbx$0.ExecRequest): $CancellablePromise<dbx$0.ExecR
     return $Call.ByID(1929144907, req);
 }
 
+/**
+ * ExportConnections is the JSON file of these connections (all when none),
+ * without passwords.
+ */
+export function ExportConnections(ids: string[] | null): $CancellablePromise<string> {
+    return $Call.ByID(3392430615, ids);
+}
+
 export function FetchMore(tabID: string, cursorID: string, n: number): $CancellablePromise<dbx$0.FetchResponse> {
     return $Call.ByID(3630158061, tabID, cursorID, n);
 }
@@ -102,6 +113,13 @@ export function FetchPage(tabID: string, connID: string, sql: string, offset: nu
  */
 export function FocusTabWindow(tabID: string): $CancellablePromise<boolean> {
     return $Call.ByID(3997823323, tabID);
+}
+
+/**
+ * ImportConnections adds the connections of an exported file.
+ */
+export function ImportConnections(content: string): $CancellablePromise<store$0.ImportResult> {
+    return $Call.ByID(677777482, content);
 }
 
 export function IsConnected(id: string): $CancellablePromise<boolean> {
@@ -141,6 +159,13 @@ export function LoadWorkspace(): $CancellablePromise<string> {
  */
 export function NeedsPassword(id: string): $CancellablePromise<boolean> {
     return $Call.ByID(241666948, id);
+}
+
+/**
+ * OpenJSONFile asks for a .json file and reads it; nil if cancelled.
+ */
+export function OpenJSONFile(): $CancellablePromise<$models.OpenedFile | null> {
+    return $Call.ByID(2265263784);
 }
 
 export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {

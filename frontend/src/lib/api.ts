@@ -76,6 +76,9 @@ interface Api {
   PickKeyFile(): Promise<string>
   SaveTextFile(name: string, content: string): Promise<string>
   OpenSQLFile(): Promise<{ name: string; content: string } | null>
+  OpenJSONFile(): Promise<{ name: string; content: string } | null>
+  ExportConnections(ids: string[]): Promise<string>
+  ImportConnections(content: string): Promise<{ added: number; existing: number; unsupported: string[] | null }>
   LoadWorkspace(): Promise<string>
   SaveWorkspace(data: string): Promise<void>
   SetDarkTitleBar(dark: boolean): Promise<void>
@@ -111,6 +114,7 @@ export const api: Api = {
   ...native,
   SaveTextFile: (name, content) => (isWeb ? Promise.resolve(downloadText(name, content)) : native.SaveTextFile(name, content)),
   OpenSQLFile: () => (isWeb ? uploadText('.sql,.txt,text/plain') : native.OpenSQLFile()),
+  OpenJSONFile: () => (isWeb ? uploadText('.json,application/json') : native.OpenJSONFile()),
 }
 
 // The browser build's server answers this once the sign-in has expired.

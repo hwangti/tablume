@@ -160,4 +160,8 @@ var en = map[string]string{
 	"(이 브라우저 포함)":        "(including this browser)",
 	"패스키를 추가했습니다.":       "Passkey added.",
 	"{time}까지 쓸 수 있습니다.": "Valid until {time}.",
+	// connection files
+	"연결 파일을 읽지 못했습니다: %v":         "Couldn't read the connection file: %v",
+	"Tablume 연결 파일이 아닙니다":         "Not a Tablume connection file",
+	"더 새 버전의 Tablume에서 내보낸 파일입니다": "The file was exported by a newer version of Tablume",
 }

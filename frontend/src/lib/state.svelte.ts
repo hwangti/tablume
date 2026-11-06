@@ -171,6 +171,37 @@ export async function loadConnections() {
   for (const c of app.connections) connState(c.id)
 }
 
+/** Saves these connections (all when none) to a file, without passwords. */
+export async function exportConnections(ids: string[] = []) {
+  try {
+    const text = await api.ExportConnections(ids)
+    const one = ids.length === 1 ? connById(ids[0])?.name : ''
+    const day = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const name = one ? `tablume-${one.replace(/[\\/:*?"<>|\s]+/g, '_')}.json` : `tablume-connections-${day}.json`
+    const path = await api.SaveTextFile(name, text)
+    if (path) toast(isWeb ? tr('연결을 내보냈습니다. 비밀번호는 들어 있지 않습니다.') : tr('{path}에 저장했습니다. 비밀번호는 들어 있지 않습니다.', { path }))
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+}
+
+/** Adds the connections of an exported file. */
+export async function importConnections() {
+  try {
+    const f = await api.OpenJSONFile()
+    if (!f) return
+    const r = await api.ImportConnections(f.content)
+    await loadConnections()
+    const parts = [r.added ? tr('연결 {n}개를 가져왔습니다.', { n: r.added }) : tr('새로 가져올 연결이 없습니다.')]
+    if (r.existing) parts.push(tr('{n}개는 이미 있습니다.', { n: r.existing }))
+    if (r.unsupported?.length) parts.push(tr('이 빌드에 없는 DB라 건너뜀: {names}', { names: r.unsupported.join(', ') }))
+    if (r.added) parts.push(tr('비밀번호는 처음 연결할 때 묻습니다.'))
+    toast(parts.join(' '))
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+}
+
 export function askPassword(title: string): Promise<string | null> {
   return new Promise((resolve) => {
     app.prompt = {

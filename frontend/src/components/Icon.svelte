@@ -22,6 +22,7 @@
     file: 'M4 1.5h5l3 3v10H4zM9 1.5v3h3',
     save: 'M3 2.5h8l2 2v9H3zM5.5 2.5v3h5v-3M5 13.5v-4h6v4',
     download: 'M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10',
+    upload: 'M8 13.5v-8M4.5 9L8 5.5 11.5 9M3 2.5h10',
     copy: 'M5.5 5.5h7v8h-7zM3.5 10.5v-8h7',
     console: 'M2.5 3.5h11v9h-11zM4.5 6.5L6.5 8l-2 1.5M8 10h3',
     filter: 'M2.5 3.5h11L9.5 8.5v4l-3 1v-5z',
