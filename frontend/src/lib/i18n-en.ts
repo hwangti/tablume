@@ -317,6 +317,7 @@ export default {
   '{name} 만듦': '{name} created',
   '스키마 삭제…': 'Drop schema…',
   '테이블 목록': 'Table list',
+  '끌어서 너비 조절 · 두 번 클릭하면 내용에 맞춤': 'Drag to resize · double-click to fit the contents',
   '루틴 목록': 'Routine list',
   '스키마 “{name}”을(를) 삭제할까요? 안에 든 테이블과 데이터가 모두 사라지고 되돌릴 수 없습니다.': 'Drop schema “{name}”? Every table and its data go with it; this can’t be undone.',
   '테이블 비움': 'Table emptied',
