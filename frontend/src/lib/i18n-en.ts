@@ -42,6 +42,7 @@ export default {
   '테마': 'Theme',
   '자동': 'Auto',
   '수동': 'Manual',
+  '수동 커밋에서 씁니다': 'For manual commit',
   '{n}건 적용됨 · 커밋해야 반영됩니다': '{n} applied · commit to make them permanent',
   '다크': 'Dark',
   '라이트': 'Light',
