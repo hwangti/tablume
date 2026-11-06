@@ -4,6 +4,7 @@
   // zoom (view options) and the ERD.
   import Icon from './Icon.svelte'
   import { t } from '../lib/i18n.svelte'
+  import { fitMenu, onCloseMenus } from '../lib/fit'
 
   let {
     value,
@@ -28,7 +29,23 @@
   } = $props()
 
   let root: HTMLDivElement
-  let open = $state(false)
+  let splitEl: HTMLSpanElement
+  let listEl = $state<HTMLDivElement>()
+  // The list goes on <body> at the window position under the button: the
+  // ERD's bar scrolls sideways on a phone and would cut it off.
+  let pos = $state<{ top: number; right: number } | null>(null)
+  const open = $derived(!!pos)
+  function toggle() {
+    if (pos) return void (pos = null)
+    const r = splitEl.getBoundingClientRect()
+    pos = { top: r.bottom + 3, right: innerWidth - r.right }
+  }
+  const close = () => (pos = null)
+  $effect(() => onCloseMenus(close))
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node)
+    return { destroy: () => node.remove() }
+  }
   // one decimal at most: a fitted zoom like 23.68% must not change by
   // being shown and read back
   const shown = (v: number) => String(Math.round(v * 1000) / 10)
@@ -41,7 +58,7 @@
   }
 </script>
 
-<svelte:window onpointerdown={(e) => open && !root.contains(e.target as Node) && (open = false)} />
+<svelte:window onpointerdown={(e) => open && !root.contains(e.target as Node) && !listEl?.contains(e.target as Node) && close()} />
 
 <div class="zoombox" bind:this={root}>
   <span class="grp">
@@ -56,23 +73,25 @@
         onkeydown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') ((e.currentTarget.value = shown(value)), e.currentTarget.blur())
-          if (e.key === 'ArrowDown' && e.altKey) open = true
+          if (e.key === 'ArrowDown' && e.altKey && !open) toggle()
         }}
       /><span class="pct">%</span>
     </label>
     <button title={stepTitles[1]} disabled={value >= max} onclick={() => onstep(1)}><Icon name="plus" size={12} /></button>
   </span>
-  <span class="grp split">
+  <span class="grp split" bind:this={splitEl}>
     <button class="reset" onclick={() => onset(1)}>100%</button>
-    <button class="drop" class:on={open} title={t('배율 고르기')} onclick={() => (open = !open)}><Icon name="chevronDown" size={12} /></button>
-    {#if open}
-      <div class="list" role="listbox">
+    <button class="drop" class:on={open} title={t('배율 고르기')} onclick={toggle}><Icon name="chevronDown" size={12} /></button>
+    {#if pos}
+      <!-- (its clicks stay here: a menu it sits in closes on a click on the window) -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="list" role="listbox" tabindex="-1" data-menu bind:this={listEl} use:portal use:fitMenu={pos} style:top="{pos.top}px" style:right="{pos.right}px" onclick={(e) => e.stopPropagation()}>
         {#each extra as x (x.label)}
-          <button class="extra" onclick={() => (x.run(), (open = false))}>{x.label}</button>
+          <button class="extra" onclick={() => (x.run(), close())}>{x.label}</button>
         {/each}
         {#if extra.length}<div class="line"></div>{/if}
         {#each presets as p (p)}
-          <button role="option" aria-selected={shown(p) === shown(value)} class:on={shown(p) === shown(value)} onclick={() => (onset(p), (open = false))}
+          <button role="option" aria-selected={shown(p) === shown(value)} class:on={shown(p) === shown(value)} onclick={() => (onset(p), close())}
             >{shown(p)}%</button
           >
         {/each}
@@ -167,13 +186,12 @@
     border-left: 1px solid var(--border);
   }
   .list {
-    position: absolute;
-    top: calc(100% + 3px);
-    right: -1px;
-    z-index: 70;
+    position: fixed;
+    z-index: 300;
     display: flex;
     flex-direction: column;
-    min-width: calc(100% + 2px);
+    min-width: 72px;
+    font-size: 12px;
     padding: 3px;
     background: var(--bg-elev);
     border: 1px solid var(--border);

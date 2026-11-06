@@ -626,15 +626,23 @@
   }
   .bar {
     display: flex;
-    flex-wrap: wrap; /* a phone: onto a second line, not off the edge */
     align-items: center;
     gap: 4px;
     white-space: nowrap;
+    /* sideways on a phone, as the other toolbars */
+    overflow-x: auto;
+    scrollbar-width: none;
     padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
     font-size: 12px;
     color: var(--text-dim);
+  }
+  .bar::-webkit-scrollbar {
+    display: none;
+  }
+  .bar > * {
+    flex-shrink: 0;
   }
   .bar b {
     color: var(--text);
