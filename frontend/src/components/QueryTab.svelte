@@ -787,17 +787,6 @@
             {/if}
           </div>
         {/if}
-        {#if !isTable}
-          <div class="grp">
-            <button
-              class="icon-btn"
-              title={tab.layout === 'results' ? t('SQL 에디터 보이기') : t('결과만 크게 보기')}
-              onclick={toggleLayout}
-            >
-              <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
-            </button>
-          </div>
-        {/if}
         {#if isTable && tableView === 'data' && !current && !busy}
           <!-- restored tab, not loaded yet -->
           <div class="grp">
@@ -815,9 +804,6 @@
               <button class="btn mini" onclick={() => current && revert(current)} title={t('모든 변경 되돌리기')}><Icon name="undo" size={13} /> {t('되돌리기')}</button>
             </div>
           {/if}
-          {#if isTable && !conn?.readOnly}
-            <div class="grp">{@render txControls(14)}</div>
-          {/if}
           {#if editInfo}
             <div class="grp">
               {#if !editInfo.editable}
@@ -828,6 +814,9 @@
                 <button class="icon-btn" title={(editInfo.editable ? t('선택 행 삭제') : t('추가한 행 취소')) + ' (Delete)'} onclick={() => grid?.deleteRows()}><Icon name="minus" size={14} /></button>
               {/if}
             </div>
+          {/if}
+          {#if isTable && !conn?.readOnly}
+            <div class="grp">{@render txControls(14)}</div>
           {/if}
           <div class="grp">
             <button class="icon-btn" title={t('다시 조회')} onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
@@ -899,6 +888,18 @@
               </div>
             {/if}
             <span class="meta" title={timingTitle(current)} data-tip-bar={timingParts(current).map((p) => p[1]).join(',')}>{num(timingTotal(current))}ms</span>
+          </div>
+        {/if}
+        {#if !isTable}
+          <!-- layout, at the end: it isn't about the result -->
+          <div class="grp">
+            <button
+              class="icon-btn"
+              title={tab.layout === 'results' ? t('SQL 에디터 보이기') : t('결과만 크게 보기')}
+              onclick={toggleLayout}
+            >
+              <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
+            </button>
           </div>
         {/if}
       </div>
