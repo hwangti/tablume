@@ -283,6 +283,10 @@ func (a *App) FetchMore(tabID, cursorID string, n int) (dbx.FetchResponse, error
 func (a *App) Cancel(tabID string)       { a.db.Cancel(tabID) }
 func (a *App) CloseSession(tabID string) { a.db.CloseSession(tabID) }
 
+// EndTx commits (or rolls back) a console tab's changes in manual commit.
+func (a *App) EndTx(tabID string, commit bool) error { return a.db.EndTx(tabID, commit) }
+func (a *App) TxOpen(tabID string) bool              { return a.db.TxOpen(tabID) }
+
 // ---------------------------------------------------------------- files
 
 func (a *App) openFile(ctx context.Context, o application.OpenFileDialogOptions) (string, error) {

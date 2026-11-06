@@ -112,10 +112,13 @@ interface Api {
     cursor: number
     fetch: number
     confirmed?: boolean
+    manual?: boolean
   }): Promise<ExecResponse>
   FetchMore(tabId: string, cursorId: string, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
   Cancel(tabId: string): Promise<void>
   CloseSession(tabId: string): Promise<void>
+  EndTx(tabId: string, commit: boolean): Promise<void>
+  TxOpen(tabId: string): Promise<boolean>
   PickSQLiteFile(): Promise<string>
   PickKeyFile(): Promise<string>
   SaveTextFile(name: string, content: string): Promise<string>

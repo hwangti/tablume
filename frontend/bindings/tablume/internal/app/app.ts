@@ -128,6 +128,13 @@ export function EditInfo(id: string, schema: string, source: string[] | null, co
     return $Call.ByID(1638538596, id, schema, source, columns);
 }
 
+/**
+ * EndTx commits (or rolls back) a console tab's changes in manual commit.
+ */
+export function EndTx(tabID: string, commit: boolean): $CancellablePromise<void> {
+    return $Call.ByID(265595477, tabID, commit);
+}
+
 export function Execute(req: dbx$0.ExecRequest): $CancellablePromise<dbx$0.ExecResponse> {
     return $Call.ByID(1929144907, req);
 }
@@ -374,6 +381,10 @@ export function TouchSessions(tabIDs: string[] | null): $CancellablePromise<void
  */
 export function TruncateTable(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {
     return $Call.ByID(1852937970, id, schema, t);
+}
+
+export function TxOpen(tabID: string): $CancellablePromise<boolean> {
+    return $Call.ByID(2428869528, tabID);
 }
 
 /**

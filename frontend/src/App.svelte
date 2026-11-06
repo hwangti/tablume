@@ -395,6 +395,7 @@
             <span class="name" class:preview={t.preview} title={t.preview ? tr('미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.') : ''}>{t.title}</span>
           {/if}
           {#if c?.readOnly}<span class="ro" title={tr('읽기 전용 연결입니다')}><Icon name="lock" size={11} /></span>{/if}
+          {#if t.inTx}<span class="tx" title={tr('커밋하지 않은 변경이 있습니다')}></span>{/if}
           <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label={tr('닫기')}><Icon name="close" size={14} /></button>
         </div>
       {/each}
@@ -770,6 +771,13 @@
   }
   .welcome p {
     margin: 4px;
+  }
+  .tab .tx {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex-shrink: 0;
   }
   .tab .ro {
     display: inline-flex;

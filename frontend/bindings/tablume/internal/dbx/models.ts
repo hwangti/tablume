@@ -264,12 +264,22 @@ export interface ExecRequest {
      * back in ExecResponse.Confirm and nothing runs.
      */
     "confirmed": boolean;
+
+    /**
+     * Manual: changes wait for EndTx instead of committing (txn.go).
+     */
+    "manual": boolean;
 }
 
 export interface ExecResponse {
     "results": StmtResult[] | null;
     "currentSchema": string;
     "confirm": string[] | null;
+
+    /**
+     * manual commit: changes wait for Commit or Rollback
+     */
+    "inTx": boolean;
 }
 
 export interface FKRequest {

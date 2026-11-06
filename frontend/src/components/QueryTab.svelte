@@ -18,6 +18,8 @@
     syncTreeRows,
     connById,
     runSQL,
+    endTx,
+    setManualCommit,
     fetchMore,
     cancel,
     loadCompletion,
@@ -649,7 +651,12 @@
         <Icon name="stop" />
       </button>
       <span class="sep"></span>
-      <select value={tab.connId} onchange={(e) => changeConn(e.currentTarget.value)} title={t('연결#선택')}>
+      <select
+        value={tab.connId}
+        onchange={(e) => changeConn(e.currentTarget.value)}
+        disabled={tab.inTx}
+        title={tab.inTx ? t('커밋하거나 롤백한 뒤 연결을 바꿀 수 있습니다') : t('연결#선택')}
+      >
         {#each app.connections as c (c.id)}
           <option value={c.id}>{c.name}</option>
         {/each}
@@ -672,6 +679,20 @@
       <span class="sep"></span>
       <button class="icon-btn" title={t('SQL 파일 열기')} onclick={openFile}><Icon name="open" /></button>
       <button class="icon-btn" title={t('SQL 파일로 저장')} onclick={saveFile}><Icon name="save" /></button>
+      <span class="sep"></span>
+      <div class="seg" role="group">
+        <button class:on={!tab.manual} onclick={() => setManualCommit(tab, false)} title={t('문장마다 바로 반영합니다')}>{t('자동 커밋')}</button>
+        <button class:on={tab.manual} onclick={() => setManualCommit(tab, true)} title={t('커밋할 때까지 변경을 트랜잭션에 둡니다')}>{t('수동 커밋')}</button>
+      </div>
+      {#if tab.manual}
+        <button class="txbtn commit" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title={t('변경을 반영합니다')}>
+          <Icon name="check" size={14} />{t('커밋')}
+        </button>
+        <button class="txbtn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title={t('변경을 버립니다')}>
+          <Icon name="undo" size={14} />{t('롤백')}
+        </button>
+        {#if tab.inTx}<span class="txwait">{t('커밋 대기 중')}</span>{/if}
+      {/if}
       <span class="grow"></span>
       {#if tab.running}
         <span class="running"><span class="spin"></span> {t('실행 중')} {elapsed}</span>
@@ -994,6 +1015,33 @@
   }
   .run {
     color: var(--ok);
+  }
+  .txbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: none;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .txbtn:disabled {
+    color: var(--text-faint);
+    cursor: default;
+  }
+  .txbtn.commit:not(:disabled) {
+    color: var(--ok);
+  }
+  .txbtn:not(:disabled):hover {
+    background: var(--bg-hover);
+  }
+  .txwait {
+    color: var(--warn);
+    font-size: 12px;
   }
   .stop {
     color: var(--danger);

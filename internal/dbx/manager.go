@@ -51,6 +51,12 @@ type session struct {
 
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
+
+	// manual commit (txn.go): manual is the mode set on conn, inTx whether
+	// changes wait for Commit or Rollback; otx is Oracle's open transaction.
+	manual bool
+	inTx   bool
+	otx    driver.Tx
 }
 
 type cursor struct {
@@ -495,6 +501,10 @@ func (s *session) ensureConn(ctx context.Context, p *pool) error {
 		s.conn.Close()
 		s.conn = nil
 	}
+	// a new connection starts in autocommit; changes left uncommitted on
+	// the old one were rolled back by the server when it went away
+	lost := s.inTx
+	s.manual, s.inTx, s.otx = false, false, nil
 	conn, err := p.db.Conn(ctx)
 	if err != nil {
 		return err
@@ -504,6 +514,9 @@ func (s *session) ensureConn(ctx context.Context, p *pool) error {
 		if q := p.d.UseSchema(s.schema); q != "" {
 			_, _ = conn.ExecContext(ctx, q)
 		}
+	}
+	if lost {
+		return i18n.Error("연결이 끊겨 커밋하지 않은 변경이 롤백되었습니다. 다시 실행하세요")
 	}
 	return nil
 }
@@ -617,6 +630,11 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		}
 		s.schema = req.Schema
 	}
+	if err := s.setManual(ctx, p.d.Style(), req.Manual); err != nil {
+		cancel()
+		resp.InTx = s.inTx
+		return resp, err
+	}
 
 	keepCursor := false
 	for i, st := range stmts {
@@ -631,6 +649,11 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		query := returnsRows(st.SQL, p.d.Style())
 		var out stmtOut
 		var abandoned bool
+		if err := s.beforeStmt(ctx, p.d.Style(), st.SQL); err != nil {
+			r.Error = err.Error()
+			resp.Results = append(resp.Results, r)
+			break
+		}
 		paged := false
 		if q, ok := pagedSQL(st.SQL, p.d.Style(), fetch+1, 0, p.legacyOracle); query && ok {
 			out, abandoned = s.runStmt(ctx, q, true, fetch+1)
@@ -689,6 +712,9 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		if r.Error != "" && ctx.Err() != nil {
 			r.Error = i18n.T("사용자에 의해 취소됨")
 		}
+		if r.Error == "" {
+			s.afterStmt(p.d.Style(), st.SQL)
+		}
 		resp.Results = append(resp.Results, r)
 		if r.Error != "" {
 			break
@@ -711,6 +737,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		ccancel()
 	}
 	resp.CurrentSchema = s.schema
+	resp.InTx = s.inTx
 	return resp, nil
 }
 
