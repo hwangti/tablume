@@ -1017,13 +1017,19 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 1px;
     padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
   }
   .toolbar :global(.dd) {
     max-width: 200px;
+  }
+  .toolbar .icon-btn {
+    width: 24px;
+  }
+  .toolbar :global(.dd + .dd) {
+    margin-left: 4px;
   }
   .run {
     color: var(--ok);
