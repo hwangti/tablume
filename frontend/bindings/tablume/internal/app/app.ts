@@ -14,10 +14,20 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as dbx$0 from "../dbx/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as store$0 from "../store/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * AppendLog adds what a tab ran to its connection's run log.
+ */
+export function AppendLog(id: string, entries: store$0.LogEntry[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2591089630, id, entries);
+}
 
 export function ApplyAlter(req: dbx$0.AlterRequest): $CancellablePromise<dbx$0.AlterResult> {
     return $Call.ByID(1683883096, req);
@@ -45,6 +55,13 @@ export function BrowseFiles(dir: string): $CancellablePromise<$models.FileList> 
 
 export function Cancel(tabID: string): $CancellablePromise<void> {
     return $Call.ByID(890863278, tabID);
+}
+
+/**
+ * ClearLog deletes a connection's run log.
+ */
+export function ClearLog(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3263591581, id);
 }
 
 export function CloseSession(tabID: string): $CancellablePromise<void> {
@@ -240,6 +257,13 @@ export function QualifiedName(id: string, schema: string, t: dbx$0.Table): $Canc
 
 export function QuoteIdent(id: string, name: string): $CancellablePromise<string> {
     return $Call.ByID(1389903658, id, name);
+}
+
+/**
+ * ReadLog returns a connection's run log, newest first, filtered by q.
+ */
+export function ReadLog(id: string, q: string, limit: number): $CancellablePromise<store$0.LogEntry[] | null> {
+    return $Call.ByID(2797092994, id, q, limit);
 }
 
 /**

@@ -216,6 +216,7 @@ func (s *Store) Delete(id string) error {
 			s.list = append(s.list[:i], s.list[i+1:]...)
 			keyringDelete(id)
 			keyringDelete(sshKey(id))
+			_ = s.ClearLog(id)
 			return s.save()
 		}
 	}

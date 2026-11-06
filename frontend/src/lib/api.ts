@@ -2,7 +2,7 @@ import * as App from '../../bindings/tablume/internal/app/app'
 import { t } from './i18n.svelte'
 import { isWeb } from './platform'
 import { downloadText, uploadText } from './webfiles.svelte'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, SchemaGraph, TableFK } from './types'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, SchemaGraph, TableFK, LogEntry } from './types'
 
 export interface AlterResult {
   applied: number
@@ -87,6 +87,9 @@ interface Api {
   PreviewForeignKeys(req: FKRequest): Promise<string[] | null>
   ApplyForeignKeys(req: FKRequest): Promise<AlterResult>
   RenameTable(id: string, schema: string, t: Table, name: string): Promise<string>
+  AppendLog(id: string, entries: LogEntry[]): Promise<void>
+  ReadLog(id: string, q: string, limit: number): Promise<LogEntry[] | null>
+  ClearLog(id: string): Promise<void>
   ObjectListSQL(id: string, schema: string, kind: 'tables' | 'routines'): Promise<string>
   CreateSchema(id: string, name: string): Promise<string>
   DropSchema(id: string, name: string): Promise<string>
