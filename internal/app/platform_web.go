@@ -123,6 +123,10 @@ func setupPlatform(svc *App, o *application.Options) func() {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
+			if r.URL.Path == "/x/export" {
+				svc.serveExport(w, r)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

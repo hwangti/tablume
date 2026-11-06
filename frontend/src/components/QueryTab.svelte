@@ -856,6 +856,12 @@
                   <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
                   <button onclick={() => exportResult('sql')}>{t('INSERT 문')} <span class="dim">.sql</span></button>
                   <div class="hint">{t(current.hasMore ? '불러온 {n}행 (전체 아님)' : '불러온 {n}행', { n: num(current.rows!.length) })}</div>
+                  {#if tab.tableRef}
+                    <hr />
+                    <button onclick={() => ((exportMenu = null), (app.dataDialog = { kind: 'export', connId: tab.connId, schema: tab.tableRef!.schema, tables: [tab.tableRef!.table] }))}
+                      >{t('테이블 전체 내보내기…')}</button
+                    >
+                  {/if}
                 </div>
               {/if}
             </div>

@@ -288,6 +288,31 @@ export interface ExecResponse {
     "inTx": boolean;
 }
 
+export interface ExportRequest {
+    "connId": string;
+    "schema": string;
+
+    /**
+     * none: every table and view in the schema
+     */
+    "tables": Table[] | null;
+
+    /**
+     * csv, json, sql
+     */
+    "format": string;
+
+    /**
+     * sql: CREATE statements
+     */
+    "ddl": boolean;
+
+    /**
+     * sql: INSERT statements (csv and json are always data)
+     */
+    "data": boolean;
+}
+
 export interface FKRequest {
     "connId": string;
     "schema": string;

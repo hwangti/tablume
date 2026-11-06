@@ -133,6 +133,8 @@ export const app = $state({
   // bumped when a run log entry is saved (log panes showing it reload)
   logVersion: 0,
   confirm: null as null | { text: string; sql?: string[]; driver?: string; resolve: (v: boolean) => void },
+  // export of tables / a schema, or a CSV import into one table
+  dataDialog: null as null | { kind: 'export' | 'import'; connId: string; schema: string; tables: Table[] },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
   // What the schema tree shows next to each table / column.
