@@ -329,6 +329,9 @@ type ApplyRequest struct {
 	Schema  string      `json:"schema"`
 	Table   Table       `json:"table"`
 	Changes []RowChange `json:"changes"`
+	// Manual: run in the tab's open transaction instead of committing (txn.go).
+	TabID  string `json:"tabId"`
+	Manual bool   `json:"manual"`
 }
 
 type stmtArgs struct {
@@ -476,6 +479,12 @@ func (m *Manager) ApplyChanges(req ApplyRequest) (int, error) {
 			return 0, err
 		}
 		stmts = append(stmts, st)
+	}
+	if req.Manual && req.TabID != "" {
+		if err := m.applyInTx(req, p, stmts); err != nil {
+			return 0, err
+		}
+		return len(stmts), nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

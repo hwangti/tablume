@@ -149,6 +149,8 @@ export interface ApplyRequest {
   schema: string
   table: Table
   changes: RowChange[]
+  tabId?: string
+  manual?: boolean
 }
 
 const native = App as unknown as Api

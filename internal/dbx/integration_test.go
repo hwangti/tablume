@@ -1546,6 +1546,55 @@ func TestManualCommit(t *testing.T) {
 			if v := name2(); v != "b" {
 				t.Errorf("autocommit again: %s", v)
 			}
+
+			// grid edits in manual mode join the tab's transaction
+			info, err := m.EditInfo(tg.cfg.ID, tg.schema, []string{tg.table}, []string{"id", "name"})
+			if err != nil || !info.Editable {
+				t.Fatalf("edit info: %+v %v", info, err)
+			}
+			tbl, idc, namec := info.Table, info.Columns[0], info.Columns[1]
+			upd := func(id, v string) RowChange {
+				return RowChange{Kind: "update", Key: map[string]any{idc: id}, Values: map[string]any{namec: v}}
+			}
+			apply := func(cs ...RowChange) error {
+				_, err := m.ApplyChanges(ApplyRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, TabID: "a", Manual: true, Changes: cs})
+				return err
+			}
+			if err := apply(upd("2", "g")); err != nil || !m.TxOpen("a") {
+				t.Fatal("grid edit in manual mode:", err)
+			}
+			if name != "mssql" {
+				if v := name2(); v != "b" {
+					t.Errorf("uncommitted grid edit seen by another tab: %s", v)
+				}
+			}
+			// a batch that fails is undone to its savepoint; the earlier edit stays
+			if err := apply(upd("2", "h"), upd("999", "x")); err == nil {
+				t.Error("batch hitting no row applied")
+			}
+			if !m.TxOpen("a") {
+				t.Fatal("failed batch ended the transaction")
+			}
+			if r := run("a", read, true); fmt.Sprint(r.Results[0].Rows[0][0]) != "g" {
+				t.Errorf("after failed batch, in the transaction: %v", r.Results[0].Rows[0][0])
+			}
+			if err := m.EndTx("a", true); err != nil {
+				t.Fatal("commit grid edit:", err)
+			}
+			if v := name2(); v != "g" {
+				t.Errorf("grid edit after commit: %s", v)
+			}
+			// mssql: a nested BEGIN TRANSACTION the user typed is committed too
+			if name == "mssql" {
+				run("a", "BEGIN TRANSACTION", true)
+				run("a", set("n"), true)
+				if err := m.EndTx("a", true); err != nil {
+					t.Fatal(err)
+				}
+				if v := name2(); v != "n" {
+					t.Errorf("nested: %s", v)
+				}
+			}
 		})
 	}
 }
