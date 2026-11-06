@@ -5,6 +5,7 @@
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
+  import Dropdown from './Dropdown.svelte'
   import { closeMenus, onCloseMenus } from '../lib/fit'
   import SqlPreview from './SqlPreview.svelte'
   import FilterInput from './FilterInput.svelte'
@@ -686,27 +687,21 @@
         <span class="txwait">{t('커밋 대기 중')}</span>
       {/if}
       <span class="sep"></span>
-      <select
+      <Dropdown
         value={tab.connId}
-        onchange={(e) => changeConn(e.currentTarget.value)}
+        options={app.connections.map((c) => ({ value: c.id, label: c.name }))}
+        onchange={changeConn}
         disabled={tab.inTx}
         title={tab.inTx ? t('커밋하거나 롤백한 뒤 연결을 바꿀 수 있습니다') : t('연결#선택')}
-      >
-        {#each app.connections as c (c.id)}
-          <option value={c.id}>{c.name}</option>
-        {/each}
-      </select>
-      <select
-        bind:value={tab.schema}
-        onchange={saveWorkspaceSoon}
+      />
+      <Dropdown
+        value={tab.schema}
+        options={schemaOptions.map((s) => ({ value: s, label: s }))}
+        onchange={(v) => ((tab.schema = v), saveWorkspaceSoon())}
+        placeholder="({t('스키마')})"
         disabled={!connected || conn?.driver === 'sqlite'}
         title={t('기본 스키마 / 데이터베이스')}
-      >
-        {#if !schemaOptions.length}<option value="">({t('스키마')})</option>{/if}
-        {#each schemaOptions as s (s)}
-          <option value={s}>{s}</option>
-        {/each}
-      </select>
+      />
     </div>
   {/if}
 
@@ -1027,10 +1022,8 @@
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
   }
-  .toolbar select {
+  .toolbar :global(.dd) {
     max-width: 200px;
-    padding: 2px 6px;
-    height: 26px;
   }
   .run {
     color: var(--ok);
