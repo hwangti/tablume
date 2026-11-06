@@ -4,9 +4,23 @@ import App from './App.svelte'
 import { initTheme } from './lib/theme'
 import { initPlatform } from './lib/platform'
 import { installLongPress } from './lib/longpress'
+import { closeMenus } from './lib/fit'
 
 initTheme()
 installLongPress()
+
+// Escape closes an open pop-up menu, and does nothing else then (a dialog
+// under it stays, an edit isn't cancelled). Menus carry data-menu.
+addEventListener(
+  'keydown',
+  (e) => {
+    if (e.key !== 'Escape' || !document.querySelector('[data-menu]')) return
+    e.preventDefault()
+    e.stopPropagation()
+    closeMenus()
+  },
+  true,
+)
 
 // iOS zooms into a text field with type under 16px when it gets focus, and
 // stays zoomed. maximum-scale=1 stops that; iOS still lets a pinch zoom
