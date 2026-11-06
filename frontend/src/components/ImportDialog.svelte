@@ -8,6 +8,7 @@
   import { decodeText, guessSeparator, parseCSV } from '../lib/csv'
   import type { Column, RowChange, Table } from '../lib/types'
   import Modal from './Modal.svelte'
+  import Dropdown from './Dropdown.svelte'
 
   let { connId, schema, table }: { connId: string; schema: string; table: Table } = $props()
 
@@ -24,6 +25,12 @@
 
   let names = $derived(header ? (rows[0] ?? []) : (rows[0] ?? []).map((_, i) => t('{n}번째 열', { n: i + 1 })))
   let data = $derived(header ? rows.slice(1) : rows)
+  let sepOpts = $derived([
+    { value: ',', label: ', ' + t('쉼표') },
+    { value: '\t', label: t('탭') },
+    { value: ';', label: '; ' + t('세미콜론') },
+  ])
+  let colOpts = $derived([{ value: -1, label: '— ' + t('넣지 않음') + ' —' }, ...names.map((n, k) => ({ value: k, label: n }))])
   let used = $derived(cols.map((c, i) => ({ c, k: map[i] })).filter((x) => x.k >= 0))
 
   const close = () => !busy && (app.dataDialog = null)
@@ -94,13 +101,9 @@
     </div>
     {#if rows.length}
       <div class="row">
-        <label class="chk">{t('구분자')}
-          <select bind:value={sep} onchange={parse}>
-            <option value=",">, {t('쉼표')}</option>
-            <option value={'\t'}>{t('탭')}</option>
-            <option value=";">; {t('세미콜론')}</option>
-          </select>
-        </label>
+        <span class="chk">{t('구분자')}
+          <Dropdown value={sep} options={sepOpts} onchange={(v) => ((sep = v), parse())} width="110px" />
+        </span>
         <label class="chk"><input type="checkbox" bind:checked={header} onchange={automap} /> {t('첫 줄은 컬럼 이름')}</label>
         <label class="chk"><input type="checkbox" bind:checked={emptyNull} /> {t('빈 칸은 NULL')}</label>
       </div>
@@ -109,10 +112,7 @@
         <div class="mh">{t('CSV 열')}</div>
         {#each cols as c, i (c.name)}
           <div class="mc"><span class="mono">{c.name}</span> <span class="dim">{c.type.toLowerCase()}{c.extra ? ' · ' + c.extra : ''}</span></div>
-          <select bind:value={map[i]}>
-            <option value={-1}>— {t('넣지 않음')} —</option>
-            {#each names as n, k (k)}<option value={k}>{n}</option>{/each}
-          </select>
+          <Dropdown value={map[i]} options={colOpts} onchange={(v) => (map[i] = v)} mono width="100%" />
         {/each}
       </div>
       {#if used.length}
