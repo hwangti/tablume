@@ -139,6 +139,15 @@ interface Api {
   TouchSessions(tabIds: string[]): Promise<void>
   SetLanguage(lang: string): Promise<void>
   Version(): Promise<string>
+  CheckUpdate(force: boolean): Promise<UpdateInfo>
+  OpenUpdatePage(): Promise<void>
+}
+
+export interface UpdateInfo {
+  current: string
+  latest: string // "" while no release is out
+  url: string
+  newer: boolean
 }
 
 // A page of rows from FetchPage / FetchMore, with its time (see StmtResult).

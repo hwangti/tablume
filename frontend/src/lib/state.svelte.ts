@@ -1,4 +1,4 @@
-import { api, errText, loginExpired, type FetchedPage } from './api'
+import { api, errText, loginExpired, type FetchedPage, type UpdateInfo } from './api'
 import { Events, Window } from '@wailsio/runtime'
 import { isWeb } from './platform'
 import { i18n, isLang, t as tr, type Lang } from './i18n.svelte'
@@ -119,6 +119,7 @@ export interface Toast {
   id: number
   kind: 'info' | 'error'
   text: string
+  action?: { label: string; run: () => void }
 }
 
 export const app = $state({
@@ -148,17 +149,54 @@ export const app = $state({
   erdAudit: [...DEFAULT_AUDIT] as string[], // column names the ERD takes for audit columns (* wildcards)
   ddlMode: 'table' as 'sql' | 'table', // structure tab: columns and indexes, or the DDL text
   theme: getTheme(),
+  updateCheck: true, // ask GitHub for a newer release at startup
+  updateSeen: '', // the newer release the startup check last told about
+  update: null as UpdateInfo | null, // a newer release, once found (not saved)
   // Databases this build includes (a build can leave some out).
   drivers: DRIVERS.map((d) => d.id) as Driver[],
 })
 
 let toastSeq = 0
-export function toast(text: string, kind: 'info' | 'error' = 'info') {
+export function toast(text: string, kind: 'info' | 'error' = 'info', action?: Toast['action']) {
   const id = ++toastSeq
-  app.toasts.push({ id, kind, text })
-  setTimeout(() => {
-    app.toasts = app.toasts.filter((t) => t.id !== id)
-  }, kind === 'error' ? 8000 : 3000)
+  // the same message again replaces the one still showing
+  app.toasts = app.toasts.filter((t) => t.text !== text)
+  app.toasts.push({ id, kind, text, action })
+  setTimeout(() => dismissToast(id), action ? 15000 : kind === 'error' ? 8000 : 3000)
+}
+
+export function dismissToast(id: number) {
+  app.toasts = app.toasts.filter((t) => t.id !== id)
+}
+
+/** Asks for a newer release: at startup (quiet, and each release is told
+ *  about once) or from the view menu (says what it found). */
+export async function checkUpdate(manual: boolean) {
+  let u: UpdateInfo
+  try {
+    u = await api.CheckUpdate(manual)
+  } catch (e) {
+    if (manual) toast(tr('새 버전을 확인하지 못했습니다: {err}', { err: errText(e) }), 'error')
+    return
+  }
+  app.update = u.newer ? u : null
+  if (!u.newer) {
+    if (manual) toast(tr('최신 버전입니다 ({v})', { v: u.current }))
+    return
+  }
+  if (manual || app.updateSeen !== u.latest) {
+    toast(tr('새 버전이 나왔습니다: Tablume {v}', { v: u.latest }), 'info', { label: tr('받기'), run: openUpdate })
+    if (app.updateSeen !== u.latest) {
+      app.updateSeen = u.latest
+      saveWorkspaceSoon()
+    }
+  }
+}
+
+/** The new release's page, in the browser. */
+export function openUpdate() {
+  if (isWeb) window.open(app.update?.url || 'https://github.com/hwangti/tablume/releases/latest', '_blank', 'noopener')
+  else api.OpenUpdatePage().catch((e) => toast(errText(e), 'error'))
 }
 
 export function newId(): string {
@@ -1410,6 +1448,8 @@ export function saveWorkspaceSoon() {
       zoom: app.zoom,
       orderShare: app.orderShare,
       gridColNumbers: app.gridColNumbers,
+      updateCheck: app.updateCheck,
+      updateSeen: app.updateSeen,
       ddlView: app.ddlMode,
       erdAudit: app.erdAudit,
       theme: app.theme,
@@ -1441,6 +1481,8 @@ export async function loadWorkspace(tabs = true) {
     else if (data.ddlView === 'index') app.ddlMode = 'table' // was a view of its own
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
     if (Array.isArray(data.erdAudit) && data.erdAudit.every((p: unknown) => typeof p === 'string')) app.erdAudit = data.erdAudit
+    if (typeof data.updateCheck === 'boolean') app.updateCheck = data.updateCheck
+    if (typeof data.updateSeen === 'string') app.updateSeen = data.updateSeen
     setLanguage(isLang(data.lang) ? data.lang : i18n.lang, false)
     if (typeof data.sidebarHidden === 'boolean') app.sidebarHidden = data.sidebarHidden
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare

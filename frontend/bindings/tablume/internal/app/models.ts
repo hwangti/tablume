@@ -40,3 +40,22 @@ export interface TestResult {
     "version": string;
     "sshHostKey": string;
 }
+
+export interface UpdateInfo {
+    "current": string;
+
+    /**
+     * the release's version, without a leading v
+     */
+    "latest": string;
+
+    /**
+     * its page
+     */
+    "url": string;
+
+    /**
+     * Latest is newer than Current
+     */
+    "newer": boolean;
+}

@@ -12,5 +12,6 @@ export type {
     FileEntry,
     FileList,
     OpenedFile,
-    TestResult
+    TestResult,
+    UpdateInfo
 } from "./models.js";

@@ -208,3 +208,6 @@ func randHex(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+// openURL: the page opens links itself in the browser build.
+func openURL(string) error { return errors.New("not in the browser build") }

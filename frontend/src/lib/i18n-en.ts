@@ -583,4 +583,11 @@ export default {
   "파일 고르기…": "Choose file…",
   "행마다 객체 하나인 배열입니다. 숫자는 숫자로, 바이너리는 0x… 문자열로 씁니다.": "An array with one object per row. Numbers are numbers, binary is a 0x… string.",
   "형식": "Format",
+  '새 버전을 확인하지 못했습니다: {err}': 'Couldn\'t check for a new version: {err}',
+  '최신 버전입니다 ({v})': 'Up to date ({v})',
+  '새 버전이 나왔습니다: Tablume {v}': 'Tablume {v} is out',
+  '받기': 'Download',
+  '새 버전 확인': 'Check for updates',
+  'Tablume {v} 받기': 'Download Tablume {v}',
+  '시작할 때 새 버전 확인': 'Check for updates at startup',
 } as Record<string, string>
