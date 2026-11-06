@@ -119,7 +119,7 @@ export const app = $state({
   editing: null as ConnConfig | null,
   // password prompt, or a text prompt when value is set
   prompt: null as null | { title: string; value?: string; ok?: string; resolve: (v: string | null) => void },
-  confirm: null as null | { text: string; code?: string; resolve: (v: boolean) => void },
+  confirm: null as null | { text: string; sql?: string[]; driver?: string; resolve: (v: boolean) => void },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
   // What the schema tree shows next to each table / column.
@@ -203,11 +203,13 @@ export function askText(title: string, value: string, ok = tr('확인')): Promis
 
 // window.confirm isn't available in every webview (macOS WKWebView), so
 // confirmations use our own modal.
-export function confirmBox(text: string, code?: string): Promise<boolean> {
+/** Asks yes or no; `sql` shows statements under the text, highlighted for `driver`. */
+export function confirmBox(text: string, sql?: string[], driver?: string): Promise<boolean> {
   return new Promise((resolve) => {
     app.confirm = {
       text,
-      code,
+      sql,
+      driver,
       resolve: (v) => {
         app.confirm = null
         resolve(v)
@@ -662,7 +664,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     if (res.confirm?.length) {
       // UPDATE/DELETE without WHERE: nothing ran yet
       tab.running = false
-      const ok = await confirmBox(tr('WHERE 없는 UPDATE·DELETE는 테이블의 모든 행을 바꿉니다. 실행할까요?'), res.confirm.join(';\n\n'))
+      const ok = await confirmBox(tr('WHERE 없는 UPDATE·DELETE는 테이블의 모든 행을 바꿉니다. 실행할까요?'), res.confirm, connById(tab.connId)?.driver)
       if (!ok) {
         log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]))
         return null
