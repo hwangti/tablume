@@ -12,6 +12,7 @@
   import ErdView from './components/ErdView.svelte'
   import ConnectionDialog from './components/ConnectionDialog.svelte'
   import Modal from './components/Modal.svelte'
+  import SqlPreview from './components/SqlPreview.svelte'
   import Icon from './components/Icon.svelte'
   import logo from './assets/logo.svg'
   import {
@@ -551,9 +552,9 @@
 {/if}
 
 {#if app.confirm}
-  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={app.confirm.code ? 560 : 380}>
+  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={app.confirm.sql ? 560 : 380}>
     <p style="margin:0">{app.confirm.text}</p>
-    {#if app.confirm.code}<pre class="confirm-code">{app.confirm.code}</pre>{/if}
+    {#if app.confirm.sql}<div class="confirm-sql"><SqlPreview code={app.confirm.sql.join("\n\n")} driver={app.confirm.driver} /></div>{/if}
     {#snippet footer()}
       <span style="flex:1"></span>
       <button class="btn" onclick={() => app.confirm?.resolve(false)}>{tr('취소')}</button>
@@ -867,17 +868,8 @@
     color: var(--text-faint);
     flex-shrink: 0;
   }
-  .confirm-code {
-    margin: 10px 0 0;
-    padding: 8px 10px;
-    max-height: 240px;
-    overflow: auto;
-    background: var(--bg-input, var(--bg));
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font: 12px/1.5 var(--font-mono);
-    white-space: pre-wrap;
-    word-break: break-all;
+  .confirm-sql {
+    margin-top: 10px;
   }
   .toasts {
     position: fixed;
