@@ -1105,6 +1105,31 @@ export async function renameTable(connId: string, schema: string, t: Table) {
   await treeChanged(connId, [schema], st)
 }
 
+/**
+ * A schema's tables or routines as a grid (a catalog query, shown with the
+ * editor hidden; the same list opens the tab it already has).
+ */
+export async function openObjectList(connId: string, schema: string, kind: 'tables' | 'routines') {
+  const title = `${tr(kind === 'tables' ? '테이블 목록' : '루틴 목록')}: ${schema}`
+  const old = app.tabs.find((x) => x.connId === connId && x.title === title && !x.tableRef)
+  if (old) {
+    if (old.detached) api.FocusTabWindow(old.id)
+    else app.activeTab = old.id
+    return
+  }
+  if (!(await connect(connId))) return
+  let sql: string
+  try {
+    sql = await api.ObjectListSQL(connId, schema, kind)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  const tab = openConsole(connId, { schema, sql, title })
+  tab.layout = 'results'
+  await runSQL(tab, sql, -1)
+}
+
 export const SCHEMA_DRIVERS = ['mysql', 'mariadb', 'postgres', 'mssql']
 
 /** Makes a schema (asks for the name) and opens it in the tree. */

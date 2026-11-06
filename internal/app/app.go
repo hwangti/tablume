@@ -205,6 +205,11 @@ func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 	return a.db.ApplyIndexes(req)
 }
 
+// ObjectListSQL returns a query listing a schema's tables or routines ("tables", "routines").
+func (a *App) ObjectListSQL(id, schema, kind string) (string, error) {
+	return a.db.ObjectListSQL(id, schema, kind)
+}
+
 // CreateSchema makes a schema (MySQL, SQL Server: a database); returns the statement it ran.
 func (a *App) CreateSchema(id, name string) (string, error) { return a.db.CreateSchema(id, name) }
 

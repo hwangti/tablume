@@ -1377,3 +1377,50 @@ func TestCreateTable(t *testing.T) {
 		})
 	}
 }
+
+// The table and routine lists: their catalog queries run and list items.
+func TestObjectList(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			if r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: tg.setup, Cursor: -1}); err != nil || r.Results[len(r.Results)-1].Error != "" {
+				t.Fatalf("setup: %+v %v", r, err)
+			}
+			for _, kind := range []string{"tables", "routines"} {
+				sql, err := m.ObjectListSQL(tg.cfg.ID, tg.schema, kind)
+				if name == "sqlite" && kind == "routines" {
+					if err == nil {
+						t.Error("sqlite routines: should refuse")
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: sql, Cursor: -1, Fetch: 1000})
+				if err != nil || len(r.Results) != 1 || r.Results[0].Error != "" {
+					t.Fatalf("%s: %+v %v", kind, r, err)
+				}
+				res := r.Results[0]
+				if kind == "tables" {
+					found := false
+					for _, row := range res.Rows {
+						for _, c := range row {
+							if s, _ := c.(string); strings.EqualFold(s, tg.table) {
+								found = true
+							}
+						}
+					}
+					if !found {
+						t.Errorf("tables: %s not listed in %d rows", tg.table, len(res.Rows))
+					}
+				}
+				t.Logf("%s: %v, %d rows", kind, res.Columns, len(res.Rows))
+			}
+		})
+	}
+}
