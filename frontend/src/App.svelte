@@ -34,6 +34,8 @@
     closeTabWindow,
     toggleSidebar,
     initWebSessions,
+    checkUpdate,
+    dismissToast,
   } from './lib/state.svelte'
   import { Window } from '@wailsio/runtime'
   import { driverLabel } from './lib/types'
@@ -53,6 +55,8 @@
       await loadWorkspace()
       initMainWindowEvents()
       if (isWeb) initWebSessions()
+      // after the start-up work, so it never slows the first screen
+      if (app.updateCheck) setTimeout(() => checkUpdate(false), 4000)
     }
     ready = true
   })
@@ -490,7 +494,13 @@
 
 <div class="toasts">
   {#each app.toasts as t (t.id)}
-    <div class="toast" class:error={t.kind === 'error'}>{t.text}</div>
+    <div class="toast" class:error={t.kind === 'error'} class:act={t.action}>
+      <span>{t.text}</span>
+      {#if t.action}
+        <button class="btn primary" onclick={() => (t.action!.run(), dismissToast(t.id))}>{t.action.label}</button>
+        <button class="x-btn" title={tr('닫기')} onclick={() => dismissToast(t.id)}><Icon name="close" size={14} /></button>
+      {/if}
+    </div>
   {/each}
 </div>
 
@@ -787,6 +797,15 @@
     word-break: break-word;
     user-select: text;
     -webkit-user-select: text;
+  }
+  .toast.act {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px 7px 14px;
+  }
+  .toast.act span {
+    flex: 1;
   }
   .toast.error {
     border-color: var(--danger);

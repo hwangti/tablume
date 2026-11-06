@@ -43,6 +43,14 @@ export function Cancel(tabID: string): $CancellablePromise<void> {
     return $Call.ByID(890863278, tabID);
 }
 
+/**
+ * CheckUpdate asks GitHub for the latest release; force skips the kept answer
+ * (the "check now" button).
+ */
+export function CheckUpdate(force: boolean): $CancellablePromise<$models.UpdateInfo> {
+    return $Call.ByID(2954754917, force);
+}
+
 export function CloseSession(tabID: string): $CancellablePromise<void> {
     return $Call.ByID(110887068, tabID);
 }
@@ -153,6 +161,14 @@ export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {
  */
 export function OpenTabWindow(tabID: string, title: string, state: string): $CancellablePromise<void> {
     return $Call.ByID(58602739, tabID, title, state);
+}
+
+/**
+ * OpenUpdatePage opens the release page found by CheckUpdate in the browser
+ * (desktop app; the browser build opens it itself).
+ */
+export function OpenUpdatePage(): $CancellablePromise<void> {
+    return $Call.ByID(2657947422);
 }
 
 /**

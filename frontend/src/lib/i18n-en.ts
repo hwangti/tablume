@@ -377,4 +377,11 @@ export default {
   '추가': 'Add',
   '인덱스 변경 적용 — {n}개 문장': 'Apply index changes — {n} {n|statement|statements}',
   '큰 테이블은 인덱스를 만드는 동안 시간이 걸리고 쓰기가 막힐 수 있습니다.': 'On a large table, creating an index takes time and may block writes.',
+  '새 버전을 확인하지 못했습니다: {err}': 'Couldn\'t check for a new version: {err}',
+  '최신 버전입니다 ({v})': 'Up to date ({v})',
+  '새 버전이 나왔습니다: Tablume {v}': 'Tablume {v} is out',
+  '받기': 'Download',
+  '새 버전 확인': 'Check for updates',
+  'Tablume {v} 받기': 'Download Tablume {v}',
+  '시작할 때 새 버전 확인': 'Check for updates at startup',
 } as Record<string, string>

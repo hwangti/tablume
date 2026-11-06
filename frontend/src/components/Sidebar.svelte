@@ -21,6 +21,8 @@
     openDDL,
     renameTable,
     saveWorkspaceSoon,
+    checkUpdate,
+    openUpdate,
     schemaShown,
     ensureStats,
     moveConnection,
@@ -44,6 +46,7 @@
   let viewMenu = $state(false)
   let zoomList = $state(false) // the zoom presets under the zoom field
   let version = $state('') // shown at the foot of the view menu
+  let checking = $state(false)
   api.Version().then((v) => (version = v), () => {})
 
   // 1.2만 / 1.2K
@@ -697,6 +700,7 @@
         onclick={(e) => (e.stopPropagation(), viewMenu || closeMenus(), (viewMenu = !viewMenu))}
       >
         <Icon name="sliders" />
+        {#if app.update}<span class="upd-dot"></span>{/if}
       </button>
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -783,7 +787,16 @@
             <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> {tr('패스키 관리')}</a>
             <button class="vm-item" onclick={logout}><Icon name="logout" size={14} /> {tr('로그아웃')}</button>
           {/if}
-          {#if version}<div class="vm-version">Tablume {version}</div>{/if}
+          <div class="vm-version">
+            <span>Tablume {version}</span>
+            <button class="vm-check" disabled={checking} onclick={async () => ((checking = true), await checkUpdate(true), (checking = false))}
+              >{tr('새 버전 확인')}</button
+            >
+          </div>
+          {#if app.update}
+            <button class="vm-item upd" onclick={openUpdate}><Icon name="download" size={14} /> {tr('Tablume {v} 받기', { v: app.update.latest })}</button>
+          {/if}
+          <label><input type="checkbox" bind:checked={app.updateCheck} onchange={saveWorkspaceSoon} /> {tr('시작할 때 새 버전 확인')}</label>
         </div>
       {/if}
     </div>
@@ -1073,12 +1086,44 @@
     color: var(--text-faint);
   }
   .vm-version {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 6px;
     padding-top: 8px;
     border-top: 1px solid var(--border);
     color: var(--text-dim);
     font-size: 11px;
     user-select: text;
+  }
+  .vm-check {
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .vm-check:disabled {
+    color: var(--text-faint);
+    cursor: default;
+  }
+  .vm-item.upd,
+  .vm-item.upd :global(svg) {
+    color: var(--accent);
+  }
+  .viewopt .icon-btn {
+    position: relative;
+  }
+  .upd-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .vm-title.sep {
     margin-top: 6px;
