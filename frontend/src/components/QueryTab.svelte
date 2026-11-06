@@ -710,7 +710,8 @@
       {:else if tab.inTx}
         <span class="txwait">{t('커밋 대기 중')}</span>
       {/if}
-      <span class="sep"></span>
+      <!-- (on a narrow screen, where nothing parts them from the buttons) -->
+      <span class="sep end"></span>
       <Dropdown
         value={tab.connId}
         options={app.connections.map((c) => ({ value: c.id, label: c.name }))}
@@ -1040,6 +1041,7 @@
     height: 100%;
   }
   .toolbar {
+    container-type: inline-size;
     display: flex;
     align-items: center;
     gap: 1px;
@@ -1058,9 +1060,6 @@
   }
   .toolbar :global(.dd) {
     max-width: 200px;
-  }
-  .toolbar .icon-btn {
-    width: 24px;
   }
   .toolbar :global(.dd + .dd) {
     margin-left: 4px;
@@ -1106,11 +1105,11 @@
   .grp {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
   }
   .grp + .grp {
-    margin-left: 6px;
-    padding-left: 6px;
+    margin-left: 4px;
+    padding-left: 4px;
     border-left: 1px solid var(--border);
   }
   .sep {
@@ -1121,6 +1120,11 @@
   }
   .grow {
     flex: 1;
+  }
+  @container (min-width: 720px) {
+    .sep.end {
+      display: none;
+    }
   }
   .running {
     display: flex;
@@ -1182,7 +1186,7 @@
     font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     padding: 0 6px;
     height: 30px;
     flex-shrink: 0;
@@ -1329,10 +1333,6 @@
     display: flex;
     align-items: center;
     gap: 1px;
-  }
-  .rtabs .icon-btn {
-    width: 26px;
-    height: 26px;
   }
   .rtabs .icon-btn.sm,
   .icon-btn.sm {
