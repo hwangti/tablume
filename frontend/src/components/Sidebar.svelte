@@ -24,6 +24,8 @@
     dropTable,
     truncateTable,
     createSchema,
+    dropSchema,
+    isSystemSchema,
     SCHEMA_DRIVERS,
     saveWorkspaceSoon,
     schemaShown,
@@ -571,6 +573,9 @@
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
         ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },
+        ...(SCHEMA_DRIVERS.includes(c.driver) && !isSystemSchema(c, s.name)
+          ? [{ label: tr('스키마 삭제…'), icon: 'trash', run: () => dropSchema(c.id, s.name), sep: true, danger: true }]
+          : []),
       ],
     }
   }

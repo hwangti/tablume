@@ -94,6 +94,13 @@ export function Disconnect(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * DropSchema drops a schema and what is in it; returns the statement it ran.
+ */
+export function DropSchema(id: string, name: string): $CancellablePromise<string> {
+    return $Call.ByID(2125544874, id, name);
+}
+
+/**
  * DropTable drops a table or view; returns the statement it ran.
  */
 export function DropTable(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {

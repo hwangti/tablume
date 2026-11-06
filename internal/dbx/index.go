@@ -262,6 +262,28 @@ func (m *Manager) CreateSchema(id, name string) (string, error) {
 	return st, err
 }
 
+// DropSchema drops a schema with everything in it (a database on
+// MySQL/MariaDB and SQL Server) and returns the statement it ran.
+func (m *Manager) DropSchema(id, name string) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	var st string
+	switch p.cfg.Driver {
+	case "mysql", "mariadb", "mssql":
+		st = "DROP DATABASE " + p.quote(name)
+	case "postgres":
+		st = "DROP SCHEMA " + p.quote(name) + " CASCADE"
+	default:
+		return "", i18n.Error("이 DB에서는 스키마를 지울 수 없습니다")
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	_, err = p.db.ExecContext(ctx, st)
+	return st, err
+}
+
 func runOne(p *pool, schema, st string) (string, error) {
 	r, err := runDDL(p, schema, []string{st})
 	if err != nil {

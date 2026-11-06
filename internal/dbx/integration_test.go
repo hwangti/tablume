@@ -1359,6 +1359,21 @@ func TestCreateTable(t *testing.T) {
 			if l, _ := m.Schemas(tg.cfg.ID); !slices.Contains(l.Schemas, "made_s") {
 				t.Errorf("made_s not listed: %v", l.Schemas)
 			}
+			// with a table in it, opened through the pool (SQL Server: a
+			// pooled connection left in it must not block the drop)
+			in := Table{Name: "in_s"}
+			if name == "mssql" {
+				in.Schema = "dbo"
+			}
+			if res, err := m.CreateTable(CreateRequest{ConnID: tg.cfg.ID, Schema: "made_s", Table: in, Columns: []Column{{Name: "id", Type: typ[0]}}}); err != nil || res.Result.Error != "" {
+				t.Fatalf("create in made_s: %+v %v", res, err)
+			}
+			if st, err := m.DropSchema(tg.cfg.ID, "made_s"); err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+			if l, _ := m.Schemas(tg.cfg.ID); slices.Contains(l.Schemas, "made_s") {
+				t.Errorf("made_s still listed after drop")
+			}
 		})
 	}
 }
