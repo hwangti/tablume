@@ -22,4 +22,10 @@ export interface LogEntry {
      */
     "text": string;
     "sql": string;
+
+    /**
+     * Auto: a query the app made (a table tab's SELECT, a page read on),
+     * not one typed; the log shows it dimmed.
+     */
+    "auto"?: boolean;
 }

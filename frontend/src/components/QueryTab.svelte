@@ -142,7 +142,9 @@
   // its connection is already up (otherwise it offers "connect and load").
   let autoLoaded = false
   $effect(() => {
-    if (autoLoaded || !isTable || tab.creating || current || tab.running || tab.opening) return
+    if (autoLoaded || !isTable || tab.creating) return
+    // loaded or being loaded some other way ("connect and load"): not again
+    if (current || tab.running || tab.opening) return void (autoLoaded = true)
     if (app.activeTab !== tab.id || !connected) return
     autoLoaded = true
     reloadTable(tab)
@@ -623,7 +625,7 @@
         <div class="placeholder"><p>{logQuery.trim() ? t('찾는 로그가 없습니다') : t('저장된 실행 로그가 없습니다')}</p></div>
       {/if}
       {#each connLog ?? [] as m, i (i)}
-        <div class="msg" class:error={m.kind === 'error'}>
+        <div class="msg" class:error={m.kind === 'error'} class:auto={m.auto}>
           <span class="time">{logTime(m.time)}</span>
           <div class="mbody">
             <SqlPreview code={clip(m.sql)} driver={conn?.driver} bare />
@@ -642,7 +644,7 @@
         <div class="placeholder"><p>{t('찾는 로그가 없습니다')}</p></div>
       {/if}
       {#each tabLog as m, i (tabLog.length - i)}
-        <div class="msg" class:error={m.kind === 'error'}>
+        <div class="msg" class:error={m.kind === 'error'} class:auto={m.auto}>
           <span class="time">{m.time}</span>
           <div class="mbody">
             {#if m.sql}<SqlPreview code={m.sql} driver={conn?.driver} bare />{/if}
@@ -1457,6 +1459,11 @@
   }
   .mbody {
     min-width: 0;
+  }
+  /* queries the app made (a table tab's SELECT, pages read on): dimmed, so
+     what was typed stands out */
+  .msg.auto:not(.error) .mbody {
+    opacity: 0.5;
   }
   .msg .use {
     margin-left: auto;

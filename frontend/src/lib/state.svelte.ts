@@ -46,6 +46,7 @@ export interface Message {
   text: string
   sql?: string // the statement(s), shown with syntax colors above text
   full?: string // the whole statement when sql is shortened (to run it again)
+  auto?: boolean // a query the app made (a table tab's SELECT, a page read on), shown dimmed
 }
 
 export interface Tab {
@@ -602,14 +603,15 @@ const SECRET_RE = /\bidentified\s+by\b|\bpassword\b/i
 
 /**
  * Adds a line to the tab's log; a line with SQL is also saved to the
- * connection's run log (the whole statement: `full` when `sql` is short).
+ * connection's run log (the whole statement: `fullSql` when `sql` is
+ * short). `auto` marks a query the app made rather than one typed.
  */
-function log(tab: Tab, kind: Message['kind'], text: string, sql?: string, fullSql?: string) {
-  tab.messages.push({ time: now(), kind, text, sql, full: fullSql })
+function log(tab: Tab, kind: Message['kind'], text: string, sql?: string, fullSql?: string, auto = false) {
+  tab.messages.push({ time: now(), kind, text, sql, full: fullSql, auto })
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)
   const full = fullSql ?? sql
   if (full && !SECRET_RE.test(full)) {
-    api.AppendLog(tab.connId, [{ time: Date.now(), tab: tab.title, kind, text, sql: full }]).catch(() => {})
+    api.AppendLog(tab.connId, [{ time: Date.now(), tab: tab.title, kind, text, sql: full, auto }]).catch(() => {})
     app.logVersion++
   }
 }
@@ -714,10 +716,10 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
     const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
     if (ddl.length) treeChanged(tab.connId, [schemaBefore, tab.schema], ddl.join('\n'), ddl.some((x) => SCHEMA_DDL_RE.test(x)))
     for (const r of results) {
-      if (r.error) log(tab, 'error', r.error, short(r.sql), r.sql)
+      if (r.error) log(tab, 'error', r.error, short(r.sql), r.sql, !!tab.tableRef)
       else if (r.columns && r.columns.length)
-        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sentSql || r.sql), r.sql)
-      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql), r.sql)
+        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sentSql || r.sql), r.sql, !!tab.tableRef)
+      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql), r.sql, !!tab.tableRef)
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
     const failed = results.some((r) => r.error)
@@ -762,8 +764,8 @@ async function timedPage(tab: Tab, r: StmtResult, from: number, call: () => Prom
   r.renderMs = undefined
   // the query as sent (with its LIMIT/OFFSET); none when the open cursor was read further
   const text = tr('{n}행 조회', { n: n + (res.hasMore ? '+' : '') }) + (n ? ` (${from + 1}–${from + n})` : '') + ` (${res.elapsedMs}ms)`
-  if (res.sentSql) log(tab, 'info', text, short(res.sentSql), res.sentSql)
-  else log(tab, 'info', text + ' · ' + tr('열어 둔 결과에서 이어서 읽음'))
+  if (res.sentSql) log(tab, 'info', text, short(res.sentSql), res.sentSql, true)
+  else log(tab, 'info', text + ' · ' + tr('열어 둔 결과에서 이어서 읽음'), undefined, undefined, true)
   timePaint([r])
   return res
 }
@@ -1291,19 +1293,24 @@ async function applyPkDesc(connId: string, ref: TableRef) {
   }
 }
 
-/** Re-queries a table data tab from its filter / sort. */
 /** Re-runs a table tab's query (after a filter or sort change, or refresh). */
 export async function reloadTable(tab: Tab): Promise<boolean> {
   const ref = tab.tableRef
   if (!ref) return false
   if (tabPending(tab) && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 다시 조회할까요?', { n: tabPending(tab) })))) return false
-  // a tab restored from the last session: connect first
-  if (!(await connect(tab.connId))) return false
+  // Marked as opening until it runs: a restored tab's auto-load (which
+  // fires once the connection is up) then leaves it alone instead of
+  // running the same SELECT again.
+  tab.opening = true
   try {
+    // a tab restored from the last session: connect first
+    if (!(await connect(tab.connId))) return false
     tab.sql = await tableSelect(tab)
   } catch (e) {
     toast(errText(e), 'error')
     return false
+  } finally {
+    tab.opening = false
   }
   saveWorkspaceSoon()
   await runSQL(tab, tab.sql, -1)

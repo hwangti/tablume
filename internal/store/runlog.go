@@ -21,6 +21,9 @@ type LogEntry struct {
 	Kind string `json:"kind"` // info, error
 	Text string `json:"text"` // the outcome: rows, time, the error
 	SQL  string `json:"sql"`
+	// Auto: a query the app made (a table tab's SELECT, a page read on),
+	// not one typed; the log shows it dimmed.
+	Auto bool `json:"auto,omitempty"`
 }
 
 const (

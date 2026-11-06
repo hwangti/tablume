@@ -214,4 +214,5 @@ export interface LogEntry {
   kind: 'info' | 'error'
   text: string
   sql: string
+  auto?: boolean // made by the app (a table tab's SELECT, a page read on)
 }

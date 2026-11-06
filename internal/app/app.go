@@ -206,7 +206,9 @@ func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 }
 
 // AppendLog adds what a tab ran to its connection's run log.
-func (a *App) AppendLog(id string, entries []store.LogEntry) error { return a.store.AppendLog(id, entries) }
+func (a *App) AppendLog(id string, entries []store.LogEntry) error {
+	return a.store.AppendLog(id, entries)
+}
 
 // ReadLog returns a connection's run log, newest first, filtered by q.
 func (a *App) ReadLog(id, q string, limit int) ([]store.LogEntry, error) {
