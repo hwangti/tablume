@@ -208,6 +208,9 @@ func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 // CreateSchema makes a schema (MySQL, SQL Server: a database); returns the statement it ran.
 func (a *App) CreateSchema(id, name string) (string, error) { return a.db.CreateSchema(id, name) }
 
+// DropSchema drops a schema and what is in it; returns the statement it ran.
+func (a *App) DropSchema(id, name string) (string, error) { return a.db.DropSchema(id, name) }
+
 // DropTable drops a table or view; returns the statement it ran.
 func (a *App) DropTable(id, schema string, t dbx.Table) (string, error) {
 	return a.db.DropTable(id, schema, t)

@@ -1133,6 +1133,27 @@ export async function createSchema(connId: string) {
   }
 }
 
+/** Drops a schema and everything in it, after asking; tabs of its tables close. */
+export async function dropSchema(connId: string, name: string) {
+  if (!(await confirmBox(tr('스키마 “{name}”을(를) 삭제할까요? 안에 든 테이블과 데이터가 모두 사라지고 되돌릴 수 없습니다.', { name })))) return
+  let st: string
+  try {
+    st = await api.DropSchema(connId, name)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 삭제함', { name }))
+  for (const tab of app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === name)) {
+    if (tab.detached) api.CloseTabWindow(tab.id)
+    api.CloseSession(tab.id)
+    app.tabs.splice(app.tabs.indexOf(tab), 1)
+    if (app.activeTab === tab.id) app.activeTab = app.tabs[app.tabs.length - 1]?.id ?? ''
+  }
+  saveWorkspaceSoon()
+  await treeChanged(connId, [], st, true)
+}
+
 // Tabs showing a table (its data, structure, DDL).
 const tabsOf = (connId: string, schema: string, t: Table) =>
   app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))

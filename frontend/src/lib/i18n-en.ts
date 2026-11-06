@@ -315,6 +315,8 @@ export default {
   '스키마 만들기': 'Create schema',
   '스키마 만들기…': 'Create schema…',
   '{name} 만듦': '{name} created',
+  '스키마 삭제…': 'Drop schema…',
+  '스키마 “{name}”을(를) 삭제할까요? 안에 든 테이블과 데이터가 모두 사라지고 되돌릴 수 없습니다.': 'Drop schema “{name}”? Every table and its data go with it; this can’t be undone.',
   '테이블 비움': 'Table emptied',
   'SQLite에서는 있는 테이블에 자동 증가 컬럼을 더할 수 없습니다': 'SQLite cannot add an auto-increment column to an existing table',
   '이름은 더블클릭해서 바꿀 수 있습니다 · 타입 · NULL · 기본값은 SQLite에서 바꿀 수 없습니다':
