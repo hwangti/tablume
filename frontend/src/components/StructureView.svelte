@@ -639,7 +639,7 @@
           <th>{t('기본값')}</th>
           <th>{t('기타')}</th>
           <th>{t('코멘트')}</th>
-          <th class="act"></th>
+          {#if !readOnlyReason}<th class="act"></th>{/if}
         </tr>
       </thead>
       <tbody bind:this={tbody}>
@@ -692,16 +692,17 @@
             {@render cell('default', 'mono def', cur.default, cur.nullable ? 'NULL' : '')}
             <td class="dim" class:edited={changed(c, 'auto')}>{extraShown(c, cur)}</td>
             {@render cell('comment', 'comment', cur.comment)}
-            <td class="act">
-              {#if !readOnlyReason}
+            <!-- read-only: no column for the buttons at all -->
+            {#if !readOnlyReason}
+              <td class="act">
                 {#if dropped[c.name]}
                   <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(c)}><Icon name="undo" size={13} /></button>
                 {:else}
                   <button class="icon-btn sm" title={t('수정')} onclick={() => openDetail(c)}><Icon name="edit" size={13} /></button>
                   <button class="icon-btn sm" title={t('컬럼 삭제')} onclick={() => toggleDrop(c)}><Icon name="trash" size={13} /></button>
                 {/if}
-              {/if}
-            </td>
+              </td>
+            {/if}
           </tr>
           {:else if r.add}
           {@const a = r.add}
