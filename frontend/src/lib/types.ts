@@ -154,6 +154,15 @@ export interface RowChange {
   values: Record<string, Cell>
 }
 
+export interface ExportRequest {
+  connId: string
+  schema: string
+  tables: Table[] // none: every table and view in the schema
+  format: 'csv' | 'json' | 'sql'
+  ddl: boolean // sql: CREATE statements
+  data: boolean // sql: INSERT statements
+}
+
 export interface ExecResponse {
   results: StmtResult[]
   currentSchema: string

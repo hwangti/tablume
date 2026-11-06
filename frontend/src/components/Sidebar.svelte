@@ -568,6 +568,10 @@
             else openConsole(c.id, { schema: s.name, sql: sql + ';' })
           },
         },
+        { label: tr('데이터 내보내기…'), icon: 'download', run: () => (app.dataDialog = { kind: 'export', connId: c.id, schema: s.name, tables: [t.t] }), sep: true },
+        ...(c.readOnly || isView(t.t)
+          ? []
+          : [{ label: tr('CSV 가져오기…'), icon: 'open', run: () => (app.dataDialog = { kind: 'import', connId: c.id, schema: s.name, tables: [t.t] }) }]),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(t.t.name), sep: true },
         { label: tr('전체 이름 복사'), icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
         ...(c.readOnly
@@ -593,6 +597,7 @@
         ...(c.driver !== 'sqlite' ? [{ label: tr('루틴 목록'), icon: 'fn', run: () => openObjectList(c.id, s.name, 'routines') }] : []),
         ...(c.readOnly ? [] : [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true }]),
         ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
+        { label: tr('스키마 내보내기…'), icon: 'download', run: () => (app.dataDialog = { kind: 'export', connId: c.id, schema: s.name, tables: [] }), sep: true },
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
         ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },

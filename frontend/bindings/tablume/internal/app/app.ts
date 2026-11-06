@@ -139,6 +139,10 @@ export function Execute(req: dbx$0.ExecRequest): $CancellablePromise<dbx$0.ExecR
     return $Call.ByID(1929144907, req);
 }
 
+export function ExportData(req: dbx$0.ExportRequest): $CancellablePromise<$models.ExportResult> {
+    return $Call.ByID(2105133642, req);
+}
+
 export function FetchMore(tabID: string, cursorID: string, n: number): $CancellablePromise<dbx$0.FetchResponse> {
     return $Call.ByID(3630158061, tabID, cursorID, n);
 }
@@ -205,6 +209,13 @@ export function NeedsPassword(id: string): $CancellablePromise<boolean> {
  */
 export function ObjectListSQL(id: string, schema: string, kind: string): $CancellablePromise<string> {
     return $Call.ByID(543850413, id, schema, kind);
+}
+
+/**
+ * OpenDataFile picks a CSV file to import (desktop build).
+ */
+export function OpenDataFile(): $CancellablePromise<$models.DataFile | null> {
+    return $Call.ByID(2948099938);
 }
 
 export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {

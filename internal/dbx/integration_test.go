@@ -1,8 +1,13 @@
 package dbx
 
 import (
+	"bytes"
+	"context"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1547,6 +1552,27 @@ func TestManualCommit(t *testing.T) {
 				t.Errorf("autocommit again: %s", v)
 			}
 
+			// with nothing pending, a manual tab reads what others committed
+			run("a", read, true)
+			run("b", set("z"), false)
+			if v := fmt.Sprint(run("a", read, true).Results[0].Rows[0][0]); v != "z" {
+				t.Errorf("manual tab read a stale value: %s", v)
+			}
+			if name == "mariadb" || name == "oracle" { // DDL commits there
+				run("a", set("d"), true)
+				if r := run("a", "CREATE TABLE tx_tmp (a INT)", true); r.InTx {
+					t.Error("DDL: still in a transaction")
+				}
+				if r := run("a", set("e"), true); !r.InTx {
+					t.Error("change after DDL not held")
+				}
+				m.EndTx("a", false)
+				if v := name2(); v != "d" {
+					t.Errorf("after DDL and rollback: %s", v)
+				}
+				run("a", "DROP TABLE tx_tmp", false)
+			}
+
 			// grid edits in manual mode join the tab's transaction
 			info, err := m.EditInfo(tg.cfg.ID, tg.schema, []string{tg.table}, []string{"id", "name"})
 			if err != nil || !info.Editable {
@@ -1560,11 +1586,12 @@ func TestManualCommit(t *testing.T) {
 				_, err := m.ApplyChanges(ApplyRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, TabID: "a", Manual: true, Changes: cs})
 				return err
 			}
+			prev := name2()
 			if err := apply(upd("2", "g")); err != nil || !m.TxOpen("a") {
 				t.Fatal("grid edit in manual mode:", err)
 			}
 			if name != "mssql" {
-				if v := name2(); v != "b" {
+				if v := name2(); v != prev {
 					t.Errorf("uncommitted grid edit seen by another tab: %s", v)
 				}
 			}
@@ -1594,6 +1621,84 @@ func TestManualCommit(t *testing.T) {
 				if v := name2(); v != "n" {
 					t.Errorf("nested: %s", v)
 				}
+			}
+		})
+	}
+}
+
+func TestExport(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			run := func(q string) ExecResponse {
+				t.Helper()
+				r, err := m.Execute(ExecRequest{TabID: "e", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1, Confirmed: true})
+				if err != nil {
+					t.Fatalf("%.200s: %v", q, err)
+				}
+				for _, x := range r.Results {
+					if x.Error != "" {
+						t.Fatalf("%.200s: %s", x.SQL, x.Error)
+					}
+				}
+				return r
+			}
+			run(tg.setup)
+			lit := `'it''s \ back'`
+			if name == "mariadb" { // MySQL reads \\ as one backslash
+				lit = `'it''s \\ back'`
+			}
+			run("UPDATE " + tg.table + " SET name = " + lit + " WHERE id = 3")
+			all := "SELECT * FROM " + tg.table + " ORDER BY id"
+			before := run(all).Results[0].Rows
+			if fmt.Sprint(before[2][1]) != `it's \ back` {
+				t.Errorf("setup: %v", before[2][1])
+			}
+			items := []Table{{Name: tg.table, Type: "TABLE"}}
+			export := func(format string, ddl, data bool) string {
+				var b bytes.Buffer
+				n, err := m.Export(context.Background(), &b, ExportRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Tables: items, Format: format, DDL: ddl, Data: data})
+				if err != nil || (data && n != 3) {
+					t.Fatalf("export %s: %d %v", format, n, err)
+				}
+				return b.String()
+			}
+
+			dump := export("sql", false, true)
+			run("DELETE FROM " + tg.table)
+			run(dump)
+			if after := run(all).Results[0].Rows; !reflect.DeepEqual(before, after) {
+				t.Errorf("round trip:\n%v\n%v\n%s", before, after, dump)
+			}
+			if ddl := export("sql", true, false); !strings.Contains(strings.ToUpper(ddl), "CREATE TABLE") {
+				t.Errorf("DDL: %s", ddl)
+			}
+
+			recs, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(export("csv", false, true), "\uFEFF"))).ReadAll()
+			if err != nil || len(recs) != 4 || !strings.EqualFold(recs[0][0], "id") {
+				t.Errorf("csv: %v %v", recs, err)
+			}
+			var objs []map[string]any
+			if err := json.Unmarshal([]byte(export("json", false, true)), &objs); err != nil || len(objs) != 3 {
+				t.Errorf("json: %v %v", objs, err)
+			}
+			if name == "mssql" { // values for an identity column
+				run("IF OBJECT_ID('dbo.idt') IS NOT NULL DROP TABLE dbo.idt;\nCREATE TABLE dbo.idt (id int IDENTITY PRIMARY KEY, v nvarchar(10));\nINSERT INTO dbo.idt (v) VALUES (N'a'), (N'b'), (N'c');\nDELETE FROM dbo.idt WHERE id = 2")
+				items = []Table{{Name: "idt", Type: "TABLE"}}
+				var b bytes.Buffer
+				if _, err := m.Export(context.Background(), &b, ExportRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Tables: items, Format: "sql", Data: true}); err != nil {
+					t.Fatal(err)
+				}
+				run("DELETE FROM dbo.idt")
+				run(b.String())
+				if r := run("SELECT id FROM dbo.idt ORDER BY id").Results[0].Rows; fmt.Sprint(r) != "[[1] [3]]" {
+					t.Errorf("identity: %v\n%s", r, b.String())
+				}
+				run("DROP TABLE dbo.idt")
 			}
 		})
 	}

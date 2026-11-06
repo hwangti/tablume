@@ -190,4 +190,5 @@ var en = map[string]string{
 	"이 드라이버는 수동 커밋을 지원하지 않습니다":                       "This driver does not support manual commit",
 	"커밋하지 않은 변경이 있습니다. 먼저 커밋하거나 롤백하세요":               "There are uncommitted changes. Commit or roll back first",
 	"연결이 끊겨 커밋하지 않은 변경이 롤백되었습니다. 다시 실행하세요":           "The connection was lost and the uncommitted changes were rolled back. Run them again",
+	"CSV와 JSON은 테이블 하나씩 내보낼 수 있습니다":                  "CSV and JSON export one table at a time",
 }

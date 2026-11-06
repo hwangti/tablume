@@ -10,6 +10,8 @@
   import Sidebar from './components/Sidebar.svelte'
   import QueryTab from './components/QueryTab.svelte'
   import ConnectionDialog from './components/ConnectionDialog.svelte'
+  import ExportDialog from './components/ExportDialog.svelte'
+  import ImportDialog from './components/ImportDialog.svelte'
   import Modal from './components/Modal.svelte'
   import SqlPreview from './components/SqlPreview.svelte'
   import Icon from './components/Icon.svelte'
@@ -456,6 +458,14 @@
 
 {#if app.editing}
   <ConnectionDialog initial={app.editing} />
+{/if}
+
+{#if app.dataDialog}
+  {@const d = app.dataDialog}
+  {#key d}
+    {#if d.kind === 'export'}<ExportDialog connId={d.connId} schema={d.schema} tables={d.tables} />
+    {:else}<ImportDialog connId={d.connId} schema={d.schema} table={d.tables[0]} />{/if}
+  {/key}
 {/if}
 
 {#if filePick.req}

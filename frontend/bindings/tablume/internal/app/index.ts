@@ -7,6 +7,8 @@ export {
 };
 
 export type {
+    DataFile,
+    ExportResult,
     FileEntry,
     FileList,
     OpenedFile,

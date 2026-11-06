@@ -14,6 +14,7 @@ export type {
     EditInfo,
     ExecRequest,
     ExecResponse,
+    ExportRequest,
     FKRequest,
     FetchResponse,
     Index,

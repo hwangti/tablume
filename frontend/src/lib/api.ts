@@ -1,8 +1,8 @@
 import * as App from '../../bindings/tablume/internal/app/app'
 import { t } from './i18n.svelte'
 import { isWeb } from './platform'
-import { downloadText, uploadText } from './webfiles.svelte'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, TableFK, LogEntry } from './types'
+import { downloadText, uploadText, uploadBytes, downloadURL } from './webfiles.svelte'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, TableFK, LogEntry, ExportRequest } from './types'
 
 export interface AlterResult {
   applied: number
@@ -118,6 +118,8 @@ interface Api {
   Cancel(tabId: string): Promise<void>
   CloseSession(tabId: string): Promise<void>
   EndTx(tabId: string, commit: boolean): Promise<void>
+  // path '' = cancelled; rows -1 in the browser build (a download started)
+  ExportData(req: ExportRequest): Promise<{ path: string; rows: number }>
   TxOpen(tabId: string): Promise<boolean>
   PickSQLiteFile(): Promise<string>
   PickKeyFile(): Promise<string>
@@ -160,6 +162,17 @@ export const api: Api = {
   ...native,
   SaveTextFile: (name, content) => (isWeb ? Promise.resolve(downloadText(name, content)) : native.SaveTextFile(name, content)),
   OpenSQLFile: () => (isWeb ? uploadText('.sql,.txt,text/plain') : native.OpenSQLFile()),
+  ExportData: (req) =>
+    isWeb
+      ? Promise.resolve((downloadURL('/x/export?req=' + encodeURIComponent(JSON.stringify(req))), { path: '', rows: -1 }))
+      : native.ExportData(req),
+}
+
+/** Picks a data file (CSV) to import, as bytes. */
+export async function openDataFile(): Promise<{ name: string; bytes: Uint8Array } | null> {
+  if (isWeb) return uploadBytes('.csv,.tsv,.txt,text/csv,text/plain')
+  const f = (await (App as unknown as { OpenDataFile(): Promise<{ name: string; data: string } | null> }).OpenDataFile()) ?? null
+  return f && { name: f.name, bytes: Uint8Array.from(atob(f.data ?? ''), (c) => c.charCodeAt(0)) }
 }
 
 // The browser build's server answers this once the sign-in has expired.

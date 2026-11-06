@@ -39,6 +39,39 @@ export function downloadText(name: string, content: string): string {
   return name
 }
 
+export function uploadBytes(accept: string): Promise<{ name: string; bytes: Uint8Array } | null> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = accept
+    input.style.display = 'none'
+    document.body.append(input)
+    const done = () => input.remove()
+    input.addEventListener('cancel', () => (done(), resolve(null)))
+    input.addEventListener('change', async () => {
+      const f = input.files?.[0]
+      done()
+      if (!f) return resolve(null)
+      try {
+        resolve({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })
+      } catch (e) {
+        reject(e)
+      }
+    })
+    input.click()
+  })
+}
+
+// A download of the server's /x/export (whole tables, streamed by the app).
+export function downloadURL(url: string) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.append(a)
+  a.click()
+  a.remove()
+}
+
 export function uploadText(accept: string): Promise<{ name: string; content: string } | null> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input')

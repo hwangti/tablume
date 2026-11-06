@@ -486,7 +486,8 @@ func (m *Manager) ApplyChanges(req ApplyRequest) (int, error) {
 		}
 		return len(stmts), nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// (an import is many rows: more time, by its size)
+	ctx, cancel := context.WithTimeout(context.Background(), max(2*time.Minute, time.Duration(len(stmts))*20*time.Millisecond))
 	defer cancel()
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
