@@ -52,8 +52,14 @@ func (m *Manager) createPlan(req CreateRequest) (*pool, Table, []string, error) 
 	if len(req.Columns) == 0 {
 		return nil, Table{}, nil, i18n.Error("컬럼을 하나 이상 넣으세요")
 	}
+	if p.cfg.Driver == "sqlite" {
+		if err := sqliteCheck(t.Comment, req.Columns, true); err != nil {
+			return nil, Table{}, nil, err
+		}
+	}
 	target := p.d.QualifiedName(req.Schema, t)
 	var defs, after, pk []string
+	inlinePK := false // SQLite's auto increment says PRIMARY KEY itself
 	seen := map[string]bool{}
 	for _, c := range req.Columns {
 		c.Name, c.Type, c.Default = strings.TrimSpace(c.Name), strings.TrimSpace(c.Type), defaultOf(c.Default)
@@ -69,13 +75,14 @@ func (m *Manager) createPlan(req CreateRequest) (*pool, Table, []string, error) 
 			seen[k] = true
 		}
 		def, a := ad.columnDef(req.Schema, t, target, c)
+		inlinePK = inlinePK || (p.cfg.Driver == "sqlite" && autoInc(c))
 		defs = append(defs, def)
 		after = append(after, a...)
 		if c.PK {
 			pk = append(pk, p.quote(foldName(p.cfg.Driver, c.Name)))
 		}
 	}
-	if len(pk) > 0 {
+	if len(pk) > 0 && !inlinePK {
 		defs = append(defs, "PRIMARY KEY ("+strings.Join(pk, ", ")+")")
 	}
 	st := "CREATE TABLE " + target + " (\n  " + strings.Join(defs, ",\n  ") + "\n)"

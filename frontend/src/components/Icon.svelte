@@ -19,6 +19,7 @@
     unplug: 'M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 01-7 0zM8 11v3M2 2l12 12',
     edit: 'M10.5 2.5l3 3-8 8h-3v-3z',
     trash: 'M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9',
+    eraser: 'M9.5 2.5l4 4-6.5 6.5H4.5l-2-2zM6 6l4 4M7 13h6.5',
     file: 'M4 1.5h5l3 3v10H4zM9 1.5v3h3',
     save: 'M3 2.5h8l2 2v9H3zM5.5 2.5v3h5v-3M5 13.5v-4h6v4',
     download: 'M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10',

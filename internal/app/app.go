@@ -200,6 +200,16 @@ func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 	return a.db.ApplyIndexes(req)
 }
 
+// DropTable drops a table or view; returns the statement it ran.
+func (a *App) DropTable(id, schema string, t dbx.Table) (string, error) {
+	return a.db.DropTable(id, schema, t)
+}
+
+// TruncateTable deletes every row of a table; returns the statement it ran.
+func (a *App) TruncateTable(id, schema string, t dbx.Table) (string, error) {
+	return a.db.TruncateTable(id, schema, t)
+}
+
 // RenameTable renames a table or view; returns the statement it ran.
 func (a *App) RenameTable(id, schema string, t dbx.Table, name string) (string, error) {
 	return a.db.RenameTable(id, schema, t, name)

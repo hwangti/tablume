@@ -301,8 +301,21 @@ export default {
   'JSON 정렬': 'Format JSON',
 
   // structure
-  'SQLite는 컬럼을 바꾸려면 테이블을 새로 만들어야 해서 여기서는 편집할 수 없습니다':
-    'SQLite has to rebuild the table to change columns, so they cannot be edited here',
+  'SQLite에서는 컬럼 이름만 바꿀 수 있습니다 (타입 · NULL · 기본값은 테이블을 새로 만들어야 합니다)':
+    'SQLite can only rename a column here (its type, NULL and default take rebuilding the table)',
+  'SQLite에는 코멘트가 없습니다': 'SQLite has no comments',
+  '테이블 비우기…': 'Empty table…',
+  '뷰 삭제…': 'Drop view…',
+  '테이블 삭제…': 'Drop table…',
+  '뷰 “{name}”을(를) 삭제할까요? 되돌릴 수 없습니다.': 'Drop the view “{name}”? This cannot be undone.',
+  '테이블 “{name}”을(를) 삭제할까요? 데이터도 함께 사라지고 되돌릴 수 없습니다.': 'Drop the table “{name}”? Its data goes with it, and this cannot be undone.',
+  '{name} 삭제함': '{name} dropped',
+  '테이블 “{name}”의 모든 행을 지울까요? 되돌릴 수 없습니다.': 'Delete every row of “{name}”? This cannot be undone.',
+  '{name} 비움': '{name} emptied',
+  '테이블 비움': 'Table emptied',
+  'SQLite에서는 있는 테이블에 자동 증가 컬럼을 더할 수 없습니다': 'SQLite cannot add an auto-increment column to an existing table',
+  '이름은 더블클릭해서 바꿀 수 있습니다 · 타입 · NULL · 기본값은 SQLite에서 바꿀 수 없습니다':
+    'Double-click a name to rename it · SQLite cannot change a type, NULL or default',
   '뷰는 편집할 수 없습니다': 'Views cannot be edited',
   '({a}/{n}개 적용됨)': '({a}/{n} applied)',
   '하나라도 실패하면 전부 취소됩니다. 아무것도 바뀌지 않았습니다.': 'If any fails, all are rolled back. Nothing was changed.',

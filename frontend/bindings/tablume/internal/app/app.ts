@@ -86,6 +86,13 @@ export function Disconnect(id: string): $CancellablePromise<void> {
     return $Call.ByID(3032320614, id);
 }
 
+/**
+ * DropTable drops a table or view; returns the statement it ran.
+ */
+export function DropTable(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {
+    return $Call.ByID(1027749603, id, schema, t);
+}
+
 export function EditInfo(id: string, schema: string, source: string[] | null, columns: string[] | null): $CancellablePromise<dbx$0.EditInfo> {
     return $Call.ByID(1638538596, id, schema, source, columns);
 }
@@ -315,6 +322,13 @@ export function TestConnection(c: dbx$0.ConnConfig): $CancellablePromise<$models
  */
 export function TouchSessions(tabIDs: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2156561546, tabIDs);
+}
+
+/**
+ * TruncateTable deletes every row of a table; returns the statement it ran.
+ */
+export function TruncateTable(id: string, schema: string, t: dbx$0.Table): $CancellablePromise<string> {
+    return $Call.ByID(1852937970, id, schema, t);
 }
 
 /**

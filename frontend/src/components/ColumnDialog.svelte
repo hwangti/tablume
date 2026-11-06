@@ -15,6 +15,7 @@
     autoReason = '',
     info = [],
     collations = null,
+    commentless = false,
     onsave,
     onclose,
   }: {
@@ -23,6 +24,7 @@
     autoReason?: string // why auto increment can't change here ('' = it can)
     info?: [string, string][] // read-only facts: keys, reference, extra
     collations?: string[] | null // MySQL/MariaDB: the server's (shows collation and ON UPDATE)
+    commentless?: boolean // SQLite: no comments
     onsave: (v: ColumnForm) => void
     onclose: () => void
   } = $props()
@@ -79,7 +81,9 @@
         </div>
       {/if}
     {/if}
-    <label class="row top"><span class="lbl">{t('코멘트')}</span><textarea rows="5" bind:value={f.comment}></textarea></label>
+    {#if !commentless}
+      <label class="row top"><span class="lbl">{t('코멘트')}</span><textarea rows="5" bind:value={f.comment}></textarea></label>
+    {/if}
     {#each info as [k, v] (k)}
       <div class="row"><span class="lbl">{k}</span><span class="mono dim">{v}</span></div>
     {/each}

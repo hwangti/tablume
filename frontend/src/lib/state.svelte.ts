@@ -1058,6 +1058,50 @@ export async function renameTable(connId: string, schema: string, t: Table) {
   await treeChanged(connId, [schema], st)
 }
 
+// Tabs showing a table (its data, structure, DDL).
+const tabsOf = (connId: string, schema: string, t: Table) =>
+  app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))
+
+/** Drops a table or view, after asking; its tabs close. */
+export async function dropTable(connId: string, schema: string, t: Table) {
+  const view = t.type.toUpperCase().includes('VIEW')
+  if (!(await confirmBox(tr(view ? '뷰 “{name}”을(를) 삭제할까요? 되돌릴 수 없습니다.' : '테이블 “{name}”을(를) 삭제할까요? 데이터도 함께 사라지고 되돌릴 수 없습니다.', { name: t.name })))) return
+  let st: string
+  try {
+    st = await api.DropTable(connId, schema, $state.snapshot(t))
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 삭제함', { name: t.name }))
+  for (const tab of tabsOf(connId, schema, t)) {
+    // (no asking about unapplied edits: there is nothing to apply them to)
+    if (tab.detached) api.CloseTabWindow(tab.id)
+    api.CloseSession(tab.id)
+    app.tabs.splice(app.tabs.indexOf(tab), 1)
+    if (app.activeTab === tab.id) app.activeTab = app.tabs[app.tabs.length - 1]?.id ?? ''
+  }
+  saveWorkspaceSoon()
+  await treeChanged(connId, [schema], st)
+}
+
+/** Deletes every row of a table, after asking; its tabs read it again. */
+export async function truncateTable(connId: string, schema: string, t: Table) {
+  if (!(await confirmBox(tr('테이블 “{name}”의 모든 행을 지울까요? 되돌릴 수 없습니다.', { name: t.name })))) return
+  let st: string
+  try {
+    st = await api.TruncateTable(connId, schema, $state.snapshot(t))
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 비움', { name: t.name }))
+  for (const tab of tabsOf(connId, schema, t)) {
+    logStatements(tab, [st], tr('테이블 비움'))
+    if (tab.results.length) reloadTable(tab)
+  }
+}
+
 /**
  * A table was renamed or its comment changed: the tabs showing it follow
  * (renamed: their data is read again, its SELECT has the old name).
