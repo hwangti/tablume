@@ -367,15 +367,17 @@
     return Math.min(w, 60)
   }
 
-  function guessWidth(c: ResultColumn, i: number): number {
+  // A column's width from its header and values: the first rows and a
+  // modest cap when a result opens, every loaded row when fitted.
+  function guessWidth(c: ResultColumn, i: number, scan = 200, max = 420): number {
     // name + type + padding, plus room for a key icon and the column number
     const head = c.name.length * 7.6 + c.type.length * 6.2 + 34 + 18 + (app.gridColNumbers ? 14 : 0)
     let len = 4
-    for (let r = 0; r < Math.min(rows.length, 200); r++) {
+    for (let r = 0; r < Math.min(rows.length, scan); r++) {
       const v = rows[r][i]
       len = Math.max(len, v === null ? 6 : textWidth(v))
     }
-    return Math.round(Math.max(56, Math.min(420, Math.max(head, len * 7.6 + 18))))
+    return Math.round(Math.max(56, Math.min(max, Math.max(head, len * 7.6 + 18))))
   }
 
   // Row order: identity, or sorted by one column (only loaded rows).
@@ -825,7 +827,13 @@
           {#if shownSort?.col === c}<span class="sort">{shownSort.dir === 1 ? '▲' : '▼'}</span>{/if}
           <span class="type">{col.type.toLowerCase()}</span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span class="resize" onmousedown={(e) => startResize(e, c)}></span>
+          <span
+            class="resize"
+            title={t('끌어서 너비 조절 · 두 번 클릭하면 내용에 맞춤')}
+            onmousedown={(e) => startResize(e, c)}
+            onclick={(e) => e.stopPropagation()}
+            ondblclick={(e) => (e.stopPropagation(), (widths[c] = guessWidth(col, c, Infinity, 1000)))}
+          ></span>
         </div>
       {/each}
     </div>

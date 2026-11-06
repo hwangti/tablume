@@ -1144,6 +1144,8 @@ export async function openObjectList(connId: string, schema: string, kind: 'tabl
   if (old) {
     if (old.detached) api.FocusTabWindow(old.id)
     else app.activeTab = old.id
+    // restored from the last session: results aren't kept
+    if (!old.results.length && !old.running) await runSQL(old, old.sql, -1)
     return
   }
   if (!(await connect(connId))) return

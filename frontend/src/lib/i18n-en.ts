@@ -317,6 +317,7 @@ export default {
   '{name} 만듦': '{name} created',
   '스키마 삭제…': 'Drop schema…',
   '테이블 목록': 'Table list',
+  '끌어서 너비 조절 · 두 번 클릭하면 내용에 맞춤': 'Drag to resize · double-click to fit the contents',
   '이 연결에 저장된 실행 로그를 모두 지울까요?': 'Delete the whole saved run log of this connection?',
   '찾는 로그가 없습니다': 'Nothing in the log matches',
   '저장된 실행 로그가 없습니다': 'The saved run log is empty',
