@@ -13,6 +13,7 @@ export interface ConnConfig {
   oracleSid: boolean
   params: string
   color: string
+  readOnly?: boolean
   ssh?: boolean
   sshHost?: string
   sshPort?: number
@@ -156,6 +157,7 @@ export interface RowChange {
 export interface ExecResponse {
   results: StmtResult[]
   currentSchema: string
+  confirm?: string[] | null
 }
 
 export const DRIVERS: { id: Driver; label: string; port: number }[] = [

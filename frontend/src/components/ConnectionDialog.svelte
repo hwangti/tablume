@@ -147,6 +147,12 @@
       </div>
     </div>
 
+    <span></span>
+    <label class="check" title={t('SELECT 등 조회만 실행합니다. 데이터 편집, 구조 변경, 테이블·스키마 만들기·삭제를 막고, MySQL·MariaDB·PostgreSQL·SQLite는 DB 세션도 읽기 전용으로 엽니다.')}>
+      <input type="checkbox" bind:checked={c.readOnly} />
+      {t('읽기 전용')} <span class="dim">{t('(조회만 실행)')}</span>
+    </label>
+
     {#if c.driver === 'sqlite'}
       <label for="f-file">{t('파일')}</label>
       <div class="row">

@@ -35,6 +35,13 @@ func (mysqlDialect) DSN(c ConnConfig) string {
 	if p.Get("clientFoundRows") == "" {
 		p.Set("clientFoundRows", "true") // report matched rows, like most clients
 	}
+	if c.ReadOnly { // sent as SET on each connection
+		if c.Driver == "mariadb" {
+			p.Set("tx_read_only", "1")
+		} else {
+			p.Set("transaction_read_only", "1")
+		}
+	}
 	port := c.Port
 	if port == 0 {
 		port = 3306

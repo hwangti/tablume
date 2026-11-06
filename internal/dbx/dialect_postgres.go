@@ -48,6 +48,9 @@ func (pgDialect) DSN(c ConnConfig) string {
 	if p.Get("sslmode") == "" {
 		p.Set("sslmode", "prefer")
 	}
+	if c.ReadOnly {
+		p.Set("default_transaction_read_only", "on")
+	}
 	for k := range p {
 		parts = append(parts, k+"="+pgQuoteValue(p.Get(k)))
 	}

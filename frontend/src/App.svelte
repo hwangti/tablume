@@ -393,6 +393,7 @@
           {:else}
             <span class="name" class:preview={t.preview} title={t.preview ? tr('미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.') : ''}>{t.title}</span>
           {/if}
+          {#if c?.readOnly}<span class="ro" title={tr('읽기 전용 연결입니다')}><Icon name="lock" size={11} /></span>{/if}
           <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label={tr('닫기')}><Icon name="close" size={14} /></button>
         </div>
       {/each}
@@ -478,8 +479,9 @@
 {/if}
 
 {#if app.confirm}
-  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={380}>
+  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={app.confirm.code ? 560 : 380}>
     <p style="margin:0">{app.confirm.text}</p>
+    {#if app.confirm.code}<pre class="confirm-code">{app.confirm.code}</pre>{/if}
     {#snippet footer()}
       <span style="flex:1"></span>
       <button class="btn" onclick={() => app.confirm?.resolve(false)}>{tr('취소')}</button>
@@ -767,6 +769,23 @@
   }
   .welcome p {
     margin: 4px;
+  }
+  .tab .ro {
+    display: inline-flex;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+  .confirm-code {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    max-height: 240px;
+    overflow: auto;
+    background: var(--bg-input, var(--bg));
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font: 12px/1.5 var(--font-mono);
+    white-space: pre-wrap;
+    word-break: break-all;
   }
   .toasts {
     position: fixed;

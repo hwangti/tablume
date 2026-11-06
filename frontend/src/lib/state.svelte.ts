@@ -119,7 +119,7 @@ export const app = $state({
   editing: null as ConnConfig | null,
   // password prompt, or a text prompt when value is set
   prompt: null as null | { title: string; value?: string; ok?: string; resolve: (v: string | null) => void },
-  confirm: null as null | { text: string; resolve: (v: boolean) => void },
+  confirm: null as null | { text: string; code?: string; resolve: (v: boolean) => void },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
   // What the schema tree shows next to each table / column.
@@ -203,10 +203,11 @@ export function askText(title: string, value: string, ok = tr('확인')): Promis
 
 // window.confirm isn't available in every webview (macOS WKWebView), so
 // confirmations use our own modal.
-export function confirmBox(text: string): Promise<boolean> {
+export function confirmBox(text: string, code?: string): Promise<boolean> {
   return new Promise((resolve) => {
     app.confirm = {
       text,
+      code,
       resolve: (v) => {
         app.confirm = null
         resolve(v)
@@ -656,14 +657,20 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   tab.running = true
   tab.startedAt = Date.now()
   try {
-    const res = await api.Execute({
-      tabId: tab.id,
-      connId: tab.connId,
-      schema: tab.schema,
-      sql,
-      cursor,
-      fetch: app.pageSize,
-    })
+    const req = { tabId: tab.id, connId: tab.connId, schema: tab.schema, sql, cursor, fetch: app.pageSize }
+    let res = await api.Execute(req)
+    if (res.confirm?.length) {
+      // UPDATE/DELETE without WHERE: nothing ran yet
+      tab.running = false
+      const ok = await confirmBox(tr('WHERE 없는 UPDATE·DELETE는 테이블의 모든 행을 바꿉니다. 실행할까요?'), res.confirm.join(';\n\n'))
+      if (!ok) {
+        log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]))
+        return null
+      }
+      tab.running = true
+      tab.startedAt = Date.now()
+      res = await api.Execute({ ...req, confirmed: true })
+    }
     const results = (res.results ?? []).map((r) => ({
       ...r,
       from: r.from + offset,

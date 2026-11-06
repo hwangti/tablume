@@ -108,6 +108,7 @@ interface Api {
     sql: string
     cursor: number
     fetch: number
+    confirmed?: boolean
   }): Promise<ExecResponse>
   FetchMore(tabId: string, cursorId: string, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
   Cancel(tabId: string): Promise<void>

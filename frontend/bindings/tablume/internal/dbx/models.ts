@@ -149,6 +149,12 @@ export interface ConnConfig {
     "color": string;
 
     /**
+     * ReadOnly runs only statements that read; edits and DDL are refused,
+     * and where the database has it the session is read-only too.
+     */
+    "readOnly": boolean;
+
+    /**
      * SSH tunnel: Host/Port above are then as seen from the SSH server.
      */
     "ssh": boolean;
@@ -252,11 +258,18 @@ export interface ExecRequest {
      */
     "cursor": number;
     "fetch": number;
+
+    /**
+     * Confirmed runs UPDATE/DELETE without WHERE; otherwise they come
+     * back in ExecResponse.Confirm and nothing runs.
+     */
+    "confirmed": boolean;
 }
 
 export interface ExecResponse {
     "results": StmtResult[] | null;
     "currentSchema": string;
+    "confirm": string[] | null;
 }
 
 export interface FKRequest {

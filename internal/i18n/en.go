@@ -110,6 +110,8 @@ var en = map[string]string{
 	"%s: 컬럼을 하나 이상 고르세요":                                      "%s: choose at least one column",
 	"PRIMARY KEY / UNIQUE 제약에 딸린 인덱스는 테이블을 다시 만들어야 지울 수 있습니다": "An index of a PRIMARY KEY / UNIQUE constraint can only be dropped by rebuilding the table",
 	"이 DB에서는 스키마를 만들 수 없습니다":                                  "Creating schemas is not supported in this DB",
+	"읽기 전용 연결입니다":                                             "This connection is read-only",
+	"읽기 전용 연결이라 실행하지 않았습니다: %s":                               "Not run: this connection is read-only: %s",
 	"이 DB에서는 목록을 볼 수 없습니다":                                    "Listing is not supported in this DB",
 	"이 DB에서는 스키마를 지울 수 없습니다":                                  "Dropping schemas is not supported in this DB",
 	"이 DB에서는 이름을 바꿀 수 없습니다":                                   "Renaming is not supported in this DB",
