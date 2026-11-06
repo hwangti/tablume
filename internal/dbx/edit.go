@@ -280,6 +280,11 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 			}
 		}
 	}
+	if p.cfg.ReadOnly {
+		info.Insertable = false
+		info.Reason = i18n.T("읽기 전용 연결입니다")
+		return info, nil
+	}
 	if len(info.Key) == 0 {
 		info.Reason = i18n.T("기본 키(PK)가 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)")
 		return info, nil
@@ -459,6 +464,9 @@ func (m *Manager) applyTarget(req ApplyRequest) (*pool, string, map[string]strin
 func (m *Manager) ApplyChanges(req ApplyRequest) (int, error) {
 	p, target, types, err := m.applyTarget(req)
 	if err != nil {
+		return 0, err
+	}
+	if err := p.writable(); err != nil {
 		return 0, err
 	}
 	var stmts []stmtArgs

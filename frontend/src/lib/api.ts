@@ -109,6 +109,7 @@ interface Api {
     sql: string
     cursor: number
     fetch: number
+    confirmed?: boolean
   }): Promise<ExecResponse>
   FetchMore(tabId: string, cursorId: string, n: number): Promise<FetchedPage>
   Cancel(tabId: string): Promise<void>

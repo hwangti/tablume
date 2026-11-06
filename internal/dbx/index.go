@@ -256,6 +256,9 @@ func (m *Manager) CreateSchema(id, name string) (string, error) {
 	default:
 		return "", i18n.Error("이 DB에서는 스키마를 만들 수 없습니다")
 	}
+	if err := p.writable(); err != nil {
+		return "", err
+	}
 	ctx, cancel := metaCtx()
 	defer cancel()
 	_, err = p.db.ExecContext(ctx, st)
@@ -277,6 +280,9 @@ func (m *Manager) DropSchema(id, name string) (string, error) {
 		st = "DROP SCHEMA " + p.quote(name) + " CASCADE"
 	default:
 		return "", i18n.Error("이 DB에서는 스키마를 지울 수 없습니다")
+	}
+	if err := p.writable(); err != nil {
+		return "", err
 	}
 	ctx, cancel := metaCtx()
 	defer cancel()

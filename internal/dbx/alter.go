@@ -370,6 +370,9 @@ func (m *Manager) ApplyAlter(req AlterRequest) (AlterResult, error) {
 // the database supports that, otherwise one by one up to the first error.
 func runDDL(p *pool, schema string, stmts []string) (AlterResult, error) {
 	res := AlterResult{Total: len(stmts)}
+	if err := p.writable(); err != nil {
+		return res, err
+	}
 	ctx, cancel := metaCtx()
 	defer cancel()
 	conn, err := p.db.Conn(ctx)

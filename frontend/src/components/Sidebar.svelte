@@ -389,7 +389,7 @@
         }
         break
       case 'F2':
-        if (r?.kind === 'table') renameTable(r.c.id, r.s.name, r.t.t)
+        if (r?.kind === 'table' && !r.c.readOnly) renameTable(r.c.id, r.s.name, r.t.t)
         break
       case 'Enter':
         if (!r) break
@@ -517,7 +517,7 @@
       items: [
         // open · the connection · what the tree shows · the saved connection · its place
         { label: tr('새 콘솔'), icon: 'console', run: () => openConsole(c.id) },
-        ...(on && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
+        ...(on && !c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
         ...(on
           ? [
               { label: tr('새로고침'), icon: 'refresh', run: () => refreshSchemas(c.id), sep: true },
@@ -567,9 +567,13 @@
         },
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(t.t.name), sep: true },
         { label: tr('전체 이름 복사'), icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
-        { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2', sep: true },
-        ...(isView(t.t) ? [] : [{ label: tr('테이블 비우기…'), icon: 'eraser', run: () => truncateTable(c.id, s.name, t.t), danger: true }]),
-        { label: tr(isView(t.t) ? '뷰 삭제…' : '테이블 삭제…'), icon: 'trash', run: () => dropTable(c.id, s.name, t.t), danger: true },
+        ...(c.readOnly
+          ? []
+          : [
+              { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2', sep: true },
+              ...(isView(t.t) ? [] : [{ label: tr('테이블 비우기…'), icon: 'eraser', run: () => truncateTable(c.id, s.name, t.t), danger: true }]),
+              { label: tr(isView(t.t) ? '뷰 삭제…' : '테이블 삭제…'), icon: 'trash', run: () => dropTable(c.id, s.name, t.t), danger: true },
+            ]),
       ],
     }
   }
@@ -585,12 +589,12 @@
         { label: tr('테이블 목록'), icon: 'list', run: () => openObjectList(c.id, s.name, 'tables'), kbd: modKey + '↓' },
         ...(c.driver !== 'sqlite' ? [{ label: tr('루틴 목록'), icon: 'fn', run: () => openObjectList(c.id, s.name, 'routines') }] : []),
         ...(ERD_DRIVERS.includes(c.driver) ? [{ label: tr('ERD 보기'), icon: 'erd', run: () => openErd(c.id, s.name) }] : []),
-        { label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true },
-        ...(SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
+        ...(c.readOnly ? [] : [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true }]),
+        ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
         ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },
-        ...(SCHEMA_DRIVERS.includes(c.driver) && !isSystemSchema(c, s.name)
+        ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) && !isSystemSchema(c, s.name)
           ? [{ label: tr('스키마 삭제…'), icon: 'trash', run: () => dropSchema(c.id, s.name), sep: true, danger: true }]
           : []),
       ],
@@ -663,6 +667,7 @@
         {@const st = app.conn[r.c.id]}
         <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
         <span class="label">{r.c.name}</span>
+        {#if r.c.readOnly}<span class="ro" title={tr('읽기 전용 연결입니다')}><Icon name="lock" size={12} /></span>{/if}
         {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
         {#if st?.status === 'connected' && r.c.driver !== 'sqlite' && st.schemas.length}
           <button
@@ -839,6 +844,11 @@
 {/if}
 
 <style>
+  .ro {
+    display: inline-flex;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
   aside {
     display: flex;
     flex-direction: column;

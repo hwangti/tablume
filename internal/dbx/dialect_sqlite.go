@@ -65,6 +65,9 @@ func (sqliteDialect) Style() string      { return "sqlite" }
 
 func (sqliteDialect) DSN(c ConnConfig) string {
 	p := parseParams(c.Params)
+	if c.ReadOnly {
+		p.Add("_pragma", "query_only(1)")
+	}
 	// The driver takes anything after ? as options, file: URI or not.
 	if len(p) == 0 && !strings.ContainsAny(c.Database, "?") {
 		return c.Database

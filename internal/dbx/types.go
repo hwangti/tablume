@@ -18,6 +18,9 @@ type ConnConfig struct {
 	// Params are extra driver options as "key=value" pairs separated by '&'.
 	Params string `json:"params"`
 	Color  string `json:"color"`
+	// ReadOnly runs only statements that read; edits and DDL are refused,
+	// and where the database has it the session is read-only too.
+	ReadOnly bool `json:"readOnly"`
 
 	// SSH tunnel: Host/Port above are then as seen from the SSH server.
 	SSH     bool   `json:"ssh"`
@@ -115,11 +118,15 @@ type ExecRequest struct {
 	// Cursor is the caret position (UTF-16). -1 runs every statement in SQL.
 	Cursor int `json:"cursor"`
 	Fetch  int `json:"fetch"`
+	// Confirmed runs UPDATE/DELETE without WHERE; otherwise they come
+	// back in ExecResponse.Confirm and nothing runs.
+	Confirmed bool `json:"confirmed"`
 }
 
 type ExecResponse struct {
 	Results       []StmtResult `json:"results"`
 	CurrentSchema string       `json:"currentSchema"`
+	Confirm       []string     `json:"confirm"`
 }
 
 type FetchResponse struct {

@@ -7,7 +7,7 @@
   import { t } from '../lib/i18n.svelte'
   import { api, errText, type TableOptions } from '../lib/api'
   import { copyText } from '../lib/clipboard'
-  import { toast, openConsole, retargetTable } from '../lib/state.svelte'
+  import { toast, openConsole, retargetTable, connById } from '../lib/state.svelte'
   import type { Column, Table } from '../lib/types'
   import Icon from './Icon.svelte'
   import SqlPreview from './SqlPreview.svelte'
@@ -106,7 +106,9 @@
   let draft = $state<Record<string, Draft>>({})
   let editing = $state<{ name: string; field: Exclude<Field, 'nullable' | 'auto' | 'invisible'>; value: string } | null>(null)
 
-  let readOnlyReason = $derived(table.type.toUpperCase().includes('VIEW') ? t('뷰는 편집할 수 없습니다') : '')
+  let readOnlyReason = $derived(
+    connById(connId)?.readOnly ? t('읽기 전용 연결입니다') : table.type.toUpperCase().includes('VIEW') ? t('뷰는 편집할 수 없습니다') : '',
+  )
   // SQLite's ALTER TABLE adds, renames and drops a column: of a column it
   // has, only the name changes here (the rest takes making the table again).
   // It has no comments.

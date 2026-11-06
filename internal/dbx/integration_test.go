@@ -1424,3 +1424,61 @@ func TestObjectList(t *testing.T) {
 		})
 	}
 }
+
+// A read-only connection reads but refuses changes, in Tablume and (MySQL,
+// PostgreSQL, SQLite) in the database session; UPDATE/DELETE without
+// WHERE wait for a confirmation.
+func TestReadOnlyAndConfirm(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			if r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: tg.setup, Cursor: -1}); err != nil || r.Results[len(r.Results)-1].Error != "" {
+				t.Fatalf("setup: %+v %v", r, err)
+			}
+			// without WHERE: asks, runs nothing
+			upd := "UPDATE " + tg.table + " SET name = name"
+			r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "SELECT 1 FROM " + tg.table + ";\n" + upd, Cursor: -1})
+			if err != nil || len(r.Confirm) != 1 || len(r.Results) != 0 {
+				t.Fatalf("confirm: %+v %v", r, err)
+			}
+			r, err = m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: upd, Cursor: -1, Confirmed: true})
+			if err != nil || len(r.Results) != 1 || r.Results[0].Error != "" || r.Results[0].RowsAffected != 3 {
+				t.Fatalf("confirmed: %+v %v", r, err)
+			}
+			m.Disconnect(tg.cfg.ID)
+
+			ro := tg.cfg
+			ro.ReadOnly = true
+			if _, err := m.Connect(ro); err != nil {
+				t.Fatal("read-only connect:", err)
+			}
+			defer m.Disconnect(ro.ID)
+			r, err = m.Execute(ExecRequest{TabID: "b", ConnID: ro.ID, Schema: tg.schema, SQL: "SELECT * FROM " + tg.table, Cursor: -1})
+			if err != nil || len(r.Results) != 1 || r.Results[0].Error != "" || len(r.Results[0].Rows) != 3 {
+				t.Fatalf("read-only select: %+v %v", r, err)
+			}
+			if _, err := m.Execute(ExecRequest{TabID: "b", ConnID: ro.ID, Schema: tg.schema, SQL: upd + " WHERE 1 = 0", Cursor: -1}); err == nil {
+				t.Error("read-only: UPDATE ran")
+			}
+			if _, err := m.DropTable(ro.ID, tg.schema, Table{Name: tg.table, Type: "TABLE"}); err == nil {
+				t.Error("read-only: DROP TABLE ran")
+			}
+			if info, err := m.EditInfo(ro.ID, tg.schema, []string{tg.table}, []string{"id"}); err != nil || info.Editable || info.Insertable {
+				t.Errorf("read-only: editable %+v %v", info, err)
+			}
+			switch name {
+			case "mariadb", "postgres", "sqlite": // the session itself
+				p, _ := m.pool(ro.ID)
+				if _, err := p.db.Exec("CREATE TABLE ro_probe (a INT)"); err == nil {
+					p.db.Exec("DROP TABLE ro_probe")
+					t.Error("read-only session: CREATE TABLE ran")
+				} else {
+					t.Log("session refused:", err)
+				}
+			}
+		})
+	}
+}

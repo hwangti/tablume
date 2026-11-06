@@ -577,6 +577,19 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 	if len(stmts) == 0 {
 		return ExecResponse{}, i18n.Error("실행할 SQL이 없습니다")
 	}
+	// checked before anything runs, so a script doesn't stop halfway
+	var risky []string
+	for _, st := range stmts {
+		if p.cfg.ReadOnly && !readsOnly(st.SQL, p.d.Style()) {
+			return ExecResponse{}, i18n.Errorf("읽기 전용 연결이라 실행하지 않았습니다: %s", firstLine(st.SQL))
+		}
+		if !req.Confirmed && noWhere(st.SQL, p.d.Style()) {
+			risky = append(risky, st.SQL)
+		}
+	}
+	if len(risky) > 0 {
+		return ExecResponse{Confirm: risky}, nil
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelMu.Lock()
