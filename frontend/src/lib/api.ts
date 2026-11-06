@@ -87,6 +87,7 @@ interface Api {
   PreviewForeignKeys(req: FKRequest): Promise<string[] | null>
   ApplyForeignKeys(req: FKRequest): Promise<AlterResult>
   RenameTable(id: string, schema: string, t: Table, name: string): Promise<string>
+  CreateSchema(id: string, name: string): Promise<string>
   DropTable(id: string, schema: string, t: Table): Promise<string>
   TruncateTable(id: string, schema: string, t: Table): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>

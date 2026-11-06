@@ -1340,6 +1340,25 @@ func TestCreateTable(t *testing.T) {
 					t.Errorf("%s still listed after DROP", made.Name)
 				}
 			}
+
+			st, err = m.CreateSchema(tg.cfg.ID, "made_s")
+			if name == "oracle" {
+				if err == nil {
+					t.Fatal("oracle: CreateSchema should refuse")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+			drop := map[string]string{"mariadb": "DROP DATABASE made_s", "mssql": "DROP DATABASE made_s"}[name]
+			if drop == "" {
+				drop = "DROP SCHEMA made_s"
+			}
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, SQL: drop, Cursor: -1})
+			if l, _ := m.Schemas(tg.cfg.ID); !slices.Contains(l.Schemas, "made_s") {
+				t.Errorf("made_s not listed: %v", l.Schemas)
+			}
 		})
 	}
 }

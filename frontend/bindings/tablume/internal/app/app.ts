@@ -74,6 +74,13 @@ export function CountRows(id: string, schema: string, t: dbx$0.Table, where: str
     return $Call.ByID(832531678, id, schema, t, where);
 }
 
+/**
+ * CreateSchema makes a schema (MySQL, SQL Server: a database); returns the statement it ran.
+ */
+export function CreateSchema(id: string, name: string): $CancellablePromise<string> {
+    return $Call.ByID(1494722035, id, name);
+}
+
 export function CreateTable(req: dbx$0.CreateRequest): $CancellablePromise<dbx$0.CreateResult> {
     return $Call.ByID(3737146844, req);
 }
