@@ -12,21 +12,12 @@ import (
 // in an open transaction until Commit or Rollback. A transaction is begun
 // before the first change; Oracle's driver commits every statement unless a
 // transaction is open through it, so there it is begun through the driver.
-// MySQL/MariaDB also get autocommit=0, so a change after an implicit commit
-// (DDL) still waits.
+// Reads before that run on their own and see what others committed.
 //
-// (SQL Server's IMPLICIT_TRANSACTIONS is not used: with it, BEGIN TRANSACTION
-// nests, and a COMMIT the user types would leave the changes open.)
-
-func manualSwitch(style string, on bool) string {
-	if style != "mysql" {
-		return ""
-	}
-	if on {
-		return "SET autocommit = 0"
-	}
-	return "SET autocommit = 1"
-}
+// (Session switches are not used: with MySQL's autocommit=0 even reads hold
+// a snapshot, so a refresh doesn't show others' changes; with SQL Server's
+// IMPLICIT_TRANSACTIONS, BEGIN TRANSACTION nests and a typed COMMIT would
+// leave the changes open.)
 
 // Statements that control the transaction or the session themselves: no
 // BEGIN is sent before them.
@@ -41,11 +32,6 @@ func (s *session) setManual(ctx context.Context, style string, on bool) error {
 	}
 	if !on && s.inTx {
 		return i18n.Error("커밋하지 않은 변경이 있습니다. 먼저 커밋하거나 롤백하세요")
-	}
-	if q := manualSwitch(style, on); q != "" {
-		if _, err := s.conn.ExecContext(ctx, q); err != nil {
-			return err
-		}
 	}
 	s.manual = on
 	return nil
@@ -97,6 +83,11 @@ func (s *session) beginTx(ctx context.Context, style string) error {
 	return nil
 }
 
+var implicitCommit = map[string]bool{
+	"CREATE": true, "ALTER": true, "DROP": true, "RENAME": true, "TRUNCATE": true,
+	"GRANT": true, "REVOKE": true, "LOCK": true, "UNLOCK": true, "ANALYZE": true, "OPTIMIZE": true,
+}
+
 // afterStmt follows a COMMIT, ROLLBACK or BEGIN the user ran themselves.
 func (s *session) afterStmt(style, stmt string) {
 	if !s.manual {
@@ -104,6 +95,12 @@ func (s *session) afterStmt(style, stmt string) {
 	}
 	ws := sqlWords(stmt, style)
 	if len(ws) == 0 {
+		return
+	}
+	// DDL ends the transaction on MySQL and Oracle (an implicit commit); the
+	// next change begins another
+	if implicitCommit[ws[0].w] && (style == "mysql" || style == "oracle") {
+		s.forgetTx(true)
 		return
 	}
 	switch ws[0].w {
@@ -208,7 +205,7 @@ func (m *Manager) applyInTx(req ApplyRequest, p *pool, stmts []stmtArgs) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), max(2*time.Minute, time.Duration(len(stmts))*20*time.Millisecond))
 	defer cancel()
 	s.mu.Lock()
 	defer s.mu.Unlock()
