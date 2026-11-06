@@ -35,6 +35,8 @@
     saveWorkspaceSoon,
     checkUpdate,
     openUpdate,
+    exportConnections,
+    importConnections,
     schemaShown,
     ensureStats,
     moveConnection,
@@ -532,6 +534,7 @@
           : [{ label: tr('연결'), icon: 'plug', run: () => connect(c.id), sep: true }]),
         { label: tr('편집…'), icon: 'edit', run: () => (app.editing = { ...c }), sep: true },
         { label: tr('복제'), icon: 'copy', run: () => (app.editing = { ...c, id: '', name: c.name + tr(' 복사본') }) },
+        { label: tr('내보내기…'), icon: 'download', run: () => exportConnections([c.id]) },
         { label: tr('맨 위로'), icon: 'toTop', run: () => moveConnection(c.id, 0), sep: true, disabled: i === 0 },
         { label: tr('위로'), icon: 'arrowUp', run: () => moveConnection(c.id, i - 1), disabled: i === 0 },
         { label: tr('아래로'), icon: 'arrowDown', run: () => moveConnection(c.id, i + 1), disabled: i === last },
@@ -799,6 +802,11 @@
           <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> {tr('컬럼 번호 표시')}</label>
           <div class="vm-title sep">{tr('테이블 열 때')}</div>
           <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> {tr('기본 정렬: PK 내림차순')}</label>
+          <div class="vm-title sep">{tr('연결 목록')}</div>
+          <button class="vm-item" disabled={!app.connections.length} onclick={() => ((viewMenu = false), exportConnections())}
+            ><Icon name="download" size={14} /> {tr('모두 내보내기…')}</button
+          >
+          <button class="vm-item" onclick={() => ((viewMenu = false), importConnections())}><Icon name="upload" size={14} /> {tr('가져오기…')}</button>
           {#if isWeb}
             <div class="vm-title sep">{tr('계정')}</div>
             <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> {tr('패스키 관리')}</a>
@@ -1245,7 +1253,11 @@
     text-decoration: none;
     cursor: pointer;
   }
-  .vm-item:hover {
+  .vm-item:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .vm-item:hover:not(:disabled) {
     background: var(--bg-hover);
   }
   .vm-item :global(svg) {
