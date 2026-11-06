@@ -13,7 +13,7 @@
   import IndexView from './IndexView.svelte'
   import FkView from './FkView.svelte'
   import { api, errText } from '../lib/api'
-  import { modKey, isMac, copyText } from '../lib/clipboard'
+  import { modKey, isMac } from '../lib/clipboard'
   import {
     app,
     syncTreeRows,
@@ -823,16 +823,15 @@
           </div>
         {/if}
         {#if isTable && tableView !== 'data' && !tab.creating}
-          <div class="grp">
-            {#if tableView === 'ddl'}
+          {#if tableView === 'ddl'}
+            <div class="grp">
               <div class="seg" role="group">
                 <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>{t('컬럼·인덱스')}</button>
                 <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>DDL</button>
               </div>
-              {#if app.ddlMode === 'sql' && ddl}
-                <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> {t('복사')}</button>
-              {/if}
-            {/if}
+            </div>
+          {/if}
+          <div class="grp">
             <button class="icon-btn" title={t('이 SELECT를 SQL 콘솔에서 열기')} onclick={openAsConsole}><Icon name="console" size={14} /></button>
           </div>
         {/if}
@@ -1038,6 +1037,7 @@
   .txbtn {
     display: inline-flex;
     align-items: center;
+    white-space: nowrap;
     gap: 3px;
     height: 26px;
     padding: 0 6px;
@@ -1147,6 +1147,12 @@
   }
   .rtabs::-webkit-scrollbar {
     display: none;
+  }
+  /* the row scrolls instead: nothing in it squeezes (zoomed in, a
+     narrow window) */
+  .rtabs > :not(.grow),
+  .grp > * {
+    flex-shrink: 0;
   }
   .rtab {
     display: flex;
