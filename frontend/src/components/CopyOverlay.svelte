@@ -37,8 +37,9 @@
 <style>
   .copy-over {
     position: absolute;
-    top: 6px;
-    right: 16px; /* clear of the scrollbar */
+    /* the same both ways; 10px is the scrollbar's width, so it stays clear */
+    top: 10px;
+    right: 10px;
     z-index: 5;
     display: inline-flex;
     align-items: center;
