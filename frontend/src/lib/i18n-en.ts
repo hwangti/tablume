@@ -312,6 +312,9 @@ export default {
   '{name} 삭제함': '{name} dropped',
   '테이블 “{name}”의 모든 행을 지울까요? 되돌릴 수 없습니다.': 'Delete every row of “{name}”? This cannot be undone.',
   '{name} 비움': '{name} emptied',
+  '스키마 만들기': 'Create schema',
+  '스키마 만들기…': 'Create schema…',
+  '{name} 만듦': '{name} created',
   '테이블 비움': 'Table emptied',
   'SQLite에서는 있는 테이블에 자동 증가 컬럼을 더할 수 없습니다': 'SQLite cannot add an auto-increment column to an existing table',
   '이름은 더블클릭해서 바꿀 수 있습니다 · 타입 · NULL · 기본값은 SQLite에서 바꿀 수 없습니다':

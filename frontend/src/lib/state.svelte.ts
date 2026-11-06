@@ -1105,6 +1105,34 @@ export async function renameTable(connId: string, schema: string, t: Table) {
   await treeChanged(connId, [schema], st)
 }
 
+export const SCHEMA_DRIVERS = ['mysql', 'mariadb', 'postgres', 'mssql']
+
+/** Makes a schema (asks for the name) and opens it in the tree. */
+export async function createSchema(connId: string) {
+  const name = (await askText(tr('스키마 만들기'), '', tr('만들기')))?.trim()
+  if (!name) return
+  let st: string
+  try {
+    st = await api.CreateSchema(connId, name)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 만듦', { name }))
+  await treeChanged(connId, [], st, true)
+  if (tabWindowId) return
+  // a filtered tree would hide it: show it by name
+  if (!schemaShown(connId, name)) {
+    const f = $state.snapshot(schemaFilter(connById(connId)))
+    await setSchemaFilter(connId, { ...f, names: [...f.names, name] })
+  }
+  const s = app.conn[connId]?.schemas.find((x) => x.name === name)
+  if (s && !s.expanded) {
+    s.expanded = true
+    await loadTables(connId, s)
+  }
+}
+
 // Tabs showing a table (its data, structure, DDL).
 const tabsOf = (connId: string, schema: string, t: Table) =>
   app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))

@@ -234,6 +234,34 @@ func (m *Manager) TruncateTable(id, schema string, t Table) (string, error) {
 	return runOne(p, schema, st)
 }
 
+// CreateSchema makes what the tree lists as a schema (a database on
+// MySQL/MariaDB and SQL Server) and returns the statement it ran. Run
+// outside a transaction: CREATE DATABASE refuses one. Oracle schemas are
+// users (a password, grants) and SQLite has none: not here.
+func (m *Manager) CreateSchema(id, name string) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", i18n.Error("새 이름이 비어 있습니다")
+	}
+	var st string
+	switch p.cfg.Driver {
+	case "mysql", "mariadb", "mssql":
+		st = "CREATE DATABASE " + p.quote(name)
+	case "postgres":
+		st = "CREATE SCHEMA " + p.quote(name)
+	default:
+		return "", i18n.Error("이 DB에서는 스키마를 만들 수 없습니다")
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	_, err = p.db.ExecContext(ctx, st)
+	return st, err
+}
+
 func runOne(p *pool, schema, st string) (string, error) {
 	r, err := runDDL(p, schema, []string{st})
 	if err != nil {
