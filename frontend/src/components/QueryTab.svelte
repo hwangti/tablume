@@ -935,15 +935,17 @@
         {/if}
         {#if tab.creating && tab.tableRef}
           <div class="structure">
-            <StructureView
-              create
-              connId={tab.connId}
-              schema={tab.tableRef.schema}
-              table={tab.tableRef.table}
-              driver={conn?.driver}
-              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
-              oncreated={(made) => ((tableView = 'ddl'), tableCreated(tab, made))}
-            />
+            <div class="structure-in">
+              <StructureView
+                create
+                connId={tab.connId}
+                schema={tab.tableRef.schema}
+                table={tab.tableRef.table}
+                driver={conn?.driver}
+                onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+                oncreated={(made) => ((tableView = 'ddl'), tableCreated(tab, made))}
+              />
+            </div>
           </div>
         {:else if isTable && tableView === 'ddl' && !connected}
           <!-- a tab restored from the last session: as for the data -->
@@ -956,28 +958,8 @@
           </div>
         {:else if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
           <div class="structure">
-            <StructureView
-              connId={tab.connId}
-              schema={tab.tableRef.schema}
-              table={tab.tableRef.table}
-              driver={conn?.driver}
-              version={ddlVersion}
-              onchanged={structureChanged}
-              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
-              onkey={showKey}
-            />
-            <IndexView
-              highlight={keyHl?.kind === 'index' ? keyHl : null}
-              connId={tab.connId}
-              schema={tab.tableRef.schema}
-              table={tab.tableRef.table}
-              driver={conn?.driver}
-              onchanged={structureChanged}
-              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
-            />
-            {#if conn?.driver !== 'sqlite'}
-              <FkView
-                highlight={keyHl?.kind === 'fk' ? keyHl : null}
+            <div class="structure-in">
+              <StructureView
                 connId={tab.connId}
                 schema={tab.tableRef.schema}
                 table={tab.tableRef.table}
@@ -985,8 +967,30 @@
                 version={ddlVersion}
                 onchanged={structureChanged}
                 onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+                onkey={showKey}
               />
-            {/if}
+              <IndexView
+                highlight={keyHl?.kind === 'index' ? keyHl : null}
+                connId={tab.connId}
+                schema={tab.tableRef.schema}
+                table={tab.tableRef.table}
+                driver={conn?.driver}
+                onchanged={structureChanged}
+                onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+              />
+              {#if conn?.driver !== 'sqlite'}
+                <FkView
+                  highlight={keyHl?.kind === 'fk' ? keyHl : null}
+                  connId={tab.connId}
+                  schema={tab.tableRef.schema}
+                  table={tab.tableRef.table}
+                  driver={conn?.driver}
+                  version={ddlVersion}
+                  onchanged={structureChanged}
+                  onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+                />
+              {/if}
+            </div>
           </div>
         {:else if isTable && tableView === 'ddl'}
           {#if ddlError}
@@ -1236,6 +1240,12 @@
     height: 100%;
     overflow: auto;
     padding-bottom: 16px;
+  }
+  /* columns, indexes and foreign keys as wide as each other: the view's
+     width, or (when one can't wrap enough to fit) the widest one's */
+  .structure-in {
+    width: fit-content;
+    min-width: 100%;
   }
   .filterbar {
     display: flex;

@@ -847,7 +847,7 @@
   }
   table {
     border-collapse: collapse;
-    min-width: 100%;
+    width: 100%; /* the width QueryTab gives the three tables */
   }
   th {
     position: sticky;
@@ -1058,10 +1058,19 @@
   .k {
     width: 1%;
   }
+  /* the key icons side by side, no spaces or wide padding between them */
+  th.k,
+  td.k {
+    padding: 0 4px;
+  }
+  td.k {
+    white-space: nowrap;
+    font-size: 0;
+  }
   .kb {
     display: inline-flex;
     vertical-align: middle;
-    padding: 2px;
+    padding: 2px 1px;
     border: none;
     border-radius: 3px;
     background: none;
@@ -1085,7 +1094,8 @@
   /* a comment over several lines keeps the rows' spacing above and below */
   .comment {
     white-space: pre-wrap;
-    min-width: 200px;
+    overflow-wrap: anywhere;
+    min-width: 140px;
     padding-top: 4px;
     padding-bottom: 4px;
     line-height: 1.3;

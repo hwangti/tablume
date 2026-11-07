@@ -411,7 +411,7 @@
   }
   table {
     border-collapse: collapse;
-    min-width: 100%;
+    width: 100%; /* the width QueryTab gives the three tables */
   }
   th {
     position: sticky;
@@ -452,10 +452,15 @@
   }
   .name {
     font-weight: 600;
+    /* a long one-word name wraps rather than widening the table */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 160px;
   }
   .cols {
     color: var(--syn-ident);
     white-space: normal;
+    overflow-wrap: anywhere;
   }
   .ref {
     color: var(--key-fk);
