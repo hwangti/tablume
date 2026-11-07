@@ -465,8 +465,9 @@
       {#if app.prompt.value !== undefined}
         <input type="text" class="mono" bind:value={promptText} use:selectAll style="width:100%" spellcheck="false" />
       {:else}
-        <!-- svelte-ignore a11y_autofocus -->
-        <input type="password" bind:value={password} autofocus style="width:100%" placeholder={tr('비밀번호')} />
+        <!-- focused by hand: autofocus only acts when nothing else has the
+             focus, and a double-click in the tree leaves it on the tree -->
+        <input type="password" bind:value={password} use:selectAll style="width:100%" placeholder={tr('비밀번호')} />
       {/if}
     </form>
     {#snippet footer()}
