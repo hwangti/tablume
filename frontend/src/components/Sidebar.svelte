@@ -30,6 +30,8 @@
     isSystemSchema,
     SCHEMA_DRIVERS,
     saveWorkspaceSoon,
+    schemaCommentable,
+    editSchemaComment,
     schemaShown,
     ensureStats,
     moveConnection,
@@ -432,6 +434,7 @@
       lines.push(tr('클릭: 미리보기 · 더블클릭: 탭 고정'))
       return { title: r.t.t.name, lines }
     }
+    if (r.kind === 'schema') return r.s.comment ? { title: r.s.name, lines: [r.s.comment] } : null
     if (r.kind === 'col') {
       const col = r.col
       const tags = [col.pk && 'PK', col.unique && 'UNIQUE', col.fk && `FK → ${col.fk}`].filter(Boolean).join(' · ')
@@ -597,6 +600,7 @@
         ...(c.driver !== 'sqlite' ? [{ label: tr('루틴 목록'), icon: 'fn', run: () => openObjectList(c.id, s.name, 'routines') }] : []),
         ...(c.readOnly ? [] : [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true }]),
         ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
+        ...(!c.readOnly && schemaCommentable(c) ? [{ label: tr('코멘트 수정…'), icon: 'edit', run: () => editSchemaComment(c.id, s) }] : []),
         { label: tr('스키마 내보내기…'), icon: 'download', run: () => (app.dataDialog = { kind: 'export', connId: c.id, schema: s.name, tables: [] }), sep: true },
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
         ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
@@ -699,6 +703,7 @@
       {:else if r.kind === 'schema'}
         <Icon name="schema" size={15} color="var(--warn)" />
         <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
+        {#if app.treeView.comment && r.s.comment}<span class="cmt">{r.s.comment}</span>{/if}
         {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : tr('행 수 · 크기 가져오는 중')}></span>{/if}
         {#if r.s.tables && app.treeView.tableCount}<span class="count">{num(r.s.tables.length)}</span>{/if}
       {:else if r.kind === 'table'}
@@ -813,7 +818,7 @@
           {/if}
           <div class="vm-title sep">{tr('트리에 표시')}</div>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> {tr('스키마별 테이블 수')}</label>
-          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> {tr('테이블 · 컬럼 코멘트')}</label>
+          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> {tr('코멘트 (스키마 · 테이블 · 컬럼)')}</label>
           <label
             ><input type="checkbox" bind:checked={app.treeView.rows} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> {tr('테이블 행 수')}</label
           >

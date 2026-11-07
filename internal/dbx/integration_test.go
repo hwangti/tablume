@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -1699,6 +1699,46 @@ func TestExport(t *testing.T) {
 					t.Errorf("identity: %v\n%s", r, b.String())
 				}
 				run("DROP TABLE dbo.idt")
+			}
+		})
+	}
+}
+
+// Schema comments: set, listed with the schemas, changed, removed.
+func TestSchemaComment(t *testing.T) {
+	names := map[string]string{"mariadb": "cmt_db", "postgres": "cmt_schema", "mssql": "cmt_db"}
+	for driver, name := range names {
+		tg := targets(t)[driver]
+		t.Run(driver, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			m.DropSchema(tg.cfg.ID, name)
+			if _, err := m.CreateSchema(tg.cfg.ID, name); err != nil {
+				t.Fatal(err)
+			}
+			defer m.DropSchema(tg.cfg.ID, name)
+			comment := func() string {
+				t.Helper()
+				l, err := m.Schemas(tg.cfg.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return l.Comments[name]
+			}
+			for _, c := range []string{"고객 '관리' \\ 스키마", "바뀐 설명", ""} {
+				if st, err := m.SetSchemaComment(tg.cfg.ID, name, c); err != nil {
+					t.Fatalf("%s: %v", st, err)
+				}
+				if got := comment(); got != c {
+					t.Errorf("after %q: %q", c, got)
+				}
+			}
+			// removing one that isn't there
+			if st, err := m.SetSchemaComment(tg.cfg.ID, name, ""); err != nil {
+				t.Fatalf("%s: %v", st, err)
 			}
 		})
 	}

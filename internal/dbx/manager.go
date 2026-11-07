@@ -247,7 +247,13 @@ func (m *Manager) Schemas(id string) (SchemaList, error) {
 	}
 	ctx, cancel := metaCtx()
 	defer cancel()
-	return p.d.ListSchemas(ctx, p.db)
+	l, err := p.d.ListSchemas(ctx, p.db)
+	if sd, ok := p.d.(schemaCommentDialect); ok && err == nil {
+		// a nicety: MySQL has no schema comments, and a database that
+		// can't be read shouldn't keep the list from showing
+		l.Comments, _ = sd.schemaComments(ctx, p.db)
+	}
+	return l, err
 }
 
 func (m *Manager) Tables(id, schema string) ([]Table, error) {

@@ -82,6 +82,8 @@ type Column struct {
 type SchemaList struct {
 	Schemas []string `json:"schemas"`
 	Current string   `json:"current"`
+	// Comments of the schemas that have one (MariaDB, PostgreSQL, SQL Server).
+	Comments map[string]string `json:"comments"`
 }
 
 type ResultColumn struct {

@@ -224,6 +224,11 @@ func (a *App) CreateSchema(id, name string) (string, error) { return a.db.Create
 // DropSchema drops a schema and what is in it; returns the statement it ran.
 func (a *App) DropSchema(id, name string) (string, error) { return a.db.DropSchema(id, name) }
 
+// SetSchemaComment sets or (empty) removes a schema's comment; returns the statement it ran.
+func (a *App) SetSchemaComment(id, name, comment string) (string, error) {
+	return a.db.SetSchemaComment(id, name, comment)
+}
+
 // DropTable drops a table or view; returns the statement it ran.
 func (a *App) DropTable(id, schema string, t dbx.Table) (string, error) {
 	return a.db.DropTable(id, schema, t)

@@ -17,6 +17,7 @@ export interface TableNode {
 
 export interface SchemaNode {
   name: string
+  comment?: string
   expanded: boolean
   loading: boolean
   tables: TableNode[] | null
@@ -295,6 +296,7 @@ export async function refreshSchemas(id: string) {
     st.schemas = (list.schemas ?? []).map(
       (name) => old.get(name) ?? { name, expanded: false, loading: false, tables: null },
     )
+    for (const s of st.schemas) s.comment = list.comments?.[s.name] ?? ''
     for (const s of st.schemas) if (s.expanded && schemaShown(id, s.name)) await loadTables(id, s)
     const cur = st.schemas.find((s) => s.name === st.current)
     if (cur && !cur.expanded && schemaShown(id, cur.name) && st.schemas.every((s) => !s.expanded || !schemaShown(id, s.name))) {
@@ -1161,6 +1163,26 @@ export function openRunLog(connId: string) {
 export const SCHEMA_DRIVERS = ['mysql', 'mariadb', 'postgres', 'mssql']
 
 /** Makes a schema (asks for the name) and opens it in the tree. */
+/** Schema comments: MariaDB (not MySQL, which has none), PostgreSQL, SQL Server. */
+export function schemaCommentable(c: ConnConfig): boolean {
+  if (c.driver === 'postgres' || c.driver === 'mssql' || c.driver === 'mariadb') return true
+  return c.driver === 'mysql' && /mariadb/i.test(app.conn[c.id]?.version ?? '')
+}
+
+/** Asks for a schema's comment and sets it (empty removes it). */
+export async function editSchemaComment(connId: string, s: SchemaNode) {
+  const v = await askText(tr('“{name}” 스키마 코멘트', { name: s.name }), s.comment ?? '', tr('저장'))
+  if (v === null || v.trim() === (s.comment ?? '')) return
+  try {
+    await api.SetSchemaComment(connId, s.name, v)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  s.comment = v.trim()
+  toast(v.trim() ? tr('스키마 코멘트를 바꿨습니다') : tr('스키마 코멘트를 지웠습니다'))
+}
+
 export async function createSchema(connId: string) {
   const name = (await askText(tr('스키마 만들기'), '', tr('만들기')))?.trim()
   if (!name) return

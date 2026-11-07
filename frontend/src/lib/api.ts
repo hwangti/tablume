@@ -93,6 +93,7 @@ interface Api {
   ObjectListSQL(id: string, schema: string, kind: 'tables' | 'routines'): Promise<string>
   CreateSchema(id: string, name: string): Promise<string>
   DropSchema(id: string, name: string): Promise<string>
+  SetSchemaComment(id: string, name: string, comment: string): Promise<string>
   DropTable(id: string, schema: string, t: Table): Promise<string>
   TruncateTable(id: string, schema: string, t: Table): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>

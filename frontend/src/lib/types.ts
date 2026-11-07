@@ -95,6 +95,7 @@ export interface Routine {
 export interface SchemaList {
   schemas: string[]
   current: string
+  comments?: Record<string, string> | null // the schemas that have one
 }
 
 export interface ResultColumn {
