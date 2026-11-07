@@ -12,3 +12,6 @@ func setupPlatform(*App, *application.Options) func() {
 	loadLanguage()
 	return func() {}
 }
+
+// openURL opens a page in the OS's browser.
+func openURL(url string) error { return application.Get().Browser.OpenURL(url) }

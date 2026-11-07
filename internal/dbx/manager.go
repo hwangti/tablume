@@ -51,6 +51,12 @@ type session struct {
 
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
+
+	// manual commit (txn.go): manual is the mode set on conn, inTx whether
+	// changes wait for Commit or Rollback; otx is Oracle's open transaction.
+	manual bool
+	inTx   bool
+	otx    driver.Tx
 }
 
 type cursor struct {
@@ -241,7 +247,13 @@ func (m *Manager) Schemas(id string) (SchemaList, error) {
 	}
 	ctx, cancel := metaCtx()
 	defer cancel()
-	return p.d.ListSchemas(ctx, p.db)
+	l, err := p.d.ListSchemas(ctx, p.db)
+	if sd, ok := p.d.(schemaCommentDialect); ok && err == nil {
+		// a nicety: MySQL has no schema comments, and a database that
+		// can't be read shouldn't keep the list from showing
+		l.Comments, _ = sd.schemaComments(ctx, p.db)
+	}
+	return l, err
 }
 
 func (m *Manager) Tables(id, schema string) ([]Table, error) {
@@ -495,6 +507,10 @@ func (s *session) ensureConn(ctx context.Context, p *pool) error {
 		s.conn.Close()
 		s.conn = nil
 	}
+	// a new connection starts in autocommit; changes left uncommitted on
+	// the old one were rolled back by the server when it went away
+	lost := s.inTx
+	s.manual, s.inTx, s.otx = false, false, nil
 	conn, err := p.db.Conn(ctx)
 	if err != nil {
 		return err
@@ -504,6 +520,9 @@ func (s *session) ensureConn(ctx context.Context, p *pool) error {
 		if q := p.d.UseSchema(s.schema); q != "" {
 			_, _ = conn.ExecContext(ctx, q)
 		}
+	}
+	if lost {
+		return i18n.Error("연결이 끊겨 커밋하지 않은 변경이 롤백되었습니다. 다시 실행하세요")
 	}
 	return nil
 }
@@ -577,6 +596,19 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 	if len(stmts) == 0 {
 		return ExecResponse{}, i18n.Error("실행할 SQL이 없습니다")
 	}
+	// checked before anything runs, so a script doesn't stop halfway
+	var risky []string
+	for _, st := range stmts {
+		if p.cfg.ReadOnly && !readsOnly(st.SQL, p.d.Style()) {
+			return ExecResponse{}, i18n.Errorf("읽기 전용 연결이라 실행하지 않았습니다: %s", firstLine(st.SQL))
+		}
+		if !req.Confirmed && noWhere(st.SQL, p.d.Style()) {
+			risky = append(risky, st.SQL)
+		}
+	}
+	if len(risky) > 0 {
+		return ExecResponse{Confirm: risky}, nil
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelMu.Lock()
@@ -604,6 +636,11 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		}
 		s.schema = req.Schema
 	}
+	if err := s.setManual(ctx, p.d.Style(), req.Manual); err != nil {
+		cancel()
+		resp.InTx = s.inTx
+		return resp, err
+	}
 
 	keepCursor := false
 	for i, st := range stmts {
@@ -618,11 +655,17 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		query := returnsRows(st.SQL, p.d.Style())
 		var out stmtOut
 		var abandoned bool
+		if err := s.beforeStmt(ctx, p.d.Style(), st.SQL); err != nil {
+			r.Error = err.Error()
+			resp.Results = append(resp.Results, r)
+			break
+		}
 		paged := false
 		if q, ok := pagedSQL(st.SQL, p.d.Style(), fetch+1, 0, p.legacyOracle); query && ok {
 			out, abandoned = s.runStmt(ctx, q, true, fetch+1)
 			paged = out.err == nil && !abandoned
 			if paged {
+				r.SentSQL = q
 				out.rows.Close()
 				out.more = len(out.data) > fetch
 				out.data = out.data[:min(len(out.data), fetch)]
@@ -636,6 +679,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 			out, abandoned = s.runStmt(ctx, st.SQL, query, fetch)
 		}
 		r.ElapsedMs = time.Since(start).Milliseconds()
+		r.FetchMs = min(out.fetch.Milliseconds(), r.ElapsedMs)
 		if abandoned {
 			r.Error = i18n.T("사용자에 의해 취소됨 (서버가 취소에 응답하지 않아 이 탭의 연결을 새로 엽니다)")
 			resp.Results = append(resp.Results, r)
@@ -676,6 +720,9 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		if r.Error != "" && ctx.Err() != nil {
 			r.Error = i18n.T("사용자에 의해 취소됨")
 		}
+		if r.Error == "" {
+			s.afterStmt(p.d.Style(), st.SQL)
+		}
 		resp.Results = append(resp.Results, r)
 		if r.Error != "" {
 			break
@@ -698,6 +745,7 @@ func (m *Manager) Execute(req ExecRequest) (ExecResponse, error) {
 		ccancel()
 	}
 	resp.CurrentSchema = s.schema
+	resp.InTx = s.inTx
 	return resp, nil
 }
 
@@ -708,6 +756,9 @@ type stmtOut struct {
 	more bool
 	res  sql.Result
 	err  error
+	// time spent reading rows (the rest of the statement's time is
+	// running it until the first result arrives)
+	fetch time.Duration
 }
 
 // runStmt runs one statement on the session connection. If the context is
@@ -723,7 +774,9 @@ func (s *session) runStmt(ctx context.Context, q string, query bool, fetch int) 
 			o.rows, o.err = conn.QueryContext(ctx, q)
 			if o.err == nil {
 				o.cols, _ = o.rows.ColumnTypes()
+				t := time.Now()
 				o.data, o.more, o.err = readRows(o.rows, o.cols, fetch)
+				o.fetch = time.Since(t)
 			}
 		} else {
 			o.res, o.err = conn.ExecContext(ctx, q)
@@ -771,7 +824,9 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 	if n <= 0 {
 		n = 500
 	}
+	start := time.Now()
 	rows, more, err := readRows(s.cur.rows, s.cur.cols, n)
+	ms := time.Since(start).Milliseconds() // all of it is reading rows
 	if err != nil || !more {
 		s.closeCursor()
 	}
@@ -780,7 +835,7 @@ func (m *Manager) FetchMore(tabID, cursorID string, n int) (FetchResponse, error
 		// (60s by default). The next run opens a new connection.
 		err = i18n.Error("DB 서버가 연결을 끊어 나머지 결과를 가져올 수 없습니다. 결과를 오래 읽지 않으면 서버가 연결을 끊습니다(MySQL/MariaDB의 net_write_timeout). 쿼리를 다시 실행하세요")
 	}
-	return FetchResponse{Rows: rows, HasMore: more && err == nil}, err
+	return FetchResponse{Rows: rows, HasMore: more && err == nil, ElapsedMs: ms, FetchMs: ms}, err
 }
 
 // pageRun runs one query on a tab's session (so session state such as the
@@ -825,7 +880,11 @@ func (m *Manager) FetchPage(tabID, connID, stmt string, offset, n int) (FetchRes
 		if !ok {
 			return i18n.Error("이 쿼리는 페이지 단위로 읽을 수 없습니다")
 		}
+		start := time.Now()
 		out, abandoned := s.runStmt(ctx, q, true, n+1)
+		resp.ElapsedMs = time.Since(start).Milliseconds()
+		resp.FetchMs = min(out.fetch.Milliseconds(), resp.ElapsedMs)
+		resp.SentSQL = q
 		if abandoned {
 			return i18n.Error("사용자에 의해 취소됨")
 		}
@@ -903,6 +962,15 @@ func cell(v any, dbType string) any {
 	case []byte:
 		if strings.EqualFold(dbType, "UNIQUEIDENTIFIER") && len(x) == 16 {
 			return mssqlGUID(x)
+		}
+		// MySQL/MariaDB BIT(n) comes as its bytes (b'1' is "\x01", which
+		// showed as a control character): its number, as the server prints it
+		if strings.EqualFold(dbType, "BIT") && len(x) <= 8 {
+			var n uint64
+			for _, b := range x {
+				n = n<<8 | uint64(b)
+			}
+			return strconv.FormatUint(n, 10)
 		}
 		if utf8.Valid(x) && !isBinaryType(dbType) {
 			return plainFloat(clip(string(x)), dbType)

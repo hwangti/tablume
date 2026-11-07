@@ -18,7 +18,16 @@
     driver = '',
     onchanged,
     onlog,
-  }: { connId: string; schema: string; table: Table; driver?: string; onchanged?: () => void; onlog?: (sql: string[], outcome: string, error?: string) => void } = $props()
+    highlight = null,
+  }: {
+    connId: string
+    schema: string
+    table: Table
+    driver?: string
+    onchanged?: () => void
+    onlog?: (sql: string[], outcome: string, error?: string) => void
+    highlight?: { column: string; n: number } | null
+  } = $props()
 
   let indexes = $state<Index[] | null>(null)
   let cols = $state<Column[]>([])
@@ -50,6 +59,23 @@
   $effect(() => {
     const key = `${connId}|${schema}|${table.schema}.${table.name}`
     if (key !== loadedFor) load()
+  })
+
+
+  // ---- a key icon clicked in the columns: flash the rows with that column
+  let flash = $state(new Set<string>())
+  let flashTimer = 0
+  let seen = 0 // the request last shown: once each, not again when the list reloads
+  $effect(() => {
+    const h = highlight
+    const list = indexes
+    if (!h || !list || h.n === seen) return
+    seen = h.n
+    const col = h.column.toLowerCase()
+    flash = new Set(list.filter((x) => x.columns.map((c) => c.replace(/ DESC$/, '').replace(/\(\d+\)$/, '').replace(/^["`[](.*)["`\]]$/, '$1')).some((c) => c.toLowerCase() === col)).map((x) => x.name))
+    clearTimeout(flashTimer)
+    flashTimer = window.setTimeout(() => (flash = new Set()), 1800)
+    requestAnimationFrame(() => document.querySelector(`[data-flash="${h.n}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   })
 
   let readOnlyReason = $derived(table.type.toUpperCase().includes('VIEW') ? t('뷰의 인덱스는 여기서 바꿀 수 없습니다') : '')
@@ -258,6 +284,8 @@
           {@const blockEdit = editBlock(ix)}
           {@const blockDrop = dropBlock(ix)}
           <tr
+            class:flash={flash.has(ix.name)}
+            data-flash={flash.has(ix.name) && i === indexes.findIndex((x) => flash.has(x.name)) ? highlight?.n : undefined}
             class:sel={sel === ix.name}
             class:dropped={dropped[ix.name]}
             onclick={() => (sel = ix.name)}
@@ -272,7 +300,7 @@
             <td class="mono cols">{ix.columns.join(', ')}</td>
             <td class="c">{#if ix.unique}<Icon name="check" size={13} />{/if}</td>
             <td class="dim">{ix.type}{ix.constraint && !ix.primary ? ' · ' + t('제약') : ''}</td>
-            <td class="mono dim">
+            <td class="mono dim cond">
               {#if ix.where}WHERE {ix.where}{/if}
               {#if ix.include?.length}{ix.where ? ' · ' : ''}INCLUDE ({ix.include.join(', ')}){/if}
             </td>
@@ -281,7 +309,7 @@
                 {#if dropped[ix.name]}
                   <button class="icon-btn sm" title={t('삭제 취소')} onclick={() => toggleDrop(ix)}><Icon name="undo" size={13} /></button>
                 {:else}
-                  <button class="icon-btn sm" title={blockEdit || t('고치기 (지우고 다시 만듭니다)')} disabled={!!blockEdit} onclick={() => openEdit(ix)}><Icon name="edit" size={13} /></button>
+                  <button class="icon-btn sm" title={blockEdit || t('수정 (삭제 후 생성)')} disabled={!!blockEdit} onclick={() => openEdit(ix)}><Icon name="edit" size={13} /></button>
                   <button class="icon-btn sm" title={blockDrop || t('삭제')} disabled={!!blockDrop} onclick={() => toggleDrop(ix)}><Icon name="trash" size={13} /></button>
                 {/if}
               {/if}
@@ -439,7 +467,7 @@
   }
   table {
     border-collapse: collapse;
-    min-width: 100%;
+    width: 100%; /* the width QueryTab gives the three tables */
   }
   th {
     position: sticky;
@@ -497,23 +525,39 @@
   td.k span {
     display: inline-flex;
   }
+  th.k,
+  td.k {
+    width: 1%;
+    padding: 0 4px;
+  }
   td.c {
     text-align: center;
     color: var(--ok);
   }
   .name {
     font-weight: 600;
+    /* a long one-word name wraps rather than widening the table */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 160px;
   }
   .cols {
     color: var(--syn-ident);
   }
+  /* long column lists and expressions wrap instead of widening the table */
+  .cols,
+  .cond {
+    min-width: 150px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .act {
     width: 1%;
     padding: 0 4px;
-  }
-  .act .icon-btn {
-    width: 22px;
-    height: 20px;
+    white-space: nowrap;
+    font-size: 0; /* no gap between the buttons */
   }
   .dim {
     color: var(--text-faint);
@@ -551,6 +595,7 @@
   }
   .row input[type='text'] {
     flex: 1;
+    height: 26px;
   }
   .chk {
     display: flex;
@@ -650,5 +695,17 @@
   .err-note {
     margin-top: 6px;
     color: var(--text-dim);
+  }
+  tr.flash td {
+    animation: flash 1.8s ease-out;
+  }
+  @keyframes flash {
+    0%,
+    40% {
+      background: color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    100% {
+      background: transparent;
+    }
   }
 </style>

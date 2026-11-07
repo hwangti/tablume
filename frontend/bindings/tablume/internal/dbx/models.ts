@@ -6,6 +6,40 @@ export interface AlterRequest {
     "schema": string;
     "table": Table;
     "changes": ColumnAlter[] | null;
+
+    /**
+     * Add: new columns, appended after the existing ones (Name, Type,
+     * Nullable, Default, Comment).
+     */
+    "add": Column[] | null;
+
+    /**
+     * Order: when set, every column name (existing and new) in the wanted
+     * order, and Changes lists every existing column in its current order
+     * (Old = New where only the place changes). MySQL/MariaDB only.
+     */
+    "order": string[] | null;
+
+    /**
+     * Drop: columns to drop (by name; not in Changes or Order).
+     */
+    "drop": string[] | null;
+
+    /**
+     * TableComment: the table's new comment; nil = unchanged (Table.Comment
+     * is the current one).
+     */
+    "tableComment": string | null;
+
+    /**
+     * Rename: the table's new name ("" = unchanged), renamed last.
+     */
+    "rename": string;
+
+    /**
+     * Engine: MySQL/MariaDB storage engine to change to ("" = unchanged).
+     */
+    "engine": string;
 }
 
 export interface AlterResult {
@@ -28,6 +62,12 @@ export interface ApplyRequest {
     "schema": string;
     "table": Table;
     "changes": RowChange[] | null;
+
+    /**
+     * Manual: run in the tab's open transaction instead of committing (txn.go).
+     */
+    "tabId": string;
+    "manual": boolean;
 }
 
 export interface Column {
@@ -52,6 +92,19 @@ export interface Column {
      * Extra: auto increment / identity / generated, for the structure view.
      */
     "extra": string;
+
+    /**
+     * MySQL/MariaDB, in column changes only (see TableOptions.Columns):
+     * the collation and the ON UPDATE expression. Old and New differ where
+     * they change; equal (or both "") keeps what the column has.
+     */
+    "collation"?: string;
+    "onUpdate"?: string;
+
+    /**
+     * left out of SELECT *
+     */
+    "invisible"?: boolean;
 }
 
 /**
@@ -62,6 +115,12 @@ export interface Column {
 export interface ColumnAlter {
     "old": Column;
     "new": Column;
+}
+
+export interface ColumnOptions {
+    "collation": string;
+    "onUpdate": string;
+    "invisible": boolean;
 }
 
 /**
@@ -96,6 +155,12 @@ export interface ConnConfig {
     "color": string;
 
     /**
+     * ReadOnly runs only statements that read; edits and DDL are refused,
+     * and where the database has it the session is read-only too.
+     */
+    "readOnly": boolean;
+
+    /**
      * SSH tunnel: Host/Port above are then as seen from the SSH server.
      */
     "ssh": boolean;
@@ -124,6 +189,30 @@ export interface ConnConfig {
      * system ones.
      */
     "schemas"?: SchemaFilter | null;
+}
+
+export interface CreateRequest {
+    "connId": string;
+    "schema": string;
+
+    /**
+     * Name, Comment; Schema on SQL Server
+     */
+    "table": Table;
+    "columns": Column[] | null;
+
+    /**
+     * MySQL/MariaDB, "" = the server's default
+     */
+    "engine": string;
+}
+
+export interface CreateResult {
+    /**
+     * as made (the name folded where the database folds it)
+     */
+    "table": Table;
+    "result": AlterResult;
 }
 
 export interface EditInfo {
@@ -175,16 +264,120 @@ export interface ExecRequest {
      */
     "cursor": number;
     "fetch": number;
+
+    /**
+     * Confirmed runs UPDATE/DELETE without WHERE; otherwise they come
+     * back in ExecResponse.Confirm and nothing runs.
+     */
+    "confirmed": boolean;
+
+    /**
+     * Manual: changes wait for EndTx instead of committing (txn.go).
+     */
+    "manual": boolean;
 }
 
 export interface ExecResponse {
     "results": StmtResult[] | null;
     "currentSchema": string;
+    "confirm": string[] | null;
+
+    /**
+     * manual commit: changes wait for Commit or Rollback
+     */
+    "inTx": boolean;
+}
+
+export interface ExportRequest {
+    "connId": string;
+    "schema": string;
+
+    /**
+     * none: every table and view in the schema
+     */
+    "tables": Table[] | null;
+
+    /**
+     * csv, json, sql
+     */
+    "format": string;
+
+    /**
+     * sql: CREATE statements
+     */
+    "ddl": boolean;
+
+    /**
+     * sql: INSERT statements (csv and json are always data)
+     */
+    "data": boolean;
+}
+
+export interface FKRequest {
+    "connId": string;
+    "schema": string;
+    "table": Table;
+    "drop": TableFK[] | null;
+    "create": TableFK[] | null;
 }
 
 export interface FetchResponse {
     "rows": (any[] | null)[] | null;
     "hasMore": boolean;
+
+    /**
+     * as in StmtResult
+     */
+    "elapsedMs": number;
+    "fetchMs": number;
+
+    /**
+     * the page's query; "" when rows came from the open cursor
+     */
+    "sentSql": string;
+}
+
+export interface ForeignKey {
+    "name": string;
+    "table": string;
+    "columns": string[] | null;
+
+    /**
+     * "" = this schema
+     */
+    "refSchema": string;
+    "refTable": string;
+    "refColumns": string[] | null;
+    "onUpdate": string;
+    "onDelete": string;
+
+    /**
+     * One: the child's FK columns are unique, so a parent has at most one
+     * child (1:1); otherwise 1:N.
+     */
+    "one": boolean;
+
+    /**
+     * Required: every FK column is NOT NULL, so each child has a parent.
+     */
+    "required": boolean;
+
+    /**
+     * LooseRef: the referenced columns aren't unique (InnoDB allows that),
+     * so a child can match several parents: in effect N:M.
+     */
+    "looseRef": boolean;
+}
+
+export interface GraphTable {
+    "name": string;
+    "view": boolean;
+    "comment": string;
+
+    /**
+     * Name, Type, Nullable, PK, Comment, Extra
+     */
+    "columns": Column[] | null;
 }
 
 export interface Index {
@@ -316,9 +509,19 @@ export interface SchemaFilter {
     "patterns": string[] | null;
 }
 
+export interface SchemaGraph {
+    "tables": GraphTable[] | null;
+    "fks": ForeignKey[] | null;
+}
+
 export interface SchemaList {
     "schemas": string[] | null;
     "current": string;
+
+    /**
+     * Comments of the schemas that have one (MariaDB, PostgreSQL, SQL Server).
+     */
+    "comments": { [_ in string]?: string } | null;
 }
 
 export interface StmtResult {
@@ -345,6 +548,16 @@ export interface StmtResult {
      */
     "rowsAffected": number;
     "elapsedMs": number;
+
+    /**
+     * the part of ElapsedMs spent reading rows
+     */
+    "fetchMs": number;
+
+    /**
+     * the statement as sent when it differs (paged: LIMIT/OFFSET added)
+     */
+    "sentSql": string;
     "error": string;
     "notice": string;
 
@@ -377,4 +590,43 @@ export interface Table {
      * bytes, -1 if unknown
      */
     "size": number;
+}
+
+export interface TableFK {
+    "name": string;
+    "columns": string[] | null;
+
+    /**
+     * RefTable is the referenced table; its Schema is set (SQL Server) or
+     * RefSchema names another schema.
+     */
+    "refTable": Table;
+
+    /**
+     * "" = the same schema
+     */
+    "refSchema": string;
+    "refColumns": string[] | null;
+
+    /**
+     * NO ACTION, CASCADE, SET NULL, ...; "" = not supported (Oracle)
+     */
+    "onUpdate": string;
+    "onDelete": string;
+}
+
+/**
+ * TableOptions: settings of a table beyond its columns. Engine and Engines
+ * (the ones the server offers) are MySQL/MariaDB only, "" / nil elsewhere.
+ */
+export interface TableOptions {
+    "engine": string;
+    "engines": string[] | null;
+
+    /**
+     * Columns: each column's collation and ON UPDATE; Collations: the
+     * server's collations.
+     */
+    "columns": { [_ in string]?: ColumnOptions } | null;
+    "collations": string[] | null;
 }

@@ -99,6 +99,11 @@ body,
   overflow: hidden;
 }
 
+/* a double tap is a double click (pin a tab, …), not a zoom; pinching still zooms */
+html {
+  touch-action: manipulation;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -107,6 +112,8 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
+  /* a long press opens the app's menu (lib/longpress), not iOS's callout */
+  -webkit-touch-callout: none;
 }
 
 button {
@@ -126,6 +133,7 @@ textarea {
   outline: none;
   user-select: text;
   -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 input:focus,
@@ -175,7 +183,7 @@ textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: 24px;
   height: 26px;
   border: none;
   border-radius: 4px;
@@ -273,9 +281,86 @@ textarea:focus {
   word-break: break-word;
   pointer-events: none;
 }
+.app-tip .tip-cols {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 16px;
+}
+.app-tip .tip-cols > span {
+  white-space: nowrap;
+}
+.app-tip .tip-cols .v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.app-tip .tip-cols .all {
+  grid-column: 1 / -1;
+}
+/* data-tip-bar: one bar split in proportions; each part's colour also marks its row */
+.app-tip .tip-bar {
+  display: flex;
+  gap: 1px;
+  height: 6px;
+  margin: 3px 0 7px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.app-tip .tip-bar span {
+  flex-basis: 0;
+  min-width: 2px;
+}
+.app-tip .tip-cols .dot::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--tip-c);
+}
+.app-tip .tip-cols .sum {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+.app-tip .c0 { --tip-c: var(--ok); }
+.app-tip .c1 { --tip-c: var(--accent); }
+.app-tip .c2 { --tip-c: var(--text-faint); }
+.app-tip .c3 { --tip-c: var(--warn); }
+.app-tip .tip-bar .c0,
+.app-tip .tip-bar .c1,
+.app-tip .tip-bar .c2,
+.app-tip .tip-bar .c3 {
+  background: var(--tip-c);
+}
 
 /* see main.ts: rings only for keyboard navigation */
 :root:not(.kbd-nav) button:focus,
 :root:not(.kbd-nav) [tabindex]:focus {
   outline: none;
+}
+
+/* segmented choice: a few buttons, one on (log scope, export format, ...) */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.seg button {
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: 1px solid var(--border);
+}
+.seg button.on {
+  background: var(--bg-select);
+  color: var(--text);
 }

@@ -280,6 +280,11 @@ func (m *Manager) EditInfo(id, currentSchema string, source []string, resultCols
 			}
 		}
 	}
+	if p.cfg.ReadOnly {
+		info.Insertable = false
+		info.Reason = i18n.T("읽기 전용 연결입니다")
+		return info, nil
+	}
 	if len(info.Key) == 0 {
 		info.Reason = i18n.T("기본 키(PK)가 없어 기존 행은 수정·삭제할 수 없습니다 (행 추가는 가능)")
 		return info, nil
@@ -324,6 +329,9 @@ type ApplyRequest struct {
 	Schema  string      `json:"schema"`
 	Table   Table       `json:"table"`
 	Changes []RowChange `json:"changes"`
+	// Manual: run in the tab's open transaction instead of committing (txn.go).
+	TabID  string `json:"tabId"`
+	Manual bool   `json:"manual"`
 }
 
 type stmtArgs struct {
@@ -461,6 +469,9 @@ func (m *Manager) ApplyChanges(req ApplyRequest) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if err := p.writable(); err != nil {
+		return 0, err
+	}
 	var stmts []stmtArgs
 	for _, c := range req.Changes {
 		st, err := p.buildChange(target, types, c)
@@ -469,7 +480,14 @@ func (m *Manager) ApplyChanges(req ApplyRequest) (int, error) {
 		}
 		stmts = append(stmts, st)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	if req.Manual && req.TabID != "" {
+		if err := m.applyInTx(req, p, stmts); err != nil {
+			return 0, err
+		}
+		return len(stmts), nil
+	}
+	// (an import is many rows: more time, by its size)
+	ctx, cancel := context.WithTimeout(context.Background(), max(2*time.Minute, time.Duration(len(stmts))*20*time.Millisecond))
 	defer cancel()
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {

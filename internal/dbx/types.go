@@ -18,6 +18,9 @@ type ConnConfig struct {
 	// Params are extra driver options as "key=value" pairs separated by '&'.
 	Params string `json:"params"`
 	Color  string `json:"color"`
+	// ReadOnly runs only statements that read; edits and DDL are refused,
+	// and where the database has it the session is read-only too.
+	ReadOnly bool `json:"readOnly"`
 
 	// SSH tunnel: Host/Port above are then as seen from the SSH server.
 	SSH     bool   `json:"ssh"`
@@ -68,11 +71,19 @@ type Column struct {
 	Default  string `json:"default"`
 	// Extra: auto increment / identity / generated, for the structure view.
 	Extra string `json:"extra"`
+	// MySQL/MariaDB, in column changes only (see TableOptions.Columns):
+	// the collation and the ON UPDATE expression. Old and New differ where
+	// they change; equal (or both "") keeps what the column has.
+	Collation string `json:"collation,omitempty"`
+	OnUpdate  string `json:"onUpdate,omitempty"`
+	Invisible bool   `json:"invisible,omitempty"` // left out of SELECT *
 }
 
 type SchemaList struct {
 	Schemas []string `json:"schemas"`
 	Current string   `json:"current"`
+	// Comments of the schemas that have one (MariaDB, PostgreSQL, SQL Server).
+	Comments map[string]string `json:"comments"`
 }
 
 type ResultColumn struct {
@@ -93,6 +104,8 @@ type StmtResult struct {
 	Paged        bool   `json:"paged"`
 	RowsAffected int64  `json:"rowsAffected"` // -1 when unknown
 	ElapsedMs    int64  `json:"elapsedMs"`
+	FetchMs      int64  `json:"fetchMs"` // the part of ElapsedMs spent reading rows
+	SentSQL      string `json:"sentSql"` // the statement as sent when it differs (paged: LIMIT/OFFSET added)
 	Error        string `json:"error"`
 	Notice       string `json:"notice"`
 	// Source is the table a plain single-table SELECT reads from, as written.
@@ -107,14 +120,24 @@ type ExecRequest struct {
 	// Cursor is the caret position (UTF-16). -1 runs every statement in SQL.
 	Cursor int `json:"cursor"`
 	Fetch  int `json:"fetch"`
+	// Confirmed runs UPDATE/DELETE without WHERE; otherwise they come
+	// back in ExecResponse.Confirm and nothing runs.
+	Confirmed bool `json:"confirmed"`
+	// Manual: changes wait for EndTx instead of committing (txn.go).
+	Manual bool `json:"manual"`
 }
 
 type ExecResponse struct {
 	Results       []StmtResult `json:"results"`
 	CurrentSchema string       `json:"currentSchema"`
+	Confirm       []string     `json:"confirm"`
+	InTx          bool         `json:"inTx"` // manual commit: changes wait for Commit or Rollback
 }
 
 type FetchResponse struct {
-	Rows    [][]any `json:"rows"`
-	HasMore bool    `json:"hasMore"`
+	Rows      [][]any `json:"rows"`
+	HasMore   bool    `json:"hasMore"`
+	ElapsedMs int64   `json:"elapsedMs"` // as in StmtResult
+	FetchMs   int64   `json:"fetchMs"`
+	SentSQL   string  `json:"sentSql"` // the page's query; "" when rows came from the open cursor
 }

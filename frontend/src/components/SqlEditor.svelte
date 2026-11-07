@@ -23,6 +23,7 @@
 </script>
 
 <script lang="ts">
+  import CopyOverlay from './CopyOverlay.svelte'
   import { t } from '../lib/i18n.svelte'
   import { onMount } from 'svelte'
   import { EditorState, Compartment, Prec } from '@codemirror/state'
@@ -158,10 +159,11 @@
   })
 </script>
 
-<div class="editor" bind:this={host}></div>
+<div class="editor" bind:this={host}><CopyOverlay view={() => view} /></div>
 
 <style>
   .editor {
+    position: relative;
     height: 100%;
     overflow: hidden;
     user-select: text;

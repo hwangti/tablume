@@ -1,10 +1,11 @@
-import { api, errText, loginExpired } from './api'
+import { api, errText, loginExpired, type FetchedPage, type UpdateInfo } from './api'
 import { Events, Window } from '@wailsio/runtime'
 import { isWeb } from './platform'
 import { i18n, isLang, t as tr, type Lang } from './i18n.svelte'
 import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import { DRIVERS } from './types'
+import { DEFAULT_AUDIT } from './erd'
 import type { Cell, Column, ConnConfig, Driver, Routine, SchemaFilter, StmtResult, Table } from './types'
 
 export interface TableNode {
@@ -17,6 +18,7 @@ export interface TableNode {
 
 export interface SchemaNode {
   name: string
+  comment?: string
   expanded: boolean
   loading: boolean
   tables: TableNode[] | null
@@ -44,6 +46,8 @@ export interface Message {
   kind: 'info' | 'error'
   text: string
   sql?: string // the statement(s), shown with syntax colors above text
+  full?: string // the whole statement when sql is shortened (to run it again)
+  auto?: boolean // a query the app made (a table tab's SELECT, a page read on), shown dimmed
 }
 
 export interface Tab {
@@ -73,9 +77,20 @@ export interface Tab {
   // Set for table data tabs: the SELECT is rebuilt from these when the
   // filter bar or a column header changes. Dropped if the SQL is edited.
   tableRef?: TableRef
+  // An ERD of the tab's schema instead of a console.
+  erd?: boolean
+  // The log pane shows this tab's messages or the connection's saved run log.
+  logScope?: 'tab' | 'conn'
+  // Manual commit (consoles): changes wait in a transaction until Commit or
+  // Rollback; inTx is whether some are waiting now.
+  manual?: boolean
+  inTx?: boolean
   // Shown in a window of its own (main window only; not saved, so after a
   // restart the tab is back in the main window).
   detached?: boolean
+  // A table being designed (the structure view only; nothing in the
+  // database yet, not saved with the workspace).
+  creating?: boolean
 }
 
 export interface TableRef {
@@ -105,6 +120,7 @@ export interface Toast {
   id: number
   kind: 'info' | 'error'
   text: string
+  action?: { label: string; run: () => void }
 }
 
 export const app = $state({
@@ -116,7 +132,11 @@ export const app = $state({
   editing: null as ConnConfig | null,
   // password prompt, or a text prompt when value is set
   prompt: null as null | { title: string; value?: string; ok?: string; resolve: (v: string | null) => void },
-  confirm: null as null | { text: string; resolve: (v: boolean) => void },
+  // bumped when a run log entry is saved (log panes showing it reload)
+  logVersion: 0,
+  confirm: null as null | { text: string; sql?: string[]; driver?: string; resolve: (v: boolean) => void },
+  // export of tables / a schema, or a CSV import into one table
+  dataDialog: null as null | { kind: 'export' | 'import'; connId: string; schema: string; tables: Table[] },
   toasts: [] as Toast[],
   completion: {} as Record<string, Record<string, string[]>>,
   // What the schema tree shows next to each table / column.
@@ -127,19 +147,57 @@ export const app = $state({
   wide: false, // 넓게 보기: only the active tab, no tree or tab strip (not saved)
   orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
+  erdAudit: [...DEFAULT_AUDIT] as string[], // column names the ERD takes for audit columns (* wildcards)
   ddlMode: 'table' as 'sql' | 'table', // structure tab: columns and indexes, or the DDL text
   theme: getTheme(),
+  updateCheck: true, // ask GitHub for a newer release at startup
+  updateSeen: '', // the newer release the startup check last told about
+  update: null as UpdateInfo | null, // a newer release, once found (not saved)
   // Databases this build includes (a build can leave some out).
   drivers: DRIVERS.map((d) => d.id) as Driver[],
 })
 
 let toastSeq = 0
-export function toast(text: string, kind: 'info' | 'error' = 'info') {
+export function toast(text: string, kind: 'info' | 'error' = 'info', action?: Toast['action']) {
   const id = ++toastSeq
-  app.toasts.push({ id, kind, text })
-  setTimeout(() => {
-    app.toasts = app.toasts.filter((t) => t.id !== id)
-  }, kind === 'error' ? 8000 : 3000)
+  // the same message again replaces the one still showing
+  app.toasts = app.toasts.filter((t) => t.text !== text)
+  app.toasts.push({ id, kind, text, action })
+  setTimeout(() => dismissToast(id), action ? 15000 : kind === 'error' ? 8000 : 3000)
+}
+
+export function dismissToast(id: number) {
+  app.toasts = app.toasts.filter((t) => t.id !== id)
+}
+
+/** Asks for a newer release: at startup (quiet, and each release is told
+ *  about once) or from the view menu (says what it found). */
+export async function checkUpdate(manual: boolean) {
+  let u: UpdateInfo
+  try {
+    u = await api.CheckUpdate(manual)
+  } catch (e) {
+    if (manual) toast(tr('새 버전을 확인하지 못했습니다: {err}', { err: errText(e) }), 'error')
+    return
+  }
+  app.update = u.newer ? u : null
+  if (!u.newer) {
+    if (manual) toast(tr('최신 버전입니다 ({v})', { v: u.current }))
+    return
+  }
+  if (manual || app.updateSeen !== u.latest) {
+    toast(tr('새 버전이 나왔습니다: Tablume {v}', { v: u.latest }), 'info', { label: tr('받기'), run: openUpdate })
+    if (app.updateSeen !== u.latest) {
+      app.updateSeen = u.latest
+      saveWorkspaceSoon()
+    }
+  }
+}
+
+/** The new release's page, in the browser. */
+export function openUpdate() {
+  if (isWeb) window.open(app.update?.url || 'https://github.com/hwangti/tablume/releases/latest', '_blank', 'noopener')
+  else api.OpenUpdatePage().catch((e) => toast(errText(e), 'error'))
 }
 
 export function newId(): string {
@@ -171,6 +229,37 @@ export async function loadConnections() {
   for (const c of app.connections) connState(c.id)
 }
 
+/** Saves these connections (all when none) to a file, without passwords. */
+export async function exportConnections(ids: string[] = []) {
+  try {
+    const text = await api.ExportConnections(ids)
+    const one = ids.length === 1 ? connById(ids[0])?.name : ''
+    const day = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const name = one ? `tablume-${one.replace(/[\\/:*?"<>|\s]+/g, '_')}.json` : `tablume-connections-${day}.json`
+    const path = await api.SaveTextFile(name, text)
+    if (path) toast(isWeb ? tr('연결을 내보냈습니다. 비밀번호는 들어 있지 않습니다.') : tr('{path}에 저장했습니다. 비밀번호는 들어 있지 않습니다.', { path }))
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+}
+
+/** Adds the connections of an exported file. */
+export async function importConnections() {
+  try {
+    const f = await api.OpenJSONFile()
+    if (!f) return
+    const r = await api.ImportConnections(f.content)
+    await loadConnections()
+    const parts = [r.added ? tr('연결 {n}개를 가져왔습니다.', { n: r.added }) : tr('새로 가져올 연결이 없습니다.')]
+    if (r.existing) parts.push(tr('{n}개는 이미 있습니다.', { n: r.existing }))
+    if (r.unsupported?.length) parts.push(tr('이 빌드에 없는 DB라 건너뜀: {names}', { names: r.unsupported.join(', ') }))
+    if (r.added) parts.push(tr('비밀번호는 처음 연결할 때 묻습니다.'))
+    toast(parts.join(' '))
+  } catch (e) {
+    toast(errText(e), 'error')
+  }
+}
+
 export function askPassword(title: string): Promise<string | null> {
   return new Promise((resolve) => {
     app.prompt = {
@@ -200,10 +289,13 @@ export function askText(title: string, value: string, ok = tr('확인')): Promis
 
 // window.confirm isn't available in every webview (macOS WKWebView), so
 // confirmations use our own modal.
-export function confirmBox(text: string): Promise<boolean> {
+/** Asks yes or no; `sql` shows statements under the text, highlighted for `driver`. */
+export function confirmBox(text: string, sql?: string[], driver?: string): Promise<boolean> {
   return new Promise((resolve) => {
     app.confirm = {
       text,
+      sql,
+      driver,
       resolve: (v) => {
         app.confirm = null
         resolve(v)
@@ -249,15 +341,20 @@ export async function connect(id: string): Promise<boolean> {
   }
 }
 
-export async function disconnect(id: string) {
+/** Disconnects (after asking if a console has uncommitted changes); false if the user said no. */
+export async function disconnect(id: string): Promise<boolean> {
+  const n = app.tabs.filter((t) => t.connId === id && t.inTx).length
+  if (n && !(await confirmBox(tr('커밋하지 않은 변경이 있는 콘솔이 {n}개 있습니다. 연결을 끊으면 롤백됩니다. 끊을까요?', { n })))) return false
   await api.Disconnect(id)
   Events.Emit('conn:changed', { id, connected: false }).catch(() => {})
   markDisconnected(id)
+  return true
 }
 
 function markDisconnected(id: string) {
   const st = connState(id)
   st.status = 'idle'
+  for (const t of app.tabs) if (t.connId === id) t.inTx = false
   st.schemas = []
   st.expanded = false
   for (const k of Object.keys(app.completion)) if (k.startsWith(id + '|')) delete app.completion[k]
@@ -272,6 +369,7 @@ export async function refreshSchemas(id: string) {
     st.schemas = (list.schemas ?? []).map(
       (name) => old.get(name) ?? { name, expanded: false, loading: false, tables: null },
     )
+    for (const s of st.schemas) s.comment = list.comments?.[s.name] ?? ''
     for (const s of st.schemas) if (s.expanded && schemaShown(id, s.name)) await loadTables(id, s)
     const cur = st.schemas.find((s) => s.name === st.current)
     if (cur && !cur.expanded && schemaShown(id, cur.name) && st.schemas.every((s) => !s.expanded || !schemaShown(id, s.name))) {
@@ -523,6 +621,7 @@ export function sqlEdited(t: Tab): boolean {
 
 // Asks before closing a tab with unapplied grid edits or edited SQL.
 async function okToClose(t: Tab): Promise<boolean> {
+  if (t.inTx) return confirmBox(tr('“{name}” 콘솔에 커밋하지 않은 변경이 있습니다. 닫으면 롤백됩니다. 닫을까요?', { name: t.title }))
   const n = tabPending(t)
   if (n) return confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 탭을 닫을까요?', { n }))
   if (sqlEdited(t)) return confirmBox(tr('“{name}” 콘솔에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?', { name: t.title }))
@@ -545,6 +644,8 @@ export async function closeTabs(ids: string[]) {
   const set = new Set(ids)
   const closing = app.tabs.filter((t) => set.has(t.id))
   if (!closing.length) return
+  const tx = closing.filter((t) => t.inTx).length
+  if (tx && !(await confirmBox(tr('닫을 탭 중 콘솔 {n}개에 커밋하지 않은 변경이 있습니다. 닫으면 롤백됩니다. 닫을까요?', { n: tx })))) return
   const n = closing.reduce((a, t) => a + tabPending(t), 0)
   const edited = closing.filter(sqlEdited)
   if (n && !(await confirmBox(tr('닫을 탭에 적용하지 않은 변경 {n}건이 있습니다. 버리고 닫을까요?', { n })))) return
@@ -572,6 +673,7 @@ export async function duplicateTab(id: string) {
   const tab = openConsole(src.connId, { schema: src.schema, sql: src.sql, title: src.title + tr(' 복사본') })
   tab.layout = src.layout
   if (src.tableRef) tab.tableRef = $state.snapshot(src.tableRef)
+  tab.erd = src.erd
   // place it right after the original
   const from = app.tabs.findIndex((t) => t.id === tab.id)
   const [moved] = app.tabs.splice(from, 1)
@@ -581,9 +683,22 @@ export async function duplicateTab(id: string) {
   if (copy.tableRef) await reloadTable(copy)
 }
 
-function log(tab: Tab, kind: Message['kind'], text: string, sql?: string) {
-  tab.messages.push({ time: now(), kind, text, sql })
+// Statements that may carry a password stay out of the saved log.
+const SECRET_RE = /\bidentified\s+by\b|\bpassword\b/i
+
+/**
+ * Adds a line to the tab's log; a line with SQL is also saved to the
+ * connection's run log (the whole statement: `fullSql` when `sql` is
+ * short). `auto` marks a query the app made rather than one typed.
+ */
+function log(tab: Tab, kind: Message['kind'], text: string, sql?: string, fullSql?: string, auto = false) {
+  tab.messages.push({ time: now(), kind, text, sql, full: fullSql, auto })
   if (tab.messages.length > 500) tab.messages.splice(0, tab.messages.length - 500)
+  const full = fullSql ?? sql
+  if (full && !SECRET_RE.test(full)) {
+    api.AppendLog(tab.connId, [{ time: Date.now(), tab: tab.title, kind, text, sql: full, auto }]).catch(() => {})
+    app.logVersion++
+  }
 }
 
 /** Adds statements run outside the editor (grid edits, structure changes) to the tab's log. */
@@ -653,16 +768,27 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
   tab.running = true
   tab.startedAt = Date.now()
   try {
-    const res = await api.Execute({
-      tabId: tab.id,
-      connId: tab.connId,
-      schema: tab.schema,
-      sql,
-      cursor,
-      fetch: app.pageSize,
-    })
+    const req = { tabId: tab.id, connId: tab.connId, schema: tab.schema, sql, cursor, fetch: app.pageSize, manual: !!tab.manual }
+    let t0 = performance.now()
+    let res = await api.Execute(req)
+    if (res.confirm?.length) {
+      // UPDATE/DELETE without WHERE: nothing ran yet
+      tab.running = false
+      const ok = await confirmBox(tr('WHERE 없는 UPDATE·DELETE는 테이블의 모든 행을 바꿉니다. 실행할까요?'), res.confirm, connById(tab.connId)?.driver)
+      if (!ok) {
+        log(tab, 'info', tr('실행하지 않음 (WHERE 없는 UPDATE·DELETE)'), short(res.confirm[0]), res.confirm.join(';\n'))
+        return null
+      }
+      tab.running = true
+      tab.startedAt = Date.now()
+      t0 = performance.now()
+      res = await api.Execute({ ...req, confirmed: true })
+    }
+    const wait = performance.now() - t0
+    const appMs = Math.max(0, Math.round(wait - (res.results ?? []).reduce((a, r) => a + r.elapsedMs, 0)))
     const results = (res.results ?? []).map((r) => ({
       ...r,
+      appMs,
       from: r.from + offset,
       to: r.to + offset,
       rows: r.rows ?? [],
@@ -670,28 +796,55 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
       start: 0,
       total: r.hasMore ? null : (r.rows ?? []).length,
     }))
+    tab.inTx = !!res.inTx
     const schemaBefore = tab.schema
     if (res.currentSchema) tab.schema = res.currentSchema
     const ddl = results.filter((r) => !r.error && DDL_RE.test(stripLeadingComments(r.sql))).map((r) => stripLeadingComments(r.sql))
     if (ddl.length) treeChanged(tab.connId, [schemaBefore, tab.schema], ddl.join('\n'), ddl.some((x) => SCHEMA_DDL_RE.test(x)))
     for (const r of results) {
-      if (r.error) log(tab, 'error', r.error, short(r.sql))
+      if (r.error) log(tab, 'error', r.error, short(r.sql), r.sql, !!tab.tableRef)
       else if (r.columns && r.columns.length)
-        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sql))
-      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql))
+        log(tab, 'info', tr('{n}행 조회', { n: r.rows!.length + (r.hasMore ? '+' : '') }) + ` (${r.elapsedMs}ms)`, short(r.sentSql || r.sql), r.sql, !!tab.tableRef)
+      else log(tab, 'info', (r.rowsAffected >= 0 ? tr('{n}행 영향', { n: r.rowsAffected }) : tr('완료')) + ` (${r.elapsedMs}ms)`, short(r.sql), r.sql, !!tab.tableRef)
     }
     const grids = results.filter((r) => r.columns && r.columns.length)
     const failed = results.some((r) => r.error)
     tab.results = grids
     tab.activeResult = failed || grids.length === 0 ? -1 : grids.length - 1
+    timePaint(tab.results)
     return results
   } catch (e) {
     log(tab, 'error', errText(e))
     tab.activeResult = -1
+    tab.inTx = await api.TxOpen(tab.id).catch(() => false)
     return null
   } finally {
     tab.running = false
   }
+}
+
+/** Manual commit: commits or rolls back the tab's waiting changes. */
+export async function endTx(tab: Tab, commit: boolean) {
+  if (tab.running) return
+  tab.running = true
+  try {
+    await api.EndTx(tab.id, commit)
+    log(tab, 'info', commit ? tr('커밋함') : tr('롤백함'), commit ? 'COMMIT' : 'ROLLBACK')
+  } catch (e) {
+    log(tab, 'error', errText(e), commit ? 'COMMIT' : 'ROLLBACK')
+    tab.activeResult = -1
+  } finally {
+    tab.inTx = await api.TxOpen(tab.id).catch(() => false)
+    tab.running = false
+  }
+  // the grid shows what was rolled back
+  if (!commit && tab.tableRef) reloadTable(tab)
+}
+
+export function setManualCommit(tab: Tab, on: boolean) {
+  if (!on && tab.inTx) return toast(tr('커밋하지 않은 변경이 있습니다. 먼저 커밋하거나 롤백하세요'), 'error')
+  tab.manual = on
+  saveWorkspaceSoon()
 }
 
 /** Loaded rows that came from the database (rows added in the grid excluded). */
@@ -703,14 +856,40 @@ export function fetchedCount(r: StmtResult): number {
  * Appends the next page. Returns how many rows were dropped from the top
  * to keep the window small (the grid shifts its scroll by that much).
  */
+// Until the next paint: the frame runs after the DOM update, the timeout
+// after that frame is drawn.
+function timePaint(shown: StmtResult[]) {
+  const t1 = performance.now()
+  requestAnimationFrame(() => setTimeout(() => shown.forEach((r) => (r.renderMs = Math.round(performance.now() - t1)))))
+}
+
+// Fetches a page of a result. The time shown with the result becomes this
+// fetch's, and the log gets a line like a query's.
+async function timedPage(tab: Tab, r: StmtResult, from: number, call: () => Promise<FetchedPage>): Promise<FetchedPage> {
+  const t0 = performance.now()
+  const res = await call()
+  const n = (res.rows ?? []).length
+  r.elapsedMs = res.elapsedMs
+  r.fetchMs = res.fetchMs
+  r.appMs = Math.max(0, Math.round(performance.now() - t0 - res.elapsedMs))
+  r.renderMs = undefined
+  // the query as sent (with its LIMIT/OFFSET); none when the open cursor was read further
+  const text = tr('{n}행 조회', { n: n + (res.hasMore ? '+' : '') }) + (n ? ` (${from + 1}–${from + n})` : '') + ` (${res.elapsedMs}ms)`
+  if (res.sentSql) log(tab, 'info', text, short(res.sentSql), res.sentSql, true)
+  else log(tab, 'info', text + ' · ' + tr('열어 둔 결과에서 이어서 읽음'), undefined, undefined, true)
+  timePaint([r])
+  return res
+}
+
 export async function fetchMore(tab: Tab, r: StmtResult): Promise<number> {
   if (!r.hasMore || tab.loadingMore || tab.running) return 0
   if (!r.paged && !r.cursorId) return 0
   tab.loadingMore = true
   try {
-    const res = r.paged
-      ? await api.FetchPage(tab.id, tab.connId, r.sql, (r.start ?? 0) + fetchedCount(r), app.pageSize)
-      : await api.FetchMore(tab.id, r.cursorId, app.pageSize)
+    const from = (r.start ?? 0) + fetchedCount(r)
+    const res = await timedPage(tab, r, from, () =>
+      r.paged ? api.FetchPage(tab.id, tab.connId, r.sql, from, app.pageSize) : api.FetchMore(tab.id, r.cursorId, app.pageSize),
+    )
     const rows = res.rows ?? []
     // new rows go before rows added in the grid (those stay at the bottom)
     insertFetched(r, fetchedCount(r), rows)
@@ -733,7 +912,7 @@ export async function fetchPrev(tab: Tab, r: StmtResult): Promise<number> {
   tab.loadingPrev = true
   try {
     const n = Math.min(app.pageSize, start)
-    const res = await api.FetchPage(tab.id, tab.connId, r.sql, start - n, n)
+    const res = await timedPage(tab, r, start - n, () => api.FetchPage(tab.id, tab.connId, r.sql, start - n, n))
     const rows = res.rows ?? []
     insertFetched(r, 0, rows)
     r.start = start - rows.length
@@ -753,7 +932,7 @@ export async function jumpTo(tab: Tab, r: StmtResult, offset: number): Promise<b
   if (tabPending(tab) && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 이동할까요?', { n: tabPending(tab) })))) return false
   tab.loadingMore = true
   try {
-    const res = await api.FetchPage(tab.id, tab.connId, r.sql, offset, app.pageSize)
+    const res = await timedPage(tab, r, offset, () => api.FetchPage(tab.id, tab.connId, r.sql, offset, app.pageSize))
     if (r.edit) {
       r.edit.edits = {}
       r.edit.deleted = {}
@@ -858,6 +1037,26 @@ const sameTable = (a: Table, b: Table) => a.schema === b.schema && a.name === b.
  * Opens a table's data in a tab. With where (following a foreign key), a
  * tab already showing the table gets that filter.
  */
+/** A new tab to design a table in (the structure view), made with CREATE TABLE. */
+export async function openCreateTable(connId: string, schema: string) {
+  if (!(await connect(connId))) return
+  const mssql = connById(connId)?.driver === 'mssql'
+  const tab = openConsole(connId, { schema, sql: '', title: tr('새 테이블') })
+  tab.layout = 'results'
+  tab.tableRef = { schema, table: { name: '', type: 'TABLE', schema: mssql ? 'dbo' : '', comment: '', rows: -1 }, where: '', orderBy: '' }
+  tab.creating = true
+}
+
+/** The designed table was made: the tab becomes that table's tab. */
+export function tableCreated(tab: Tab, t: Table) {
+  if (!tab.tableRef) return
+  tab.creating = false
+  tab.tableRef.table = t
+  tab.title = t.name
+  saveWorkspaceSoon()
+  treeChanged(tab.connId, [tab.tableRef.schema], t.name)
+}
+
 export async function openTableData(connId: string, schema: string, t: Table, where?: string): Promise<Tab> {
   // The table is already open in a tab (pinned or preview): go there.
   const open = app.tabs.find(
@@ -975,6 +1174,17 @@ export async function openDDL(connId: string, schema: string, t: Table) {
   }
 }
 
+// ERD tabs: one per connection and schema; opening it again shows it.
+export const ERD_DRIVERS = ['mysql', 'mariadb']
+
+export function openErd(connId: string, schema: string) {
+  const t = app.tabs.find((x) => x.erd && x.connId === connId && x.schema === schema)
+  if (t?.detached) api.FocusTabWindow(t.id)
+  else if (t) app.activeTab = t.id
+  else openConsole(connId, { schema, title: `ERD: ${schema}` }).erd = true
+  saveWorkspaceSoon()
+}
+
 /**
  * Cmd/Alt+click on a foreign key cell: opens the referenced table filtered
  * to the row the value points at. The tab it came from is pinned so the
@@ -1031,16 +1241,175 @@ export async function renameTable(connId: string, schema: string, t: Table) {
     return
   }
   toast(`${t.name} → ${name}`)
-  for (const tab of app.tabs) {
-    const ref = tab.tableRef
-    if (tab.connId !== connId || !ref || ref.schema !== schema || !sameTable(ref.table, t)) continue
-    ref.table = { ...$state.snapshot(ref.table), name }
-    if (tab.title === t.name) tab.title = name
-    logStatements(tab, [st], tr(view ? '뷰 이름 바꿈' : '테이블 이름 바꿈'))
-    if (!tabPending(tab) && tab.results.length) reloadTable(tab) // its SELECT has the old name
+  for (const tab of retargetTable(connId, schema, t, { name })) logStatements(tab, [st], tr(view ? '뷰 이름 바꿈' : '테이블 이름 바꿈'))
+  await treeChanged(connId, [schema], st)
+}
+
+/**
+ * A schema's tables or routines as a grid (a catalog query, shown with the
+ * editor hidden; the same list opens the tab it already has).
+ */
+export async function openObjectList(connId: string, schema: string, kind: 'tables' | 'routines') {
+  const title = `${tr(kind === 'tables' ? '테이블 목록' : '루틴 목록')}: ${schema}`
+  const old = app.tabs.find((x) => x.connId === connId && x.title === title && !x.tableRef)
+  if (old) {
+    if (old.detached) api.FocusTabWindow(old.id)
+    else app.activeTab = old.id
+    // restored from the last session: results aren't kept
+    if (!old.results.length && !old.running) await runSQL(old, old.sql, -1)
+    return
+  }
+  if (!(await connect(connId))) return
+  let sql: string
+  try {
+    sql = await api.ObjectListSQL(connId, schema, kind)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  const tab = openConsole(connId, { schema, sql, title })
+  tab.layout = 'results'
+  await runSQL(tab, sql, -1)
+}
+
+/** A new console showing the connection's saved run log. */
+export function openRunLog(connId: string) {
+  const tab = openConsole(connId)
+  tab.logScope = 'conn'
+  tab.activeResult = -1
+}
+
+export const SCHEMA_DRIVERS = ['mysql', 'mariadb', 'postgres', 'mssql']
+
+/** Makes a schema (asks for the name) and opens it in the tree. */
+/** Schema comments: MariaDB (not MySQL, which has none), PostgreSQL, SQL Server. */
+export function schemaCommentable(c: ConnConfig): boolean {
+  if (c.driver === 'postgres' || c.driver === 'mssql' || c.driver === 'mariadb') return true
+  return c.driver === 'mysql' && /mariadb/i.test(app.conn[c.id]?.version ?? '')
+}
+
+/** Sets a schema's comment (empty removes it). */
+export async function setSchemaComment(connId: string, s: SchemaNode, v: string) {
+  if (v.trim() === (s.comment ?? '')) return
+  try {
+    await api.SetSchemaComment(connId, s.name, v)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  s.comment = v.trim()
+  toast(v.trim() ? tr('스키마 코멘트를 바꿨습니다') : tr('스키마 코멘트를 지웠습니다'))
+}
+
+export async function createSchema(connId: string) {
+  const name = (await askText(tr('스키마 만들기'), '', tr('만들기')))?.trim()
+  if (!name) return
+  let st: string
+  try {
+    st = await api.CreateSchema(connId, name)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 만듦', { name }))
+  await treeChanged(connId, [], st, true)
+  if (tabWindowId) return
+  // a filtered tree would hide it: show it by name
+  if (!schemaShown(connId, name)) {
+    const f = $state.snapshot(schemaFilter(connById(connId)))
+    await setSchemaFilter(connId, { ...f, names: [...f.names, name] })
+  }
+  const s = app.conn[connId]?.schemas.find((x) => x.name === name)
+  if (s && !s.expanded) {
+    s.expanded = true
+    await loadTables(connId, s)
+  }
+}
+
+/** Drops a schema and everything in it, after asking; tabs of its tables close. */
+export async function dropSchema(connId: string, name: string) {
+  if (!(await confirmBox(tr('스키마 “{name}”을(를) 삭제할까요? 안에 든 테이블과 데이터가 모두 사라지고 되돌릴 수 없습니다.', { name })))) return
+  let st: string
+  try {
+    st = await api.DropSchema(connId, name)
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 삭제함', { name }))
+  for (const tab of app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === name)) {
+    if (tab.detached) api.CloseTabWindow(tab.id)
+    api.CloseSession(tab.id)
+    app.tabs.splice(app.tabs.indexOf(tab), 1)
+    if (app.activeTab === tab.id) app.activeTab = app.tabs[app.tabs.length - 1]?.id ?? ''
+  }
+  saveWorkspaceSoon()
+  await treeChanged(connId, [], st, true)
+}
+
+// Tabs showing a table (its data, structure, DDL).
+const tabsOf = (connId: string, schema: string, t: Table) =>
+  app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === schema && sameTable(x.tableRef.table, t))
+
+/** Drops a table or view, after asking; its tabs close. */
+export async function dropTable(connId: string, schema: string, t: Table) {
+  const view = t.type.toUpperCase().includes('VIEW')
+  if (!(await confirmBox(tr(view ? '뷰 “{name}”을(를) 삭제할까요? 되돌릴 수 없습니다.' : '테이블 “{name}”을(를) 삭제할까요? 데이터도 함께 사라지고 되돌릴 수 없습니다.', { name: t.name })))) return
+  let st: string
+  try {
+    st = await api.DropTable(connId, schema, $state.snapshot(t))
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 삭제함', { name: t.name }))
+  for (const tab of tabsOf(connId, schema, t)) {
+    // (no asking about unapplied edits: there is nothing to apply them to)
+    if (tab.detached) api.CloseTabWindow(tab.id)
+    api.CloseSession(tab.id)
+    app.tabs.splice(app.tabs.indexOf(tab), 1)
+    if (app.activeTab === tab.id) app.activeTab = app.tabs[app.tabs.length - 1]?.id ?? ''
   }
   saveWorkspaceSoon()
   await treeChanged(connId, [schema], st)
+}
+
+/** Deletes every row of a table, after asking; its tabs read it again. */
+export async function truncateTable(connId: string, schema: string, t: Table) {
+  if (!(await confirmBox(tr('테이블 “{name}”의 모든 행을 지울까요? 되돌릴 수 없습니다.', { name: t.name })))) return
+  let st: string
+  try {
+    st = await api.TruncateTable(connId, schema, $state.snapshot(t))
+  } catch (e) {
+    toast(errText(e), 'error')
+    return
+  }
+  toast(tr('{name} 비움', { name: t.name }))
+  for (const tab of tabsOf(connId, schema, t)) {
+    logStatements(tab, [st], tr('테이블 비움'))
+    if (tab.results.length) reloadTable(tab)
+  }
+}
+
+/**
+ * A table was renamed or its comment changed: the tabs showing it follow
+ * (renamed: their data is read again, its SELECT has the old name).
+ * Returns those tabs.
+ */
+export function retargetTable(connId: string, schema: string, t: Table, patch: Partial<Table>): Tab[] {
+  const hit: Tab[] = []
+  for (const tab of app.tabs) {
+    const ref = tab.tableRef
+    if (tab.connId !== connId || !ref || ref.schema !== schema || !sameTable(ref.table, t)) continue
+    ref.table = { ...$state.snapshot(ref.table), ...patch }
+    if (patch.name) {
+      if (tab.title === t.name) tab.title = patch.name
+      if (!tabPending(tab) && tab.results.length) reloadTable(tab)
+    }
+    hit.push(tab)
+  }
+  saveWorkspaceSoon()
+  return hit
 }
 
 /** Default sort for newly opened tables: primary key, descending. */
@@ -1056,19 +1425,24 @@ async function applyPkDesc(connId: string, ref: TableRef) {
   }
 }
 
-/** Re-queries a table data tab from its filter / sort. */
 /** Re-runs a table tab's query (after a filter or sort change, or refresh). */
 export async function reloadTable(tab: Tab): Promise<boolean> {
   const ref = tab.tableRef
   if (!ref) return false
   if (tabPending(tab) && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 다시 조회할까요?', { n: tabPending(tab) })))) return false
-  // a tab restored from the last session: connect first
-  if (!(await connect(tab.connId))) return false
+  // Marked as opening until it runs: a restored tab's auto-load (which
+  // fires once the connection is up) then leaves it alone instead of
+  // running the same SELECT again.
+  tab.opening = true
   try {
+    // a tab restored from the last session: connect first
+    if (!(await connect(tab.connId))) return false
     tab.sql = await tableSelect(tab)
   } catch (e) {
     toast(errText(e), 'error')
     return false
+  } finally {
+    tab.opening = false
   }
   saveWorkspaceSoon()
   await runSQL(tab, tab.sql, -1)
@@ -1085,7 +1459,7 @@ export function pinTab(tab: Tab | undefined) {
 // ---------------------------------------------------------------- workspace
 
 // The saved form of a tab (workspace file, and what a tab window gets).
-export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef'>
+export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef' | 'erd' | 'manual'>
 
 function savedTab(t: Tab): SavedTab {
   return $state.snapshot({
@@ -1098,6 +1472,8 @@ function savedTab(t: Tab): SavedTab {
     preview: t.preview,
     layout: t.layout,
     tableRef: t.tableRef,
+    erd: t.erd,
+    manual: t.manual,
   })
 }
 
@@ -1124,11 +1500,14 @@ export function saveWorkspaceSoon() {
       zoom: app.zoom,
       orderShare: app.orderShare,
       gridColNumbers: app.gridColNumbers,
+      updateCheck: app.updateCheck,
+      updateSeen: app.updateSeen,
       ddlView: app.ddlMode,
+      erdAudit: app.erdAudit,
       theme: app.theme,
       lang: i18n.lang,
       sidebarHidden: app.sidebarHidden,
-      tabs: app.tabs.map(savedTab),
+      tabs: app.tabs.filter((t) => !t.creating).map(savedTab),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
   }, 600)
@@ -1153,6 +1532,9 @@ export async function loadWorkspace(tabs = true) {
     if (data.ddlView === 'table' || data.ddlView === 'sql') app.ddlMode = data.ddlView
     else if (data.ddlView === 'index') app.ddlMode = 'table' // was a view of its own
     if (typeof data.gridColNumbers === 'boolean') app.gridColNumbers = data.gridColNumbers
+    if (Array.isArray(data.erdAudit) && data.erdAudit.every((p: unknown) => typeof p === 'string')) app.erdAudit = data.erdAudit
+    if (typeof data.updateCheck === 'boolean') app.updateCheck = data.updateCheck
+    if (typeof data.updateSeen === 'string') app.updateSeen = data.updateSeen
     setLanguage(isLang(data.lang) ? data.lang : i18n.lang, false)
     if (typeof data.sidebarHidden === 'boolean') app.sidebarHidden = data.sidebarHidden
     if (typeof data.orderShare === 'number' && data.orderShare >= 0.1 && data.orderShare <= 0.8) app.orderShare = data.orderShare
@@ -1208,6 +1590,7 @@ function applySaved(t: Tab, s: SavedTab) {
   t.preview = s.preview
   t.layout = s.layout
   t.tableRef = s.tableRef
+  t.erd = s.erd
 }
 
 // Main window: move a tab into its own window.
@@ -1236,6 +1619,8 @@ function attach(id: string, s?: SavedTab) {
   t.results = []
   t.activeResult = 0
   app.activeTab = id
+  // (a console's open transaction lives on in its session)
+  api.TxOpen(id).then((v) => (t.inTx = v))
   saveWorkspaceSoon()
   if (t.tableRef && app.conn[t.connId]?.status === 'connected') reloadTable(t)
 }
@@ -1292,6 +1677,7 @@ export async function initTabWindow() {
   initConnEvents()
   onEvent<string>('tab-window:close', (id) => id === tabWindowId && backToMain())
   const tab = app.tabs[0]
+  tab.inTx = await api.TxOpen(tab.id).catch(() => false)
   if (await api.IsConnected(tab.connId).catch(() => false)) {
     await connect(tab.connId)
     if (tab.tableRef) reloadTable(tab)

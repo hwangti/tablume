@@ -1,8 +1,15 @@
 package dbx
 
 import (
+	"bytes"
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -784,8 +791,363 @@ func TestAlterColumns(t *testing.T) {
 			if defaultOf(c["a"].Default) != "" || c["a"].Comment != "" || defaultOf(c["b"].Default) != "" || c["b"].Comment != "" {
 				t.Errorf("after removal: a=%+v b=%+v", c["a"], c["b"])
 			}
+			// add a column: NOT NULL with a default fills the existing row
+			addReq := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl,
+				Add: []Column{{Name: "new_z", Type: newType[name][0], Default: "'q'", Comment: "cz"}, {Name: "new_n", Type: newType[name][1], Nullable: true}}}
+			prev, err := m.PreviewAlter(addReq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			if r, err := m.ApplyAlter(addReq); err != nil || r.Error != "" || r.Applied != len(prev) {
+				t.Fatalf("add: %+v %v", r, err)
+			}
+			c = cols()
+			if z := c["new_z"]; z.Nullable || !strings.Contains(z.Default, "q") || z.Comment != "cz" || !strings.Contains(z.Type, "40") {
+				t.Errorf("new_z: %+v", z)
+			}
+			if n, ok := c["new_n"]; !ok || !n.Nullable {
+				t.Errorf("new_n: %+v", n)
+			}
+			// drop a column (new_z has a default: a constraint on SQL Server)
+			// and set the table comment, twice (add, then change)
+			for _, tc := range []string{"tc1", "tc2"} {
+				cur := tbl
+				if ts, _ := m.Tables(tg.cfg.ID, tg.schema); true {
+					for _, x := range ts {
+						if strings.EqualFold(x.Name, tbl.Name) {
+							cur.Comment = x.Comment
+						}
+					}
+				}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: cur, TableComment: &tc}
+				if tc == "tc1" {
+					req.Drop = []string{c["new_z"].Name}
+				}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("drop/comment: %+v %v", r, err)
+				}
+			}
+			c = cols()
+			if _, ok := c["new_z"]; ok {
+				t.Errorf("new_z not dropped")
+			}
+			ts, _ := m.Tables(tg.cfg.ID, tg.schema)
+			for _, x := range ts {
+				if strings.EqualFold(x.Name, tbl.Name) && x.Comment != "tc2" {
+					t.Errorf("table comment: %q", x.Comment)
+				}
+			}
+			{ // comment and rename together, then the name back
+				cur, tc := tbl, "tc3"
+				cur.Comment = "tc2"
+				to := "alt_r"
+				if name == "oracle" {
+					to = "ALT_R"
+				}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: cur, TableComment: &tc, Rename: to}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("rename: %+v %v", r, err)
+				}
+				found := false
+				ts, _ := m.Tables(tg.cfg.ID, tg.schema)
+				for _, x := range ts {
+					if x.Name == to {
+						found = x.Comment == "tc3"
+					}
+				}
+				if !found {
+					t.Errorf("renamed table with its comment not found")
+				}
+				back := cur
+				back.Name = to
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: back, Rename: tbl.Name}); err != nil || r.Error != "" {
+					t.Fatalf("rename back: %+v %v", r, err)
+				}
+			}
+			{ // rename a column with a comment change; then back
+				up := func(x string) string {
+					if name == "oracle" {
+						return strings.ToUpper(x)
+					}
+					return x
+				}
+				c = cols()
+				old := c["b"]
+				nw := old
+				nw.Name, nw.Comment = "b_renamed", "rn"
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: old, New: nw}}}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("rename column: %+v %v", r, err)
+				}
+				c = cols()
+				if x, ok := c["b_renamed"]; !ok || x.Comment != "rn" || x.Name != up("b_renamed") {
+					t.Errorf("renamed: %+v", c)
+				}
+				back := c["b_renamed"]
+				nb := back
+				nb.Name = old.Name
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: back, New: nb}}}); err != nil || r.Error != "" {
+					t.Fatalf("rename back: %+v %v", r, err)
+				}
+				c = cols()
+				if name == "postgres" || name == "oracle" { // only the case typed differently: folds back, no rename
+					old := c["b"]
+					nw := old
+					nw.Name, nw.Comment = strings.ToUpper(old.Name), "same name"
+					if name == "oracle" {
+						nw.Name = strings.ToLower(old.Name)
+					}
+					req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: old, New: nw}}}
+					prev, _ := m.PreviewAlter(req)
+					t.Logf("%s", strings.Join(prev, ";\n"))
+					if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+						t.Fatalf("case-only rename: %+v %v", r, err)
+					}
+					if c = cols(); c["b"].Comment != "same name" || c["b"].Name != old.Name {
+						t.Errorf("after case-only rename: %+v", c)
+					}
+				}
+			}
+			{ // auto increment: off and on again where an existing column can
+				// change (MySQL/MariaDB, PostgreSQL); refused elsewhere. A new
+				// identity column everywhere but MySQL (one per table, id has it).
+				c = cols()
+				id := c["id"]
+				flip := func(on bool) ColumnAlter {
+					cur := cols()["id"]
+					nw := cur
+					nw.Extra = ""
+					if on {
+						nw.Extra = "auto_increment"
+					}
+					return ColumnAlter{Old: cur, New: nw}
+				}
+				switch name {
+				case "mariadb", "postgres":
+					want := name == "postgres" // pg: id starts without identity
+					for _, on := range []bool{want, !want} {
+						req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{flip(on)}}
+						prev, _ := m.PreviewAlter(req)
+						t.Logf("%s", strings.Join(prev, ";\n"))
+						if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+							t.Fatalf("auto %v: %+v %v", on, r, err)
+						}
+						if got := autoInc(cols()["id"]); got != on {
+							t.Errorf("auto: %v, want %v (%+v)", got, on, cols()["id"])
+						}
+					}
+					if name == "postgres" { // identity off and a default, in one change
+						on := flip(true)
+						if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{on}}); err != nil || r.Error != "" {
+							t.Fatalf("auto on: %+v %v", r, err)
+						}
+						off := flip(false)
+						off.New.Default = "0"
+						req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{off}}
+						prev, _ := m.PreviewAlter(req)
+						t.Logf("%s", strings.Join(prev, ";\n"))
+						if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+							t.Fatalf("auto off + default: %+v %v", r, err)
+						}
+						if got := cols()["id"]; autoInc(got) || defaultOf(got.Default) != "0" {
+							t.Errorf("id: %+v", got)
+						}
+						back := flip(false)
+						back.New.Default = ""
+						if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{back}}); err != nil || r.Error != "" {
+							t.Fatalf("drop default: %+v %v", r, err)
+						}
+					}
+				default:
+					if _, err := m.PreviewAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{flip(!autoInc(id))}}); err == nil {
+						t.Errorf("auto on an existing column: no error")
+					}
+				}
+				if name != "mariadb" {
+					typ := map[string]string{"postgres": "int", "mssql": "int", "oracle": "NUMBER"}[name]
+					req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Add: []Column{{Name: "seq_no", Type: typ, Extra: "auto_increment"}}}
+					prev, _ := m.PreviewAlter(req)
+					t.Logf("%s", strings.Join(prev, ";\n"))
+					if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+						t.Fatalf("add identity: %+v %v", r, err)
+					}
+					if name != "oracle" && !autoInc(cols()["seq_no"]) { // (Oracle's list shows no identity)
+						t.Errorf("seq_no: %+v", cols()["seq_no"])
+					}
+					sq := cols()["seq_no"].Name
+					if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Drop: []string{sq}}); err != nil || r.Error != "" {
+						t.Fatalf("drop identity col: %+v %v", r, err)
+					}
+				}
+				c = cols()
+			}
+			if name == "mariadb" { // engine
+				o, err := m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+				if err != nil || o.Engine != "InnoDB" || !slices.Contains(o.Engines, "MyISAM") {
+					t.Fatalf("options: %+v %v", o, err)
+				}
+				// collation and ON UPDATE: a new column with both, then each
+				// changed on its own (the other kept)
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Add: []Column{
+					{Name: "ts", Type: "timestamp", Nullable: true, Default: "CURRENT_TIMESTAMP", OnUpdate: "CURRENT_TIMESTAMP"},
+					{Name: "code", Type: "varchar(10)", Nullable: true, Collation: "utf8mb4_bin"}}}
+				prev, _ := m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("add ts/code: %+v %v", r, err)
+				}
+				o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+				if !strings.EqualFold(strings.TrimSuffix(o.Columns["ts"].OnUpdate, "()"), "current_timestamp") || o.Columns["code"].Collation != "utf8mb4_bin" {
+					t.Fatalf("options after add: %+v", o.Columns)
+				}
+				cs := cols()
+				ts, code := cs["ts"], cs["code"]
+				ts.OnUpdate, code.Collation = o.Columns["ts"].OnUpdate, "utf8mb4_bin"
+				nts, ncode := ts, code
+				nts.OnUpdate, nts.Comment = "", "no on update" // ON UPDATE off
+				ncode.Collation = "utf8mb4_general_ci"
+				req = AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: ts, New: nts}, {Old: code, New: ncode}}}
+				prev, _ = m.PreviewAlter(req)
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("change ts/code: %+v %v", r, err)
+				}
+				o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+				if o.Columns["ts"].OnUpdate != "" || o.Columns["code"].Collation != "utf8mb4_general_ci" {
+					t.Errorf("options after change: %+v", o.Columns)
+				}
+				// INVISIBLE: on, kept through another change, off
+				cs = cols()
+				code = cs["code"]
+				code.Collation = "utf8mb4_general_ci"
+				ncode = code
+				ncode.Invisible = true
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("invisible on: %+v %v", r, err)
+				}
+				code = cols()["code"]
+				ncode = code
+				ncode.Comment = "still hidden"
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("comment on invisible: %+v %v", r, err)
+				}
+				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); !o.Columns["code"].Invisible {
+					t.Errorf("INVISIBLE lost: %+v", o.Columns["code"])
+				}
+				code = cols()["code"]
+				code.Invisible, code.Collation = true, "utf8mb4_general_ci"
+				ncode = code
+				ncode.Invisible = false
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("invisible off: %+v %v", r, err)
+				}
+				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Columns["code"].Invisible {
+					t.Errorf("still invisible: %+v", o.Columns["code"])
+				}
+				// a plain comment change keeps them
+				cs = cols()
+				code = cs["code"]
+				ncode = code
+				ncode.Comment = "kept"
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: code, New: ncode}}}); err != nil || r.Error != "" {
+					t.Fatalf("comment: %+v %v", r, err)
+				}
+				if o, _ = m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Columns["code"].Collation != "utf8mb4_general_ci" {
+					t.Errorf("collation lost: %+v", o.Columns["code"])
+				}
+				// ON UPDATE and INVISIBLE on one column (MariaDB's EXTRA:
+				// "on update current_timestamp(), INVISIBLE"), restated by
+				// a comment change, then made visible
+				req = AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Add: []Column{
+					{Name: "upd", Type: "timestamp", Nullable: true, Default: "CURRENT_TIMESTAMP", OnUpdate: "CURRENT_TIMESTAMP", Invisible: true}}}
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("add upd: %+v %v", r, err)
+				}
+				withOpts := func() Column {
+					c := cols()["upd"]
+					o, _ := m.TableOptions(tg.cfg.ID, tg.schema, tbl)
+					c.OnUpdate, c.Invisible = o.Columns["upd"].OnUpdate, o.Columns["upd"].Invisible
+					return c
+				}
+				upd := withOpts()
+				if !upd.Nullable || !upd.Invisible || !strings.HasPrefix(strings.ToLower(upd.OnUpdate), "current_timestamp") {
+					t.Fatalf("upd after add: %+v", upd)
+				}
+				for _, step := range []func(c *Column){func(c *Column) { c.Comment = "restated" }, func(c *Column) { c.Invisible = false }} {
+					old := withOpts()
+					nw := old
+					step(&nw)
+					req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: old, New: nw}}}
+					prev, _ := m.PreviewAlter(req)
+					t.Logf("%s", strings.Join(prev, ";\n"))
+					if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+						t.Fatalf("upd change: %+v %v", r, err)
+					}
+					if got := withOpts(); got.Invisible != nw.Invisible || got.OnUpdate != old.OnUpdate || got.Comment != nw.Comment {
+						t.Errorf("upd: %+v, want invisible %v, on update %q", got, nw.Invisible, old.OnUpdate)
+					}
+				}
+				if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Drop: []string{"ts", "code", "upd"}}); err != nil || r.Error != "" {
+					t.Fatalf("drop ts/code: %+v %v", r, err)
+				}
+				for _, e := range []string{"MyISAM", "InnoDB"} {
+					if r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Engine: e}); err != nil || r.Error != "" {
+						t.Fatalf("engine %s: %+v %v", e, r, err)
+					}
+					if o, _ := m.TableOptions(tg.cfg.ID, tg.schema, tbl); o.Engine != e {
+						t.Errorf("engine: %q, want %s", o.Engine, e)
+					}
+				}
+			}
+			if name == "mariadb" { // reorder, and add in the middle
+				cs, _ := m.Columns(tg.cfg.ID, tg.schema, tbl)
+				var ch []ColumnAlter
+				for _, c := range cs {
+					ch = append(ch, ColumnAlter{Old: c, New: c})
+				}
+				// new_n first, a renamed to a2, mid added after it
+				for i := range ch {
+					if ch[i].Old.Name == "a" {
+						ch[i].New.Name = "a2"
+					}
+				}
+				order := []string{"new_n", "id", "a", "mid", "b"}
+				want := []string{"new_n", "id", "a2", "mid", "b"}
+				req := AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: ch, Order: order,
+					Add: []Column{{Name: "mid", Type: "int", Nullable: true}}}
+				prev, err := m.PreviewAlter(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("%s", strings.Join(prev, ";\n"))
+				if r, err := m.ApplyAlter(req); err != nil || r.Error != "" {
+					t.Fatalf("reorder: %+v %v", r, err)
+				}
+				cs, _ = m.Columns(tg.cfg.ID, tg.schema, tbl)
+				var got []string
+				for _, c := range cs {
+					got = append(got, c.Name)
+				}
+				if strings.Join(got, ",") != strings.Join(want, ",") {
+					t.Errorf("order: %v", got)
+				}
+				c = cols()
+				if !strings.Contains(strings.ToLower(c["id"].Extra), "auto_increment") {
+					t.Errorf("auto_increment lost: %+v", c["id"])
+				}
+			}
 			// a failing change reports its error
-			bad := c["a"]
+			bad, ok := c["a"]
+			if !ok {
+				bad = c["a2"] // renamed by the reorder step
+			}
 			nbad := bad
 			nbad.Type = "no_such_type_xyz"
 			r, err := m.ApplyAlter(AlterRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Changes: []ColumnAlter{{Old: bad, New: nbad}}})
@@ -829,5 +1191,596 @@ func TestOracleMviewListedOnce(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("TB_MV listed %d times", n)
+	}
+}
+
+func TestForeignKeys(t *testing.T) {
+	setup := map[string]string{
+		"mariadb":  "DROP TABLE IF EXISTS fk_c; DROP TABLE IF EXISTS fk_p; CREATE TABLE fk_p (a INT, b INT, PRIMARY KEY (a, b)); CREATE TABLE fk_c (id INT PRIMARY KEY, x INT, y INT)",
+		"postgres": "DROP TABLE IF EXISTS fk_c; DROP TABLE IF EXISTS fk_p; CREATE TABLE fk_p (a int, b int, PRIMARY KEY (a, b)); CREATE TABLE fk_c (id int PRIMARY KEY, x int, y int)",
+		"mssql":    "IF OBJECT_ID('dbo.fk_c') IS NOT NULL DROP TABLE dbo.fk_c;\nIF OBJECT_ID('dbo.fk_p') IS NOT NULL DROP TABLE dbo.fk_p;\nCREATE TABLE dbo.fk_p (a int NOT NULL, b int NOT NULL, PRIMARY KEY (a, b));\nCREATE TABLE dbo.fk_c (id int PRIMARY KEY, x int, y int)",
+		"oracle":   "BEGIN EXECUTE IMMEDIATE 'DROP TABLE fk_c'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nBEGIN EXECUTE IMMEDIATE 'DROP TABLE fk_p'; EXCEPTION WHEN OTHERS THEN NULL; END;\n/\nCREATE TABLE fk_p (a NUMBER, b NUMBER, PRIMARY KEY (a, b));\nCREATE TABLE fk_c (id NUMBER PRIMARY KEY, x NUMBER, y NUMBER)",
+	}
+	all := targets(t)
+	for name, q := range setup {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			res, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1})
+			if err != nil || res.Results[len(res.Results)-1].Error != "" {
+				t.Fatal(err, res.Results)
+			}
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE fk_c;\nDROP TABLE fk_p", Cursor: -1})
+			up := func(s string) string {
+				if name == "oracle" {
+					return strings.ToUpper(s)
+				}
+				return s
+			}
+			child, parent := Table{Name: up("fk_c"), Type: "TABLE"}, Table{Name: up("fk_p"), Type: "TABLE"}
+			if name == "mssql" {
+				child.Schema, parent.Schema = "dbo", "dbo"
+			}
+			onUpdate := "CASCADE"
+			if name == "oracle" {
+				onUpdate = ""
+			}
+			fk := TableFK{Name: up("fk_c_xy"), Columns: []string{up("x"), up("y")}, RefTable: parent, RefColumns: []string{up("a"), up("b")}, OnDelete: "CASCADE", OnUpdate: onUpdate}
+			req := FKRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: child, Create: []TableFK{fk}}
+			prev, err := m.PreviewForeignKeys(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			if r, err := m.ApplyForeignKeys(req); err != nil || r.Error != "" {
+				t.Fatalf("add: %+v %v", r, err)
+			}
+			got, err := m.ListForeignKeys(tg.cfg.ID, tg.schema, child)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("list: %+v %v", got, err)
+			}
+			g := got[0]
+			if g.Name != fk.Name || strings.Join(g.Columns, ",") != strings.Join(fk.Columns, ",") || strings.Join(g.RefColumns, ",") != strings.Join(fk.RefColumns, ",") ||
+				!strings.EqualFold(g.RefTable.Name, parent.Name) || g.RefSchema != "" || g.OnDelete != "CASCADE" || g.OnUpdate != onUpdate && !(name == "oracle" && g.OnUpdate == "") {
+				t.Errorf("listed: %+v", g)
+			}
+			if cs, _ := m.Columns(tg.cfg.ID, tg.schema, child); !strings.Contains(strings.ToLower(cs[1].FK), "fk_p") {
+				t.Errorf("column fk: %+v", cs[1])
+			}
+			req = FKRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: child, Drop: got}
+			prev, _ = m.PreviewForeignKeys(req)
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			if r, err := m.ApplyForeignKeys(req); err != nil || r.Error != "" {
+				t.Fatalf("drop: %+v %v", r, err)
+			}
+			if got, _ := m.ListForeignKeys(tg.cfg.ID, tg.schema, child); len(got) != 0 {
+				t.Errorf("after drop: %+v", got)
+			}
+		})
+	}
+}
+
+func TestCreateTable(t *testing.T) {
+	all := targets(t)
+	for _, name := range []string{"mariadb", "postgres", "mssql", "oracle"} {
+		tg := all[name]
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			tbl := Table{Name: "made_t", Comment: "만든 테이블"}
+			if name == "mssql" {
+				tbl.Schema = "dbo"
+			}
+			typ := map[string][3]string{"mariadb": {"int", "varchar(20)", "timestamp"}, "postgres": {"int", "varchar(20)", "timestamp"},
+				"mssql": {"int", "nvarchar(20)", "datetime2"}, "oracle": {"NUMBER", "VARCHAR2(20)", "TIMESTAMP"}}[name]
+			now := map[string]string{"mssql": "SYSDATETIME()", "oracle": "SYSTIMESTAMP"}[name]
+			if now == "" {
+				now = "CURRENT_TIMESTAMP"
+			}
+			req := CreateRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, Columns: []Column{
+				{Name: "id", Type: typ[0], PK: true, Extra: "auto_increment"},
+				{Name: "code", Type: typ[1], PK: true, Comment: "코드"},
+				{Name: "made_at", Type: typ[2], Nullable: true, Default: now},
+			}}
+			if name == "mariadb" {
+				req.Engine = "InnoDB"
+				req.Columns[0].PK = true // MySQL: auto increment needs the key; (id, code)
+			}
+			prev, err := m.PreviewCreateTable(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s", strings.Join(prev, ";\n"))
+			res, err := m.CreateTable(req)
+			if err != nil || res.Result.Error != "" {
+				t.Fatalf("create: %+v %v", res, err)
+			}
+			made := res.Table
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "DROP TABLE " + map[string]string{"oracle": "made_t"}[name] + map[bool]string{true: "", false: "made_t"}[name == "oracle"], Cursor: -1})
+			cs, err := m.Columns(tg.cfg.ID, tg.schema, made)
+			if err != nil || len(cs) != 3 {
+				t.Fatalf("columns: %+v %v", cs, err)
+			}
+			if !cs[0].PK || !cs[1].PK || cs[2].PK || cs[1].Comment != "코드" || !cs[2].Nullable {
+				t.Errorf("columns: %+v", cs)
+			}
+			if name != "oracle" && !autoInc(cs[0]) {
+				t.Errorf("id not auto: %+v", cs[0])
+			}
+			ts, _ := m.Tables(tg.cfg.ID, tg.schema)
+			found := false
+			for _, x := range ts {
+				if x.Name == made.Name {
+					found = x.Comment == "만든 테이블"
+				}
+			}
+			if !found {
+				t.Errorf("table %s with its comment not listed", made.Name)
+			}
+
+			// emptied, then dropped
+			ins := "INSERT INTO made_t (code) VALUES ('a')"
+			if name == "oracle" {
+				ins = "INSERT INTO made_t (id, code) VALUES (1, 'a')"
+			}
+			if r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: ins, Cursor: -1}); err != nil || len(r.Results) == 0 || r.Results[0].Error != "" {
+				t.Fatalf("insert: %+v %v", r, err)
+			}
+			st, err := m.TruncateTable(tg.cfg.ID, tg.schema, made)
+			if n, _ := m.CountRows(tg.cfg.ID, tg.schema, made, ""); err != nil || n != 0 {
+				t.Fatalf("%s: %v, %d rows", st, err, n)
+			}
+			if st, err := m.DropTable(tg.cfg.ID, tg.schema, made); err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+			ts, _ = m.Tables(tg.cfg.ID, tg.schema)
+			for _, x := range ts {
+				if x.Name == made.Name {
+					t.Errorf("%s still listed after DROP", made.Name)
+				}
+			}
+
+			st, err = m.CreateSchema(tg.cfg.ID, "made_s")
+			if name == "oracle" {
+				if err == nil {
+					t.Fatal("oracle: CreateSchema should refuse")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+			drop := map[string]string{"mariadb": "DROP DATABASE made_s", "mssql": "DROP DATABASE made_s"}[name]
+			if drop == "" {
+				drop = "DROP SCHEMA made_s"
+			}
+			defer m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, SQL: drop, Cursor: -1})
+			if l, _ := m.Schemas(tg.cfg.ID); !slices.Contains(l.Schemas, "made_s") {
+				t.Errorf("made_s not listed: %v", l.Schemas)
+			}
+			// with a table in it, opened through the pool (SQL Server: a
+			// pooled connection left in it must not block the drop)
+			in := Table{Name: "in_s"}
+			if name == "mssql" {
+				in.Schema = "dbo"
+			}
+			if res, err := m.CreateTable(CreateRequest{ConnID: tg.cfg.ID, Schema: "made_s", Table: in, Columns: []Column{{Name: "id", Type: typ[0]}}}); err != nil || res.Result.Error != "" {
+				t.Fatalf("create in made_s: %+v %v", res, err)
+			}
+			if st, err := m.DropSchema(tg.cfg.ID, "made_s"); err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+			if l, _ := m.Schemas(tg.cfg.ID); slices.Contains(l.Schemas, "made_s") {
+				t.Errorf("made_s still listed after drop")
+			}
+		})
+	}
+}
+
+// The table and routine lists: their catalog queries run and list items.
+func TestObjectList(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			if r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: tg.setup, Cursor: -1}); err != nil || r.Results[len(r.Results)-1].Error != "" {
+				t.Fatalf("setup: %+v %v", r, err)
+			}
+			for _, kind := range []string{"tables", "routines"} {
+				sql, err := m.ObjectListSQL(tg.cfg.ID, tg.schema, kind)
+				if name == "sqlite" && kind == "routines" {
+					if err == nil {
+						t.Error("sqlite routines: should refuse")
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: sql, Cursor: -1, Fetch: 1000})
+				if err != nil || len(r.Results) != 1 || r.Results[0].Error != "" {
+					t.Fatalf("%s: %+v %v", kind, r, err)
+				}
+				res := r.Results[0]
+				if kind == "tables" {
+					found := false
+					for _, row := range res.Rows {
+						for _, c := range row {
+							if s, _ := c.(string); strings.EqualFold(s, tg.table) {
+								found = true
+							}
+						}
+					}
+					if !found {
+						t.Errorf("tables: %s not listed in %d rows", tg.table, len(res.Rows))
+					}
+				}
+				t.Logf("%s: %v, %d rows", kind, res.Columns, len(res.Rows))
+			}
+		})
+	}
+}
+
+// A read-only connection reads but refuses changes, in Tablume and (MySQL,
+// PostgreSQL, SQLite) in the database session; UPDATE/DELETE without
+// WHERE wait for a confirmation.
+func TestReadOnlyAndConfirm(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			if r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: tg.setup, Cursor: -1}); err != nil || r.Results[len(r.Results)-1].Error != "" {
+				t.Fatalf("setup: %+v %v", r, err)
+			}
+			// without WHERE: asks, runs nothing
+			upd := "UPDATE " + tg.table + " SET name = name"
+			r, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: "SELECT 1 FROM " + tg.table + ";\n" + upd, Cursor: -1})
+			if err != nil || len(r.Confirm) != 1 || len(r.Results) != 0 {
+				t.Fatalf("confirm: %+v %v", r, err)
+			}
+			r, err = m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: upd, Cursor: -1, Confirmed: true})
+			if err != nil || len(r.Results) != 1 || r.Results[0].Error != "" || r.Results[0].RowsAffected != 3 {
+				t.Fatalf("confirmed: %+v %v", r, err)
+			}
+			m.Disconnect(tg.cfg.ID)
+
+			ro := tg.cfg
+			ro.ReadOnly = true
+			if _, err := m.Connect(ro); err != nil {
+				t.Fatal("read-only connect:", err)
+			}
+			defer m.Disconnect(ro.ID)
+			r, err = m.Execute(ExecRequest{TabID: "b", ConnID: ro.ID, Schema: tg.schema, SQL: "SELECT * FROM " + tg.table, Cursor: -1})
+			if err != nil || len(r.Results) != 1 || r.Results[0].Error != "" || len(r.Results[0].Rows) != 3 {
+				t.Fatalf("read-only select: %+v %v", r, err)
+			}
+			if _, err := m.Execute(ExecRequest{TabID: "b", ConnID: ro.ID, Schema: tg.schema, SQL: upd + " WHERE 1 = 0", Cursor: -1}); err == nil {
+				t.Error("read-only: UPDATE ran")
+			}
+			if _, err := m.DropTable(ro.ID, tg.schema, Table{Name: tg.table, Type: "TABLE"}); err == nil {
+				t.Error("read-only: DROP TABLE ran")
+			}
+			if info, err := m.EditInfo(ro.ID, tg.schema, []string{tg.table}, []string{"id"}); err != nil || info.Editable || info.Insertable {
+				t.Errorf("read-only: editable %+v %v", info, err)
+			}
+			switch name {
+			case "mariadb", "postgres", "sqlite": // the session itself
+				p, _ := m.pool(ro.ID)
+				if _, err := p.db.Exec("CREATE TABLE ro_probe (a INT)"); err == nil {
+					p.db.Exec("DROP TABLE ro_probe")
+					t.Error("read-only session: CREATE TABLE ran")
+				} else {
+					t.Log("session refused:", err)
+				}
+			}
+		})
+	}
+}
+
+func TestManualCommit(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			run := func(tab, q string, manual bool) ExecResponse {
+				t.Helper()
+				r, err := m.Execute(ExecRequest{TabID: tab, ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1, Manual: manual})
+				if err != nil || len(r.Results) == 0 || r.Results[len(r.Results)-1].Error != "" {
+					t.Fatalf("%s: %+v %v", q, r, err)
+				}
+				return r
+			}
+			run("a", tg.setup, false)
+			read := "SELECT name FROM " + tg.table + " WHERE id = 2"
+			// another tab, autocommit
+			name2 := func() string { return fmt.Sprint(run("b", read, false).Results[0].Rows[0][0]) }
+			set := func(v string) string { return "UPDATE " + tg.table + " SET name = '" + v + "' WHERE id = 2" }
+
+			if r := run("a", read, true); r.InTx {
+				t.Error("a read opened a transaction")
+			}
+			if r := run("a", set("x"), true); !r.InTx {
+				t.Fatal("change not held")
+			}
+			if name != "mssql" { // SQL Server's reader would wait for the lock
+				if v := name2(); v != "b" {
+					t.Errorf("uncommitted change seen by another tab: %s", v)
+				}
+			}
+			if _, err := m.Execute(ExecRequest{TabID: "a", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: read, Cursor: -1}); err == nil {
+				t.Error("switched to autocommit with changes pending")
+			}
+			if err := m.EndTx("a", false); err != nil || m.TxOpen("a") {
+				t.Fatal("rollback:", err)
+			}
+			if v := name2(); v != "b" {
+				t.Errorf("after rollback: %s", v)
+			}
+			run("a", set("x"), true)
+			if r := run("a", "COMMIT", true); r.InTx {
+				t.Error("COMMIT typed: still in a transaction")
+			}
+			if v := name2(); v != "x" {
+				t.Errorf("after typed COMMIT: %s", v)
+			}
+			run("a", set("y"), true)
+			if err := m.EndTx("a", true); err != nil {
+				t.Fatal("commit:", err)
+			}
+			if v := name2(); v != "y" {
+				t.Errorf("after commit: %s", v)
+			}
+			if r := run("a", set("b"), false); r.InTx {
+				t.Error("autocommit again: still in a transaction")
+			}
+			if v := name2(); v != "b" {
+				t.Errorf("autocommit again: %s", v)
+			}
+
+			// with nothing pending, a manual tab reads what others committed
+			run("a", read, true)
+			run("b", set("z"), false)
+			if v := fmt.Sprint(run("a", read, true).Results[0].Rows[0][0]); v != "z" {
+				t.Errorf("manual tab read a stale value: %s", v)
+			}
+			if name == "mariadb" || name == "oracle" { // DDL commits there
+				run("a", set("d"), true)
+				if r := run("a", "CREATE TABLE tx_tmp (a INT)", true); r.InTx {
+					t.Error("DDL: still in a transaction")
+				}
+				if r := run("a", set("e"), true); !r.InTx {
+					t.Error("change after DDL not held")
+				}
+				m.EndTx("a", false)
+				if v := name2(); v != "d" {
+					t.Errorf("after DDL and rollback: %s", v)
+				}
+				run("a", "DROP TABLE tx_tmp", false)
+			}
+
+			// grid edits in manual mode join the tab's transaction
+			info, err := m.EditInfo(tg.cfg.ID, tg.schema, []string{tg.table}, []string{"id", "name"})
+			if err != nil || !info.Editable {
+				t.Fatalf("edit info: %+v %v", info, err)
+			}
+			tbl, idc, namec := info.Table, info.Columns[0], info.Columns[1]
+			upd := func(id, v string) RowChange {
+				return RowChange{Kind: "update", Key: map[string]any{idc: id}, Values: map[string]any{namec: v}}
+			}
+			apply := func(cs ...RowChange) error {
+				_, err := m.ApplyChanges(ApplyRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: tbl, TabID: "a", Manual: true, Changes: cs})
+				return err
+			}
+			prev := name2()
+			if err := apply(upd("2", "g")); err != nil || !m.TxOpen("a") {
+				t.Fatal("grid edit in manual mode:", err)
+			}
+			if name != "mssql" {
+				if v := name2(); v != prev {
+					t.Errorf("uncommitted grid edit seen by another tab: %s", v)
+				}
+			}
+			// a batch that fails is undone to its savepoint; the earlier edit stays
+			if err := apply(upd("2", "h"), upd("999", "x")); err == nil {
+				t.Error("batch hitting no row applied")
+			}
+			if !m.TxOpen("a") {
+				t.Fatal("failed batch ended the transaction")
+			}
+			if r := run("a", read, true); fmt.Sprint(r.Results[0].Rows[0][0]) != "g" {
+				t.Errorf("after failed batch, in the transaction: %v", r.Results[0].Rows[0][0])
+			}
+			if err := m.EndTx("a", true); err != nil {
+				t.Fatal("commit grid edit:", err)
+			}
+			if v := name2(); v != "g" {
+				t.Errorf("grid edit after commit: %s", v)
+			}
+			// mssql: a nested BEGIN TRANSACTION the user typed is committed too
+			if name == "mssql" {
+				run("a", "BEGIN TRANSACTION", true)
+				run("a", set("n"), true)
+				if err := m.EndTx("a", true); err != nil {
+					t.Fatal(err)
+				}
+				if v := name2(); v != "n" {
+					t.Errorf("nested: %s", v)
+				}
+			}
+		})
+	}
+}
+
+func TestExport(t *testing.T) {
+	for name, tg := range targets(t) {
+		t.Run(name, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			run := func(q string) ExecResponse {
+				t.Helper()
+				r, err := m.Execute(ExecRequest{TabID: "e", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: q, Cursor: -1, Confirmed: true})
+				if err != nil {
+					t.Fatalf("%.200s: %v", q, err)
+				}
+				for _, x := range r.Results {
+					if x.Error != "" {
+						t.Fatalf("%.200s: %s", x.SQL, x.Error)
+					}
+				}
+				return r
+			}
+			run(tg.setup)
+			lit := `'it''s \ back'`
+			if name == "mariadb" { // MySQL reads \\ as one backslash
+				lit = `'it''s \\ back'`
+			}
+			run("UPDATE " + tg.table + " SET name = " + lit + " WHERE id = 3")
+			all := "SELECT * FROM " + tg.table + " ORDER BY id"
+			before := run(all).Results[0].Rows
+			if fmt.Sprint(before[2][1]) != `it's \ back` {
+				t.Errorf("setup: %v", before[2][1])
+			}
+			items := []Table{{Name: tg.table, Type: "TABLE"}}
+			export := func(format string, ddl, data bool) string {
+				var b bytes.Buffer
+				n, err := m.Export(context.Background(), &b, ExportRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Tables: items, Format: format, DDL: ddl, Data: data})
+				if err != nil || (data && n != 3) {
+					t.Fatalf("export %s: %d %v", format, n, err)
+				}
+				return b.String()
+			}
+
+			dump := export("sql", false, true)
+			run("DELETE FROM " + tg.table)
+			run(dump)
+			if after := run(all).Results[0].Rows; !reflect.DeepEqual(before, after) {
+				t.Errorf("round trip:\n%v\n%v\n%s", before, after, dump)
+			}
+			if ddl := export("sql", true, false); !strings.Contains(strings.ToUpper(ddl), "CREATE TABLE") {
+				t.Errorf("DDL: %s", ddl)
+			}
+
+			recs, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(export("csv", false, true), "\uFEFF"))).ReadAll()
+			if err != nil || len(recs) != 4 || !strings.EqualFold(recs[0][0], "id") {
+				t.Errorf("csv: %v %v", recs, err)
+			}
+			var objs []map[string]any
+			if err := json.Unmarshal([]byte(export("json", false, true)), &objs); err != nil || len(objs) != 3 {
+				t.Errorf("json: %v %v", objs, err)
+			}
+			if name == "mssql" { // values for an identity column
+				run("IF OBJECT_ID('dbo.idt') IS NOT NULL DROP TABLE dbo.idt;\nCREATE TABLE dbo.idt (id int IDENTITY PRIMARY KEY, v nvarchar(10));\nINSERT INTO dbo.idt (v) VALUES (N'a'), (N'b'), (N'c');\nDELETE FROM dbo.idt WHERE id = 2")
+				items = []Table{{Name: "idt", Type: "TABLE"}}
+				var b bytes.Buffer
+				if _, err := m.Export(context.Background(), &b, ExportRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Tables: items, Format: "sql", Data: true}); err != nil {
+					t.Fatal(err)
+				}
+				run("DELETE FROM dbo.idt")
+				run(b.String())
+				if r := run("SELECT id FROM dbo.idt ORDER BY id").Results[0].Rows; fmt.Sprint(r) != "[[1] [3]]" {
+					t.Errorf("identity: %v\n%s", r, b.String())
+				}
+				run("DROP TABLE dbo.idt")
+			}
+		})
+	}
+}
+
+// BIT came as raw bytes (b'1' showed as a control character), and an edit
+// sent '1' as a string, which is 0x31.
+func TestMySQLBit(t *testing.T) {
+	tg := targets(t)["mariadb"]
+	m := NewManager()
+	if _, err := m.Connect(tg.cfg); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Disconnect(tg.cfg.ID)
+	run := func(sql string) ExecResponse {
+		t.Helper()
+		res, err := m.Execute(ExecRequest{TabID: "b", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: sql, Cursor: -1})
+		if err != nil || res.Results[len(res.Results)-1].Error != "" {
+			t.Fatal(err, res.Results)
+		}
+		return res
+	}
+	defer run("DROP TABLE IF EXISTS bits")
+	run("DROP TABLE IF EXISTS bits; CREATE TABLE bits (id INT PRIMARY KEY, f BIT(1), w BIT(10)); INSERT INTO bits VALUES (1, b'1', b'1000000010'), (2, b'0', NULL)")
+	rows := run("SELECT id, f, w FROM bits ORDER BY id").Results[0].Rows
+	if rows[0][1] != "1" || rows[0][2] != "514" || rows[1][1] != "0" || rows[1][2] != nil {
+		t.Fatalf("read %v", rows)
+	}
+	info, err := m.EditInfo(tg.cfg.ID, tg.schema, []string{"bits"}, []string{"id", "f", "w"})
+	if err != nil || !info.Editable {
+		t.Fatal(err, info)
+	}
+	n, err := m.ApplyChanges(ApplyRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: info.Table, Changes: []RowChange{
+		{Kind: "update", Key: map[string]any{"id": "1"}, Values: map[string]any{"f": "0", "w": "3"}},
+		{Kind: "update", Key: map[string]any{"id": "2"}, Values: map[string]any{"f": "1"}},
+		{Kind: "insert", Values: map[string]any{"id": "3", "f": "1", "w": "1023"}},
+	}})
+	if err != nil || n != 3 {
+		t.Fatal(n, err)
+	}
+	rows = run("SELECT id, f, w FROM bits ORDER BY id").Results[0].Rows
+	if rows[0][1] != "0" || rows[0][2] != "3" || rows[1][1] != "1" || rows[2][1] != "1" || rows[2][2] != "1023" {
+		t.Fatalf("after edit %v", rows)
+	}
+}
+
+// Schema comments: set, listed with the schemas, changed, removed.
+func TestSchemaComment(t *testing.T) {
+	names := map[string]string{"mariadb": "cmt_db", "postgres": "cmt_schema", "mssql": "cmt_db"}
+	for driver, name := range names {
+		tg := targets(t)[driver]
+		t.Run(driver, func(t *testing.T) {
+			m := NewManager()
+			if _, err := m.Connect(tg.cfg); err != nil {
+				t.Fatal(err)
+			}
+			defer m.Disconnect(tg.cfg.ID)
+			m.DropSchema(tg.cfg.ID, name)
+			if _, err := m.CreateSchema(tg.cfg.ID, name); err != nil {
+				t.Fatal(err)
+			}
+			defer m.DropSchema(tg.cfg.ID, name)
+			comment := func() string {
+				t.Helper()
+				l, err := m.Schemas(tg.cfg.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return l.Comments[name]
+			}
+			for _, c := range []string{"고객 '관리' \\ 스키마", "바뀐 설명", ""} {
+				if st, err := m.SetSchemaComment(tg.cfg.ID, name, c); err != nil {
+					t.Fatalf("%s: %v", st, err)
+				}
+				if got := comment(); got != c {
+					t.Errorf("after %q: %q", c, got)
+				}
+			}
+			// removing one that isn't there
+			if st, err := m.SetSchemaComment(tg.cfg.ID, name, ""); err != nil {
+				t.Fatalf("%s: %v", st, err)
+			}
+		})
 	}
 }

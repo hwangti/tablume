@@ -166,6 +166,35 @@ func (a *App) PreviewAlter(req dbx.AlterRequest) ([]string, error) { return a.db
 
 func (a *App) ApplyAlter(req dbx.AlterRequest) (dbx.AlterResult, error) { return a.db.ApplyAlter(req) }
 
+// SchemaGraph returns a schema's tables, columns and foreign keys for the ERD.
+func (a *App) SchemaGraph(id, schema string) (dbx.SchemaGraph, error) {
+	return a.db.SchemaGraph(id, schema)
+}
+
+func (a *App) PreviewCreateTable(req dbx.CreateRequest) ([]string, error) {
+	return a.db.PreviewCreateTable(req)
+}
+
+func (a *App) CreateTable(req dbx.CreateRequest) (dbx.CreateResult, error) {
+	return a.db.CreateTable(req)
+}
+
+func (a *App) TableOptions(id, schema string, t dbx.Table) (dbx.TableOptions, error) {
+	return a.db.TableOptions(id, schema, t)
+}
+
+func (a *App) ListForeignKeys(id, schema string, t dbx.Table) ([]dbx.TableFK, error) {
+	return a.db.ListForeignKeys(id, schema, t)
+}
+
+func (a *App) PreviewForeignKeys(req dbx.FKRequest) ([]string, error) {
+	return a.db.PreviewForeignKeys(req)
+}
+
+func (a *App) ApplyForeignKeys(req dbx.FKRequest) (dbx.AlterResult, error) {
+	return a.db.ApplyForeignKeys(req)
+}
+
 func (a *App) ListIndexes(id, schema string, t dbx.Table) ([]dbx.Index, error) {
 	return a.db.ListIndexes(id, schema, t)
 }
@@ -174,6 +203,45 @@ func (a *App) PreviewIndexes(req dbx.IndexRequest) ([]string, error) { return a.
 
 func (a *App) ApplyIndexes(req dbx.IndexRequest) (dbx.AlterResult, error) {
 	return a.db.ApplyIndexes(req)
+}
+
+// AppendLog adds what a tab ran to its connection's run log.
+func (a *App) AppendLog(id string, entries []store.LogEntry) error {
+	return a.store.AppendLog(id, entries)
+}
+
+// ReadLog returns a connection's run log, newest first, filtered by q.
+func (a *App) ReadLog(id, q string, limit int) ([]store.LogEntry, error) {
+	return a.store.ReadLog(id, q, limit)
+}
+
+// ClearLog deletes a connection's run log.
+func (a *App) ClearLog(id string) error { return a.store.ClearLog(id) }
+
+// ObjectListSQL returns a query listing a schema's tables or routines ("tables", "routines").
+func (a *App) ObjectListSQL(id, schema, kind string) (string, error) {
+	return a.db.ObjectListSQL(id, schema, kind)
+}
+
+// CreateSchema makes a schema (MySQL, SQL Server: a database); returns the statement it ran.
+func (a *App) CreateSchema(id, name string) (string, error) { return a.db.CreateSchema(id, name) }
+
+// DropSchema drops a schema and what is in it; returns the statement it ran.
+func (a *App) DropSchema(id, name string) (string, error) { return a.db.DropSchema(id, name) }
+
+// SetSchemaComment sets or (empty) removes a schema's comment; returns the statement it ran.
+func (a *App) SetSchemaComment(id, name, comment string) (string, error) {
+	return a.db.SetSchemaComment(id, name, comment)
+}
+
+// DropTable drops a table or view; returns the statement it ran.
+func (a *App) DropTable(id, schema string, t dbx.Table) (string, error) {
+	return a.db.DropTable(id, schema, t)
+}
+
+// TruncateTable deletes every row of a table; returns the statement it ran.
+func (a *App) TruncateTable(id, schema string, t dbx.Table) (string, error) {
+	return a.db.TruncateTable(id, schema, t)
 }
 
 // RenameTable renames a table or view; returns the statement it ran.
@@ -224,6 +292,10 @@ func (a *App) FetchMore(tabID, cursorID string, n int) (dbx.FetchResponse, error
 
 func (a *App) Cancel(tabID string)       { a.db.Cancel(tabID) }
 func (a *App) CloseSession(tabID string) { a.db.CloseSession(tabID) }
+
+// EndTx commits (or rolls back) a console tab's changes in manual commit.
+func (a *App) EndTx(tabID string, commit bool) error { return a.db.EndTx(tabID, commit) }
+func (a *App) TxOpen(tabID string) bool              { return a.db.TxOpen(tabID) }
 
 // ---------------------------------------------------------------- files
 

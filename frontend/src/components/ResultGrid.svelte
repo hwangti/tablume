@@ -224,7 +224,10 @@
   // The "load previous rows" bar takes a row of its own above the data.
   let TOP_PAD = $derived(canLoadPrev || loadingPrev ? ROW_H : 0)
   let BODY_T = $derived(HEAD_H + TOP_PAD)
-  const OVERSCAN = 10
+  // Rows / pixels rendered beyond the view on each side, so a fast scroll
+  // (painted before the update lands in WKWebView) doesn't show blank areas.
+  const OVERSCAN = 20
+  const OVERSCAN_X = 400
 
   let scroller: HTMLDivElement
   let scrollTop = $state(0)
@@ -292,6 +295,9 @@
     storeLayout()
   }
 
+  // primary key values in semi-bold
+  let pkCol = $derived(columns.map((_, i) => !!info?.keys?.[i]?.includes('PK')))
+
   function keyIcons(c: number): { icon: string; color: string; label: string }[] {
     const k = info?.keys?.[c]
     if (!k) return []
@@ -349,6 +355,7 @@
       scroller.scrollTop = r.top
       scroller.scrollLeft = r.left
       scrollTop = scroller.scrollTop
+      scrollLeft = scroller.scrollLeft
       saveView()
     })
   })
@@ -363,15 +370,40 @@
     return Math.min(w, 60)
   }
 
-  function guessWidth(c: ResultColumn, i: number): number {
+  // A column's first width from its header and values (an estimate from
+  // the first rows, capped).
+  function guessWidth(c: ResultColumn, i: number, scan = 200, max = 420): number {
     // name + type + padding, plus room for a key icon and the column number
     const head = c.name.length * 7.6 + c.type.length * 6.2 + 34 + 18 + (app.gridColNumbers ? 14 : 0)
     let len = 4
-    for (let r = 0; r < Math.min(rows.length, 200); r++) {
+    for (let r = 0; r < Math.min(rows.length, scan); r++) {
       const v = rows[r][i]
       len = Math.max(len, v === null ? 6 : textWidth(v))
     }
-    return Math.round(Math.max(56, Math.min(420, Math.max(head, len * 7.6 + 18))))
+    return Math.round(Math.max(56, Math.min(max, Math.max(head, len * 7.6 + 18))))
+  }
+
+  // Fitting a column (double-click on its border): the text measured in the
+  // grid's own fonts, the header as wide as it wants to be.
+  let measureCtx: CanvasRenderingContext2D | null = null
+  function fitWidth(c: number, th: HTMLElement): number {
+    const prev = th.style.width
+    th.style.width = 'max-content'
+    let w = th.getBoundingClientRect().width
+    th.style.width = prev
+    const td = scroller.querySelector('.td') as HTMLElement | null
+    if (!td) return Math.max(56, Math.round(w))
+    const cs = getComputedStyle(td)
+    measureCtx ??= document.createElement('canvas').getContext('2d')
+    if (!measureCtx) return guessWidth(columns[c], c, Infinity, 1000)
+    // (the computed `font` shorthand can be empty: built from its parts)
+    measureCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+    const extra = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 2 // + border, rounding
+    for (const ri of order) {
+      const v = val(ri, c)
+      w = Math.max(w, measureCtx.measureText(v === null ? '<null>' : display(v)).width + extra)
+    }
+    return Math.max(56, Math.min(1000, Math.ceil(w)))
   }
 
   // Row order: identity, or sorted by one column (only loaded rows).
@@ -406,7 +438,25 @@
   let visible = $derived(order.slice(first, last).map((ri, k) => ({ ri, vi: first + k })))
   let numW = $derived(Math.max(44, String(rowBase + rows.length).length * 8 + 20))
   let cw = $derived(widths.map((w) => Math.round(w)))
-  let totalW = $derived(numW + vc.reduce((a, i) => a + (cw[i] ?? 0), 0))
+  // colX[p]: left edge of the column at position p; the last entry is the total width.
+  let colX = $derived.by(() => {
+    const x = [numW]
+    for (const c of vc) x.push(x[x.length - 1] + (cw[c] ?? 0))
+    return x
+  })
+  let totalW = $derived(colX[vc.length])
+  // Columns in (or near) the view: only these cells are rendered per row.
+  let cFirst = $derived.by(() => {
+    let p = 0
+    while (p < vc.length - 1 && colX[p + 1] <= scrollLeft + numW - OVERSCAN_X) p++
+    return p
+  })
+  let cLast = $derived.by(() => {
+    let p = cFirst
+    while (p < vc.length && colX[p] < scrollLeft + viewW + OVERSCAN_X) p++
+    return Math.max(p, cFirst + 1)
+  })
+  let vcols = $derived(vc.slice(cFirst, cLast).map((c, k) => ({ c, p: cFirst + k })))
   // The "load more / previous" bars span the visible width. They must end
   // inside the table: a bar reaching past it (scrollLeft is fractional when
   // zoomed) widens the scroll area, and scrolling right never ends.
@@ -491,9 +541,23 @@
     return true
   }
 
+  // Alt released after Alt+click would go to the browser's (or Windows')
+  // menu, which then keeps the keyboard and the wheel until a click; the
+  // desktop app also stops it natively (altmenu_windows.go).
+  function swallowAltUp() {
+    const up = (k: KeyboardEvent) => {
+      if (k.key !== 'Alt') return
+      k.preventDefault()
+      removeEventListener('keyup', up, true)
+    }
+    addEventListener('keyup', up, true)
+    setTimeout(() => removeEventListener('keyup', up, true), 10000)
+  }
+
   function cellDown(e: MouseEvent, vi: number, c: number) {
     if (e.button === 0 && linkKey(e) && !e.shiftKey && follow(vi, c)) {
       e.preventDefault()
+      if (e.altKey) swallowAltUp()
       return
     }
     if (e.button === 2 && isSel(vi, c)) return
@@ -525,11 +589,13 @@
     const top = TOP_PAD + vi * ROW_H
     if (top < scroller.scrollTop) scroller.scrollTop = top
     else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight - HEAD_H) scroller.scrollTop = top + ROW_H - scroller.clientHeight + HEAD_H + 12
-    let left = numW
-    for (let i = 0; i < c; i++) left += cw[vc[i]]
-    const right = left + cw[vc[c]]
+    const left = colX[c]
+    const right = colX[c + 1]
     if (left - numW < scroller.scrollLeft) scroller.scrollLeft = left - numW
     else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth + 12
+    // render the target cell now, not after the (async) scroll event
+    scrollTop = scroller.scrollTop
+    scrollLeft = scroller.scrollLeft
   }
 
   // edited cells in the selection, as [row, col]
@@ -545,9 +611,63 @@
     revertCells(result, editedInSelection())
   }
 
+  // ---- find in the loaded rows (Cmd/Ctrl+F): matching cells are marked,
+  // Enter / Shift+Enter moves between them.
+  let findOpen = $state(false)
+  let findQ = $state('')
+  let findIdx = $state(-1)
+  let findInput = $state<HTMLInputElement>()
+  let fq = $derived(findOpen ? findQ.trim().toLowerCase() : '')
+  const hit = (v: Cell) => !!fq && v !== null && v.toLowerCase().includes(fq)
+  let found = $derived.by(() => {
+    const out: { r: number; p: number }[] = []
+    if (!fq) return out
+    for (let r = 0; r < order.length; r++) for (let p = 0; p < vc.length; p++) if (hit(val(order[r], vc[p]))) out.push({ r, p })
+    return out
+  })
+
+  export function openFind() {
+    findOpen = true
+    requestAnimationFrame(() => (findInput?.focus(), findInput?.select()))
+  }
+
+  function closeFind() {
+    findOpen = false
+    findIdx = -1
+    scroller.focus({ preventScroll: true })
+  }
+
+  function goFind(d: 1 | -1) {
+    const n = found.length
+    if (!n) return
+    findIdx = (findIdx < 0 ? (d === 1 ? 0 : n - 1) : findIdx + d + n) % n
+    const m = found[findIdx]
+    anchor = focus = { r: m.r, c: m.p }
+    scrollIntoView(m.r, m.p)
+  }
+
+  function findKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      goFind(e.shiftKey ? -1 : 1)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      closeFind()
+    }
+  }
+
   function keydown(e: KeyboardEvent) {
     const mod = e.metaKey || e.ctrlKey
-    if (e.key === 'Enter' && (mod || e.altKey)) {
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      openFind()
+      return
+    }
+    if (e.key === 'Escape' && findOpen) {
+      e.preventDefault()
+      closeFind()
+      return
+    }    if (e.key === 'Enter' && (mod || e.altKey)) {
       e.preventDefault()
       onapply?.()
       return
@@ -685,9 +805,7 @@
   let dragged = false
 
   function edgeX(p: number): number {
-    let x = numW
-    for (let i = 0; i < p; i++) x += cw[vc[i]]
-    return x
+    return colX[p]
   }
 
   function headDown(e: MouseEvent, p: number) {
@@ -756,6 +874,24 @@
   onblur={() => (linkHeld = false)}
 />
 
+<div class="gwrap">
+{#if findOpen}
+  <div class="find" style:top="{HEAD_H + 6}px">
+    <input
+      bind:this={findInput}
+      bind:value={findQ}
+      oninput={() => ((findIdx = -1), goFind(1))}
+      onkeydown={findKey}
+      placeholder={t('결과에서 찾기')}
+      title={hasMore ? t('불러온 행에서만 찾습니다') : ''}
+      spellcheck="false"
+    />
+    <span class="fcount" class:none={!!fq && !found.length}>{fq ? (found.length ? `${findIdx + 1 || '-'}/${num(found.length)}` : t('없음')) : ''}</span>
+    <button class="fbtn" title="{t('이전')} (Shift+Enter)" onclick={() => goFind(-1)} disabled={!found.length}><Icon name="chevronUp" size={14} /></button>
+    <button class="fbtn" title="{t('다음')} (Enter)" onclick={() => goFind(1)} disabled={!found.length}><Icon name="chevronDown" size={14} /></button>
+    <button class="fbtn" title="{t('닫기')} (Esc)" onclick={closeFind}><Icon name="close" size={14} /></button>
+  </div>
+{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="grid"
@@ -803,7 +939,13 @@
           {#if shownSort?.col === c}<span class="sort">{shownSort.dir === 1 ? '▲' : '▼'}</span>{/if}
           <span class="type">{col.type.toLowerCase()}</span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span class="resize" onmousedown={(e) => startResize(e, c)}></span>
+          <span
+            class="resize"
+            title={t('끌어서 너비 조절 · 두 번 클릭하면 내용에 맞춤')}
+            onmousedown={(e) => startResize(e, c)}
+            onclick={(e) => e.stopPropagation()}
+            ondblclick={(e) => (e.stopPropagation(), (widths[c] = fitWidth(c, e.currentTarget.parentElement as HTMLElement)))}
+          ></span>
         </div>
       {/each}
     </div>
@@ -829,7 +971,8 @@
         >
           {st?.added[ri] ? '+' : rowBase + vi + 1}
         </div>
-        {#each vc as c, p (c)}
+        <div class="pad" style:width="{colX[cFirst] - numW}px"></div>
+        {#each vcols as { c, p } (c)}
           {@const v = val(ri, c)}
           {@const isFocus = focus?.r === vi && focus?.c === p}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -838,6 +981,8 @@
             class:sel={isSel(vi, p)}
             class:focus={isFocus}
             class:same={!!same && same.c === c && v === same.v && !isFocus}
+            class:hit={hit(v)}
+            class:hit-cur={findIdx >= 0 && found[findIdx]?.r === vi && found[findIdx]?.p === p}
             class:right={numeric[c]}
             class:v-num={kind[c] === 'num'}
             class:v-date={kind[c] === 'date'}
@@ -847,6 +992,7 @@
             class:deleted={st?.deleted[ri]}
             class:editing={editing?.ri === ri && editing?.c === c}
             class:fk={!!onfollow && !!info?.refs?.[c] && v !== null}
+            class:pk={pkCol[c] && v !== null}
             style:width="{cw[c]}px"
             onmousedown={(e) => cellDown(e, vi, p)}
             onmouseover={(e) => cellOver(e, vi, p)}
@@ -894,6 +1040,7 @@
     <div class="empty">{t('결과 행이 없습니다')}</div>
   {/if}
 </div>
+</div>
 
 {#snippet mi(name: string)}<span class="mi"><Icon {name} size={14} /></span>{/snippet}
 
@@ -909,6 +1056,7 @@
       >
     {/if}
     <button onclick={selectAll}>{@render mi('selectAll')}{t('전체 선택')}</button>
+    <button onclick={openFind}>{@render mi('filter')}{t('결과에서 찾기')} <kbd>{modKey}F</kbd></button>
     {#if info?.editable || info?.insertable}
       <hr />
       {#if focus}<button onclick={() => focus && startEdit(focus.r, focus.c)}>{@render mi('edit')}{t('편집')} <kbd>Enter</kbd></button>{/if}
@@ -1055,6 +1203,10 @@
     height: var(--row-h);
   }
 
+  .pad {
+    flex-shrink: 0;
+  }
+
   .tr.alt {
     background: var(--grid-alt);
   }
@@ -1133,13 +1285,85 @@
   .cell-input.with-dots {
     padding-right: 26px; /* room for the "…" button */
   }
+  .td.pk {
+    font-weight: 600;
+  }
+  /* a value that leads to its row (⌘/Alt/Ctrl+click): underlined, faintly
+     until the key is held */
+  .td.fk {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 2px;
+  }
   .grid.link-held .td.fk:hover {
     cursor: pointer;
     color: var(--accent);
-    text-decoration: underline;
+    text-decoration-color: currentColor;
   }
   .td.same {
     background: var(--cell-same);
+  }
+  .td.hit {
+    background: rgba(224, 168, 75, 0.28);
+  }
+  .td.hit-cur {
+    background: rgba(224, 168, 75, 0.6);
+    color: var(--text);
+  }
+  .gwrap {
+    position: relative;
+    height: 100%;
+  }
+  .find {
+    position: absolute;
+    right: 16px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+  .find input {
+    width: 180px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+  .fcount {
+    min-width: 44px;
+    padding: 0 4px;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .fcount.none {
+    color: var(--danger);
+  }
+  .fbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .fbtn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .fbtn:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .dots {
     position: absolute;

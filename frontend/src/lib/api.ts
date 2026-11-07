@@ -1,8 +1,8 @@
 import * as App from '../../bindings/tablume/internal/app/app'
 import { t } from './i18n.svelte'
 import { isWeb } from './platform'
-import { downloadText, uploadText } from './webfiles.svelte'
-import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex } from './types'
+import { downloadText, uploadText, uploadBytes, downloadURL } from './webfiles.svelte'
+import type { Routine, Column, ConnConfig, ExecResponse, SchemaList, SchemaFilter, Table, Cell, EditInfo, RowChange, Index, NewIndex, SchemaGraph, TableFK, LogEntry, ExportRequest } from './types'
 
 export interface AlterResult {
   applied: number
@@ -19,11 +19,40 @@ export interface IndexRequest {
   create: NewIndex[]
 }
 
+export interface FKRequest {
+  connId: string
+  schema: string
+  table: Table
+  drop: TableFK[]
+  create: TableFK[]
+}
+
+export interface CreateRequest {
+  connId: string
+  schema: string
+  table: Table
+  columns: Column[]
+  engine: string
+}
+
 export interface AlterRequest {
   connId: string
   schema: string
   table: Table
   changes: { old: Column; new: Column }[]
+  add: Column[]
+  order?: string[]
+  drop?: string[]
+  tableComment?: string
+  rename?: string
+  engine?: string
+}
+
+export interface TableOptions {
+  engine: string
+  engines: string[] | null
+  columns: Record<string, { collation: string; onUpdate: string; invisible: boolean }> | null
+  collations: string[] | null
 }
 
 // Typed view over the generated Wails bindings, using our own types
@@ -47,17 +76,33 @@ interface Api {
   ListRoutines(id: string, schema: string): Promise<Routine[]>
   RoutineSource(id: string, schema: string, r: Routine): Promise<string>
   PreviewAlter(req: AlterRequest): Promise<string[]>
+  PreviewCreateTable(req: CreateRequest): Promise<string[] | null>
+  CreateTable(req: CreateRequest): Promise<{ table: Table; result: AlterResult }>
+  TableOptions(id: string, schema: string, t: Table): Promise<TableOptions>
   ApplyAlter(req: AlterRequest): Promise<AlterResult>
   ListIndexes(id: string, schema: string, t: Table): Promise<Index[] | null>
   PreviewIndexes(req: IndexRequest): Promise<string[] | null>
   ApplyIndexes(req: IndexRequest): Promise<AlterResult>
+  ListForeignKeys(id: string, schema: string, t: Table): Promise<TableFK[] | null>
+  PreviewForeignKeys(req: FKRequest): Promise<string[] | null>
+  ApplyForeignKeys(req: FKRequest): Promise<AlterResult>
   RenameTable(id: string, schema: string, t: Table, name: string): Promise<string>
+  AppendLog(id: string, entries: LogEntry[]): Promise<void>
+  ReadLog(id: string, q: string, limit: number): Promise<LogEntry[] | null>
+  ClearLog(id: string): Promise<void>
+  ObjectListSQL(id: string, schema: string, kind: 'tables' | 'routines'): Promise<string>
+  CreateSchema(id: string, name: string): Promise<string>
+  DropSchema(id: string, name: string): Promise<string>
+  SetSchemaComment(id: string, name: string, comment: string): Promise<string>
+  DropTable(id: string, schema: string, t: Table): Promise<string>
+  TruncateTable(id: string, schema: string, t: Table): Promise<string>
   CountRows(id: string, schema: string, t: Table, where: string): Promise<number>
-  FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
+  FetchPage(tabId: string, connId: string, sql: string, offset: number, n: number): Promise<FetchedPage>
   CountResult(tabId: string, connId: string, sql: string): Promise<number>
   QuoteIdent(id: string, name: string): Promise<string>
   QualifiedName(id: string, schema: string, t: Table): Promise<string>
   TableDDL(id: string, schema: string, t: Table): Promise<string>
+  SchemaGraph(id: string, schema: string): Promise<SchemaGraph>
   EditInfo(id: string, schema: string, source: string[], columns: string[]): Promise<EditInfo>
   PreviewChanges(req: ApplyRequest): Promise<string[]>
   ApplyChanges(req: ApplyRequest): Promise<number>
@@ -68,14 +113,23 @@ interface Api {
     sql: string
     cursor: number
     fetch: number
+    confirmed?: boolean
+    manual?: boolean
   }): Promise<ExecResponse>
-  FetchMore(tabId: string, cursorId: string, n: number): Promise<{ rows: Cell[][] | null; hasMore: boolean }>
+  FetchMore(tabId: string, cursorId: string, n: number): Promise<FetchedPage>
   Cancel(tabId: string): Promise<void>
   CloseSession(tabId: string): Promise<void>
+  EndTx(tabId: string, commit: boolean): Promise<void>
+  // path '' = cancelled; rows -1 in the browser build (a download started)
+  ExportData(req: ExportRequest): Promise<{ path: string; rows: number }>
+  TxOpen(tabId: string): Promise<boolean>
   PickSQLiteFile(): Promise<string>
   PickKeyFile(): Promise<string>
   SaveTextFile(name: string, content: string): Promise<string>
   OpenSQLFile(): Promise<{ name: string; content: string } | null>
+  OpenJSONFile(): Promise<{ name: string; content: string } | null>
+  ExportConnections(ids: string[]): Promise<string>
+  ImportConnections(content: string): Promise<{ added: number; existing: number; unsupported: string[] | null }>
   LoadWorkspace(): Promise<string>
   SaveWorkspace(data: string): Promise<void>
   SetDarkTitleBar(dark: boolean): Promise<void>
@@ -89,6 +143,24 @@ interface Api {
   TouchSessions(tabIds: string[]): Promise<void>
   SetLanguage(lang: string): Promise<void>
   Version(): Promise<string>
+  CheckUpdate(force: boolean): Promise<UpdateInfo>
+  OpenUpdatePage(): Promise<void>
+}
+
+export interface UpdateInfo {
+  current: string
+  latest: string // "" while no release is out
+  url: string
+  newer: boolean
+}
+
+// A page of rows from FetchPage / FetchMore, with its time (see StmtResult).
+export interface FetchedPage {
+  rows: Cell[][] | null
+  hasMore: boolean
+  elapsedMs: number
+  fetchMs: number
+  sentSql: string // the page's query; '' when rows came from the open cursor
 }
 
 export interface FileList {
@@ -102,6 +174,8 @@ export interface ApplyRequest {
   schema: string
   table: Table
   changes: RowChange[]
+  tabId?: string
+  manual?: boolean
 }
 
 const native = App as unknown as Api
@@ -111,6 +185,18 @@ export const api: Api = {
   ...native,
   SaveTextFile: (name, content) => (isWeb ? Promise.resolve(downloadText(name, content)) : native.SaveTextFile(name, content)),
   OpenSQLFile: () => (isWeb ? uploadText('.sql,.txt,text/plain') : native.OpenSQLFile()),
+  OpenJSONFile: () => (isWeb ? uploadText('.json,application/json') : native.OpenJSONFile()),
+  ExportData: (req) =>
+    isWeb
+      ? Promise.resolve((downloadURL('/x/export?req=' + encodeURIComponent(JSON.stringify(req))), { path: '', rows: -1 }))
+      : native.ExportData(req),
+}
+
+/** Picks a data file (CSV) to import, as bytes. */
+export async function openDataFile(): Promise<{ name: string; bytes: Uint8Array } | null> {
+  if (isWeb) return uploadBytes('.csv,.tsv,.txt,text/csv,text/plain')
+  const f = (await (App as unknown as { OpenDataFile(): Promise<{ name: string; data: string } | null> }).OpenDataFile()) ?? null
+  return f && { name: f.name, bytes: Uint8Array.from(atob(f.data ?? ''), (c) => c.charCodeAt(0)) }
 }
 
 // The browser build's server answers this once the sign-in has expired.

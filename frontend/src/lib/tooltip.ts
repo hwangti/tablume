@@ -32,8 +32,42 @@ function show() {
   const text = current.getAttribute('data-tip')
   if (!text) return
   tipEl ??= Object.assign(document.body.appendChild(document.createElement('div')), { className: 'app-tip' })
-  tipEl.textContent = text
+  // data-tip-bar="15,372,6,31": a bar split in those proportions over the
+  // text, one colour per part; the first rows below get the same colours.
+  const parts = (current.getAttribute('data-tip-bar') ?? '').split(',').filter(Boolean).map(Number)
+  const nodes: Node[] = []
+  if (parts.length) {
+    const bar = document.createElement('div')
+    bar.className = 'tip-bar'
+    parts.forEach((v, i) => Object.assign(bar.appendChild(document.createElement('span')), { className: 'c' + i }).style.setProperty('flex-grow', String(v)))
+    nodes.push(bar)
+  }
+  // Lines with a tab are "name<TAB>value" rows: names left, values right.
+  if (text.includes('\t')) {
+    const grid = document.createElement('div')
+    grid.className = 'tip-cols'
+    let row = 0
+    for (const line of text.split('\n')) {
+      const [name, ...value] = line.split('\t')
+      const n = grid.appendChild(document.createElement('span'))
+      n.textContent = name
+      if (!value.length) n.className = 'all'
+      else {
+        // rows past the bar's parts (a total): bold, under a rule
+        const sum = parts.length > 0 && row >= parts.length
+        n.className = sum ? 'sum' : row < parts.length ? 'dot c' + row : ''
+        row++
+        Object.assign(grid.appendChild(document.createElement('span')), { className: sum ? 'v sum' : 'v', textContent: value.join(' ') })
+      }
+    }
+    nodes.push(grid)
+  } else nodes.push(document.createTextNode(text))
+  tipEl.replaceChildren(...nodes)
   tipEl.style.display = 'block'
+  // Measure at the left edge: left where the last tip was (near the right
+  // edge, say), it would be squeezed, wrap, and keep that narrow width.
+  tipEl.style.left = '0px'
+  tipEl.style.top = '0px'
   const w = tipEl.offsetWidth
   const h = tipEl.offsetHeight
   let left = x + 10
@@ -48,7 +82,11 @@ export function installTooltips() {
   document.querySelectorAll('[title]').forEach(adopt)
   new MutationObserver((list) => {
     for (const m of list) {
-      if (m.type === 'attributes') adopt(m.target as Element)
+      if (m.type === 'attributes') {
+        adopt(m.target as Element)
+        // the tip on show follows a title that changes (a time filled in later)
+        if (m.target === current && tipEl?.style.display === 'block') show()
+      }
       else
         m.addedNodes.forEach((n) => {
           if (n instanceof Element) {
@@ -59,9 +97,22 @@ export function installTooltips() {
     }
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] })
 
+  // A touch screen gets no tooltips: the mouse events a tap sends would
+  // show one, and with no pointer to move off it, it stayed.
+  let touched = 0
+  addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.pointerType === 'mouse') return
+      touched = Date.now()
+      hide()
+    },
+    { capture: true, passive: true },
+  )
   document.addEventListener(
     'mouseover',
     (e) => {
+      if (Date.now() - touched < 1500) return
       const el = (e.target as Element).closest?.('[data-tip]') as HTMLElement | null
       if (el === current) return
       const wasShowing = tipEl?.style.display === 'block' || Date.now() - lastHidden < 300

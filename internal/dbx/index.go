@@ -195,7 +195,102 @@ func (m *Manager) RenameTable(id, schema string, t Table, name string) (string, 
 	if name == t.Name {
 		return "", i18n.Error("이름이 같습니다")
 	}
-	st := rd.renameTable(schema, t, name)
+	return runOne(p, schema, rd.renameTable(schema, t, name))
+}
+
+// ---- dropping and emptying tables
+
+// DropTable drops a table or view and returns the statement it ran.
+func (m *Manager) DropTable(id, schema string, t Table) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	kind := "TABLE"
+	switch ty := strings.ToUpper(t.Type); {
+	case ty == "MATERIALIZED VIEW", ty == "FOREIGN TABLE":
+		kind = ty
+	case strings.Contains(ty, "VIEW"):
+		kind = "VIEW"
+	}
+	return runOne(p, schema, "DROP "+kind+" "+p.d.QualifiedName(schema, t))
+}
+
+// TruncateTable deletes every row of a table (SQLite has no TRUNCATE:
+// DELETE without WHERE, which it does the same fast way) and returns the
+// statement it ran.
+func (m *Manager) TruncateTable(id, schema string, t Table) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	if strings.Contains(strings.ToUpper(t.Type), "VIEW") {
+		return "", i18n.Error("뷰는 비울 수 없습니다")
+	}
+	st := "TRUNCATE TABLE " + p.d.QualifiedName(schema, t)
+	if p.cfg.Driver == "sqlite" {
+		st = "DELETE FROM " + p.d.QualifiedName(schema, t)
+	}
+	return runOne(p, schema, st)
+}
+
+// CreateSchema makes what the tree lists as a schema (a database on
+// MySQL/MariaDB and SQL Server) and returns the statement it ran. Run
+// outside a transaction: CREATE DATABASE refuses one. Oracle schemas are
+// users (a password, grants) and SQLite has none: not here.
+func (m *Manager) CreateSchema(id, name string) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", i18n.Error("새 이름이 비어 있습니다")
+	}
+	var st string
+	switch p.cfg.Driver {
+	case "mysql", "mariadb", "mssql":
+		st = "CREATE DATABASE " + p.quote(name)
+	case "postgres":
+		st = "CREATE SCHEMA " + p.quote(name)
+	default:
+		return "", i18n.Error("이 DB에서는 스키마를 만들 수 없습니다")
+	}
+	if err := p.writable(); err != nil {
+		return "", err
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	_, err = p.db.ExecContext(ctx, st)
+	return st, err
+}
+
+// DropSchema drops a schema with everything in it (a database on
+// MySQL/MariaDB and SQL Server) and returns the statement it ran.
+func (m *Manager) DropSchema(id, name string) (string, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return "", err
+	}
+	var st string
+	switch p.cfg.Driver {
+	case "mysql", "mariadb", "mssql":
+		st = "DROP DATABASE " + p.quote(name)
+	case "postgres":
+		st = "DROP SCHEMA " + p.quote(name) + " CASCADE"
+	default:
+		return "", i18n.Error("이 DB에서는 스키마를 지울 수 없습니다")
+	}
+	if err := p.writable(); err != nil {
+		return "", err
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	_, err = p.db.ExecContext(ctx, st)
+	return st, err
+}
+
+func runOne(p *pool, schema, st string) (string, error) {
 	r, err := runDDL(p, schema, []string{st})
 	if err != nil {
 		return st, err

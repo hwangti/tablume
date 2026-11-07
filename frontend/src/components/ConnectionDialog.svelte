@@ -96,10 +96,7 @@
       const saved = await api.SaveConnection($state.snapshot(c))
       await loadConnections()
       app.editing = null
-      if (wasConnected) {
-        await disconnect(saved.id)
-        await connect(saved.id)
-      }
+      if (wasConnected && (await disconnect(saved.id))) await connect(saved.id)
       if (isNew) toast(t("'{name}' 저장됨", { name: saved.name }))
     } catch (e) {
       result = { ok: false, text: errText(e) }
@@ -146,6 +143,12 @@
         {/each}
       </div>
     </div>
+
+    <span></span>
+    <label class="check" title={t('SELECT 등 조회만 실행합니다. 데이터 편집, 구조 변경, 테이블·스키마 만들기·삭제를 막고, MySQL·MariaDB·PostgreSQL·SQLite는 DB 세션도 읽기 전용으로 엽니다.')}>
+      <input type="checkbox" bind:checked={c.readOnly} />
+      {t('읽기 전용')} <span class="dim">{t('(조회만 실행)')}</span>
+    </label>
 
     {#if c.driver === 'sqlite'}
       <label for="f-file">{t('파일')}</label>
@@ -203,8 +206,10 @@
         <input id="f-sshuser" bind:value={c.sshUser} autocomplete="off" />
         <span class="lbl">{t('인증')}</span>
         <div class="row">
-          <label class="check"><input type="radio" bind:group={c.sshAuth} value="password" /> {t('비밀번호')}</label>
-          <label class="check"><input type="radio" bind:group={c.sshAuth} value="key" /> {t('키 파일')}</label>
+          <div class="seg" role="group">
+            <button type="button" class:on={c.sshAuth !== 'key'} onclick={() => (c.sshAuth = 'password')}>{t('비밀번호')}</button>
+            <button type="button" class:on={c.sshAuth === 'key'} onclick={() => (c.sshAuth = 'key')}>{t('키 파일')}</button>
+          </div>
         </div>
         {#if c.sshAuth === 'key'}
           <label for="f-sshkey">{t('키 파일')}</label>
@@ -307,11 +312,12 @@
   }
   .row {
     display: flex;
+    flex-wrap: wrap; /* a phone: what doesn't fit goes under the field */
     gap: 8px;
     align-items: center;
   }
   .row > input:first-child {
-    flex: 1;
+    flex: 1 1 140px;
     min-width: 0;
   }
   .port {
@@ -361,5 +367,20 @@
   .result.ok {
     background: color-mix(in srgb, var(--ok) 14%, transparent);
     color: var(--ok);
+  }
+  /* a phone: labels over their fields, which get the whole width */
+  @media (max-width: 480px) {
+    .form {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    .form > label,
+    .form > .lbl {
+      text-align: left;
+      margin-top: 6px;
+    }    /* (the label column's spacers) */
+    .form > span:empty {
+      display: none;
+    }
   }
 </style>

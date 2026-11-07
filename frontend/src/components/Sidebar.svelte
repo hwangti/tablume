@@ -4,6 +4,7 @@
   import { i18n, LANGS, locale, num, t as tr } from '../lib/i18n.svelte'
   import { fitMenu, closeMenus, onCloseMenus } from '../lib/fit'
   import Icon from './Icon.svelte'
+  import ZoomBox from './ZoomBox.svelte'
   import {
     app,
     connect,
@@ -15,12 +16,29 @@
     toggleTable,
     loadTables,
     openConsole,
+    openErd,
+    ERD_DRIVERS,
+    openCreateTable,
     openTableData,
     activeTab,
     pinTab,
     openDDL,
     renameTable,
+    dropTable,
+    truncateTable,
+    createSchema,
+    openObjectList,
+    openRunLog,
+    dropSchema,
+    isSystemSchema,
+    SCHEMA_DRIVERS,
     saveWorkspaceSoon,
+    checkUpdate,
+    openUpdate,
+    exportConnections,
+    importConnections,
+    schemaCommentable,
+    setSchemaComment,
     schemaShown,
     ensureStats,
     moveConnection,
@@ -36,14 +54,15 @@
   } from '../lib/state.svelte'
   import { api } from '../lib/api'
   import { setTheme, type ThemeMode } from '../lib/theme'
-  import { copyText, isMac } from '../lib/clipboard'
-  import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine } from '../lib/types'
+  import { copyText, isMac, modKey } from '../lib/clipboard'
+  import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine, type Table } from '../lib/types'
   import SchemaPicker from './SchemaPicker.svelte'
+  import CellViewer from './CellViewer.svelte'
 
   let filter = $state('')
   let viewMenu = $state(false)
-  let zoomList = $state(false) // the zoom presets under the zoom field
   let version = $state('') // shown at the foot of the view menu
+  let checking = $state(false)
   api.Version().then((v) => (version = v), () => {})
 
   // 1.2만 / 1.2K
@@ -98,9 +117,6 @@
   let menu = $state<null | { x: number; y: number; items: MenuItem[] }>(null)
   let picker = $state<null | { connId: string; x: number; y: number }>(null)
   $effect(() => onCloseMenus(() => ((menu = null), (picker = null), (viewMenu = false))))
-  $effect(() => {
-    if (!viewMenu) zoomList = false
-  })
 
   const blank = (): ConnConfig => ({
     id: '',
@@ -352,6 +368,11 @@
     const r = i >= 0 ? nav[i] : null
     switch (e.key) {
       case 'ArrowDown':
+        // Cmd/Ctrl+↓ on a schema or the routines group: its list
+        if (isMac ? e.metaKey : e.ctrlKey) {
+          if (r?.kind === 'schema' || r?.kind === 'rgroup') openObjectList(r.c.id, r.s.name, r.kind === 'schema' ? 'tables' : 'routines')
+          break
+        }
         moveCursor(nav[Math.min(nav.length - 1, i + 1)].key)
         break
       case 'ArrowUp':
@@ -377,7 +398,7 @@
         }
         break
       case 'F2':
-        if (r?.kind === 'table') renameTable(r.c.id, r.s.name, r.t.t)
+        if (r?.kind === 'table' && !r.c.readOnly) renameTable(r.c.id, r.s.name, r.t.t)
         break
       case 'Enter':
         if (!r) break
@@ -396,6 +417,8 @@
   // native title which truncates and appears late.
   let tip = $state<null | { top: number; left: number; title: string; lines: string[] }>(null)
   let tipTimer: ReturnType<typeof setTimeout> | undefined
+  // a schema's comment in the large editor, as a table's
+  let schemaCmt = $state<null | { connId: string; s: SchemaNode }>(null)
 
   const routineLabel = (type: string) => ({ PROCEDURE: tr('프로시저'), FUNCTION: tr('함수'), PACKAGE: tr('패키지') })[type] ?? type
 
@@ -418,6 +441,7 @@
       lines.push(tr('클릭: 미리보기 · 더블클릭: 탭 고정'))
       return { title: r.t.t.name, lines }
     }
+    if (r.kind === 'schema') return r.s.comment ? { title: r.s.name, lines: [r.s.comment] } : null
     if (r.kind === 'col') {
       const col = r.col
       const tags = [col.pk && 'PK', col.unique && 'UNIQUE', col.fk && `FK → ${col.fk}`].filter(Boolean).join(' · ')
@@ -429,7 +453,7 @@
     return null
   }
 
-  function rowEnter(e: MouseEvent, r: Row) {
+  function rowEnter(e: PointerEvent, r: Row) {
     clearTimeout(tipTimer)
     const content = tipFor(r)
     if (!content) {
@@ -455,7 +479,16 @@
     if (r.kind === 'conn') connMenu(e, r.c)
     else if (r.kind === 'schema') schemaMenu(e, r.c, r.s)
     else if (r.kind === 'table') tableMenu(e, r.c, r.s, r.t)
-    else if (r.kind === 'routine') {
+    else if (r.kind === 'rgroup') {
+      e.preventDefault()
+      const g = r
+      closeMenus()
+      menu = {
+        x: e.clientX,
+        y: e.clientY,
+        items: [{ label: tr('루틴 목록'), icon: 'list', run: () => openObjectList(g.c.id, g.s.name, 'routines'), kbd: modKey + '↓' }],
+      }
+    } else if (r.kind === 'routine') {
       e.preventDefault()
       const rt = r
       closeMenus()
@@ -494,18 +527,20 @@
       x: e.clientX,
       y: e.clientY,
       items: [
+        // open · the connection · what the tree shows · the saved connection · its place
         { label: tr('새 콘솔'), icon: 'console', run: () => openConsole(c.id) },
-        on
-          ? { label: tr('새로고침'), icon: 'refresh', run: () => refreshSchemas(c.id) }
-          : { label: tr('연결'), icon: 'plug', run: () => connect(c.id) },
+        { label: tr('실행 로그'), icon: 'list', run: () => openRunLog(c.id) },
+        ...(on && !c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
         ...(on
           ? [
-              { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
+              { label: tr('새로고침'), icon: 'refresh', run: () => refreshSchemas(c.id), sep: true },
               { label: tr('연결 해제'), icon: 'unplug', run: () => disconnect(c.id) },
+              ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e), sep: true }] : []),
             ]
-          : []),
+          : [{ label: tr('연결'), icon: 'plug', run: () => connect(c.id), sep: true }]),
         { label: tr('편집…'), icon: 'edit', run: () => (app.editing = { ...c }), sep: true },
         { label: tr('복제'), icon: 'copy', run: () => (app.editing = { ...c, id: '', name: c.name + tr(' 복사본') }) },
+        { label: tr('내보내기…'), icon: 'download', run: () => exportConnections([c.id]) },
         { label: tr('맨 위로'), icon: 'toTop', run: () => moveConnection(c.id, 0), sep: true, disabled: i === 0 },
         { label: tr('위로'), icon: 'arrowUp', run: () => moveConnection(c.id, i - 1), disabled: i === 0 },
         { label: tr('아래로'), icon: 'arrowDown', run: () => moveConnection(c.id, i + 1), disabled: i === last },
@@ -521,6 +556,8 @@
     }
   }
 
+  const isView = (t: Table) => t.type.toUpperCase().includes('VIEW')
+
   function tableMenu(e: MouseEvent, c: ConnConfig, s: SchemaNode, t: TableNode) {
     e.preventDefault()
     closeMenus()
@@ -528,21 +565,33 @@
       x: e.clientX,
       y: e.clientY,
       items: [
+        // open · SQL · copy · change (the ones that can't be undone last)
         { label: tr('데이터 보기'), icon: 'table', run: () => openTable(c.id, s.name, t), kbd: 'Enter' },
         { label: tr('새 탭에서 데이터 보기'), icon: 'plus', run: () => pinTable(c.id, s.name, t) },
         { label: tr('DDL 보기'), icon: 'ddl', run: () => openDDL(c.id, s.name, t.t) },
-        { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2' },
         {
           label: tr('SELECT 문을 콘솔에 넣기'),
           icon: 'console',
+          sep: true,
           run: async () => {
             const sql = await api.SelectSQL(c.id, s.name, t.t, '', '', 100, 0)
             if (activeTab()?.connId === c.id) insertText(sql + ';')
             else openConsole(c.id, { schema: s.name, sql: sql + ';' })
           },
         },
+        { label: tr('데이터 내보내기…'), icon: 'download', run: () => (app.dataDialog = { kind: 'export', connId: c.id, schema: s.name, tables: [t.t] }), sep: true },
+        ...(c.readOnly || isView(t.t)
+          ? []
+          : [{ label: tr('CSV 가져오기…'), icon: 'open', run: () => (app.dataDialog = { kind: 'import', connId: c.id, schema: s.name, tables: [t.t] }) }]),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(t.t.name), sep: true },
         { label: tr('전체 이름 복사'), icon: 'copy', run: async () => copyText(await api.QualifiedName(c.id, s.name, t.t)) },
+        ...(c.readOnly
+          ? []
+          : [
+              { label: tr('이름 바꾸기'), icon: 'edit', run: () => renameTable(c.id, s.name, t.t), kbd: 'F2', sep: true },
+              ...(isView(t.t) ? [] : [{ label: tr('테이블 비우기…'), icon: 'eraser', run: () => truncateTable(c.id, s.name, t.t), danger: true }]),
+              { label: tr(isView(t.t) ? '뷰 삭제…' : '테이블 삭제…'), icon: 'trash', run: () => dropTable(c.id, s.name, t.t), danger: true },
+            ]),
       ],
     }
   }
@@ -555,9 +604,19 @@
       y: e.clientY,
       items: [
         { label: tr('이 스키마로 새 콘솔'), icon: 'console', run: () => openConsole(c.id, { schema: s.name }) },
-        { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s) },
-        { label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) },
+        { label: tr('테이블 목록'), icon: 'list', run: () => openObjectList(c.id, s.name, 'tables'), kbd: modKey + '↓' },
+        ...(c.driver !== 'sqlite' ? [{ label: tr('루틴 목록'), icon: 'fn', run: () => openObjectList(c.id, s.name, 'routines') }] : []),
+        ...(ERD_DRIVERS.includes(c.driver) ? [{ label: tr('ERD 보기'), icon: 'erd', run: () => openErd(c.id, s.name) }] : []),
+        ...(c.readOnly ? [] : [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true }]),
+        ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
+        ...(!c.readOnly && schemaCommentable(c) ? [{ label: tr('코멘트 수정…'), icon: 'edit', run: () => (schemaCmt = { connId: c.id, s }) }] : []),
+        { label: tr('스키마 내보내기…'), icon: 'download', run: () => (app.dataDialog = { kind: 'export', connId: c.id, schema: s.name, tables: [] }), sep: true },
+        { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
+        ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
         { label: tr('이름 복사'), icon: 'copy', run: () => copyText(s.name), sep: true },
+        ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) && !isSystemSchema(c, s.name)
+          ? [{ label: tr('스키마 삭제…'), icon: 'trash', run: () => dropSchema(c.id, s.name), sep: true, danger: true }]
+          : []),
       ],
     }
   }
@@ -570,12 +629,6 @@
   // or a preset.
   function zoomStep(d: number) {
     setZoomLevel((Math.round(app.zoom * 100 / 5) * 5 + d) / 100)
-  }
-  function zoomInput(e: Event) {
-    const el = e.currentTarget as HTMLInputElement
-    const v = parseFloat(el.value)
-    if (isFinite(v)) setZoomLevel(Math.round(v) / 100)
-    el.value = String(Math.round(app.zoom * 100)) // shows the clamped value
   }
 </script>
 
@@ -611,8 +664,8 @@
       onclick={() => rowClick(r)}
       ondblclick={() => rowDblClick(r)}
       oncontextmenu={(e) => rowMenu(e, r)}
-      onmouseenter={(e) => rowEnter(e, r)}
-      onmouseleave={rowLeave}
+      onpointerenter={(e) => e.pointerType === 'mouse' && rowEnter(e, r)}
+      onpointerleave={rowLeave}
       title={r.kind === 'conn' ? `${driverLabel(r.c.driver)}${app.conn[r.c.id]?.version ? ' · ' + app.conn[r.c.id]?.version : ''}` : undefined}
     >
       {#if r.kind === 'col' || r.kind === 'routine'}
@@ -634,6 +687,7 @@
         {@const st = app.conn[r.c.id]}
         <span class="dbicon" class:on={st?.status === 'connected'} class:err={st?.status === 'error'}><Icon name="db" size={15} /></span>
         <span class="label">{r.c.name}</span>
+        {#if r.c.readOnly}<span class="ro" title={tr('읽기 전용 연결입니다')}><Icon name="lock" size={12} /></span>{/if}
         {#if st?.status === 'connecting'}<span class="spin"></span>{/if}
         {#if st?.status === 'connected' && r.c.driver !== 'sqlite' && st.schemas.length}
           <button
@@ -652,6 +706,7 @@
       {:else if r.kind === 'schema'}
         <Icon name="schema" size={15} color="var(--warn)" />
         <span class="label" class:current={r.s.name === app.conn[r.c.id]?.current}>{r.s.name}</span>
+        {#if app.treeView.comment && r.s.comment}<span class="cmt">{r.s.comment}</span>{/if}
         {#if r.s.loading || r.s.stats === 'loading'}<span class="spin" title={r.s.loading ? '' : tr('행 수 · 크기 가져오는 중')}></span>{/if}
         {#if r.s.tables && app.treeView.tableCount}<span class="count">{num(r.s.tables.length)}</span>{/if}
       {:else if r.kind === 'table'}
@@ -697,10 +752,11 @@
         onclick={(e) => (e.stopPropagation(), viewMenu || closeMenus(), (viewMenu = !viewMenu))}
       >
         <Icon name="sliders" />
+        {#if app.update}<span class="upd-dot"></span>{/if}
       </button>
       {#if viewMenu}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="viewmenu" use:fitMenu={app.sidebarHidden} onclick={(e) => (e.stopPropagation(), (e.target as Element).closest('.zoom-mid') || (zoomList = false))}>
+        <div class="viewmenu" use:fitMenu={app.sidebarHidden} onclick={(e) => e.stopPropagation()}>
           <div class="vm-title">{tr('언어')}{i18n.lang === 'ko' ? ' · Language' : ''}</div>
           <div class="theme-seg" role="group">
             {#each LANGS as l (l.id)}
@@ -721,52 +777,28 @@
               >
             {/each}
           </div>
-          <!-- [−][150 ▾][+]: typed value, ±5% or a preset — not a slider:
-               the whole window (the slider too) rescales on every change, so
-               a drag can't be followed. (The browser build leaves zoom to
-               the browser.) -->
+          <!-- [−][150 %][+] [100% ▾]: typed value, ±5% or a preset — not a
+               slider: the whole window (the slider too) rescales on every
+               change, so a drag can't be followed. (The browser build
+               leaves zoom to the browser.) -->
           {#if !isWeb}
           <div class="vm-title sep">{tr('화면 배율 (%)')}</div>
-          <div class="zoom-box">
-            <button title={tr('5% 축소')} disabled={app.zoom <= ZOOM_MIN} onclick={() => zoomStep(-5)}><Icon name="minus" size={12} /></button>
-            <div class="zoom-mid">
-              <input
-                class="zoom-in"
-                size="1"
-                inputmode="numeric"
-                value={Math.round(app.zoom * 100)}
-                title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
-                onfocus={(e) => e.currentTarget.select()}
-                onchange={zoomInput}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur()
-                  if (e.key === 'Escape') {
-                    e.currentTarget.value = String(Math.round(app.zoom * 100))
-                    e.currentTarget.blur()
-                  }
-                  if (e.key === 'ArrowDown' && e.altKey) zoomList = true
-                }}
-              />
-              <button class="zoom-drop" class:on={zoomList} title={tr('배율 고르기')} onclick={() => (zoomList = !zoomList)}><Icon name="chevronDown" size={12} /></button>
-              {#if zoomList}
-                <div class="zoom-list" role="listbox">
-                  {#each ZOOM_PRESETS as z (z)}
-                    <button
-                      role="option"
-                      aria-selected={Math.round(app.zoom * 100) === z * 100}
-                      class:on={Math.round(app.zoom * 100) === Math.round(z * 100)}
-                      onclick={() => (setZoomLevel(z), (zoomList = false))}>{Math.round(z * 100)}</button
-                    >
-                  {/each}
-                </div>
-              {/if}
-            </div>
-            <button title={tr('5% 확대')} disabled={app.zoom >= ZOOM_MAX} onclick={() => zoomStep(5)}><Icon name="plus" size={12} /></button>
+          <div class="zoom-row">
+            <ZoomBox
+              value={app.zoom}
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              presets={ZOOM_PRESETS}
+              onset={(v) => setZoomLevel(Math.round(v * 100) / 100)}
+              onstep={(d) => zoomStep(d * 5)}
+              stepTitles={[tr('5% 축소'), tr('5% 확대')]}
+              title="{ZOOM_MIN * 100}–{ZOOM_MAX * 100}%, {tr('Enter로 적용')} · {isMac ? '⌘+ / ⌘- / ⌘0, ⌘ + ' + tr('휠') : 'Ctrl + = / - / 0, Ctrl + ' + tr('휠')}"
+            />
           </div>
           {/if}
           <div class="vm-title sep">{tr('트리에 표시')}</div>
           <label><input type="checkbox" bind:checked={app.treeView.tableCount} onchange={saveWorkspaceSoon} /> {tr('스키마별 테이블 수')}</label>
-          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> {tr('테이블 · 컬럼 코멘트')}</label>
+          <label><input type="checkbox" bind:checked={app.treeView.comment} onchange={saveWorkspaceSoon} /> {tr('코멘트 (스키마 · 테이블 · 컬럼)')}</label>
           <label
             ><input type="checkbox" bind:checked={app.treeView.rows} onchange={() => (saveWorkspaceSoon(), ensureStats())} /> {tr('테이블 행 수')}</label
           >
@@ -778,12 +810,26 @@
           <label><input type="checkbox" bind:checked={app.gridColNumbers} onchange={saveWorkspaceSoon} /> {tr('컬럼 번호 표시')}</label>
           <div class="vm-title sep">{tr('테이블 열 때')}</div>
           <label><input type="checkbox" bind:checked={app.tableOpen.pkDesc} onchange={saveWorkspaceSoon} /> {tr('기본 정렬: PK 내림차순')}</label>
+          <div class="vm-title sep">{tr('연결 목록')}</div>
+          <button class="vm-item" disabled={!app.connections.length} onclick={() => ((viewMenu = false), exportConnections())}
+            ><Icon name="download" size={14} /> {tr('모두 내보내기…')}</button
+          >
+          <button class="vm-item" onclick={() => ((viewMenu = false), importConnections())}><Icon name="upload" size={14} /> {tr('가져오기…')}</button>
           {#if isWeb}
             <div class="vm-title sep">{tr('계정')}</div>
             <a class="vm-item" href="/passkeys"><Icon name="key" size={14} /> {tr('패스키 관리')}</a>
             <button class="vm-item" onclick={logout}><Icon name="logout" size={14} /> {tr('로그아웃')}</button>
           {/if}
-          {#if version}<div class="vm-version">Tablume {version}</div>{/if}
+          <div class="vm-version">
+            <span>Tablume {version}</span>
+            <button class="vm-check" disabled={checking} onclick={async () => ((checking = true), await checkUpdate(true), (checking = false))}
+              >{tr('새 버전 확인')}</button
+            >
+          </div>
+          {#if app.update}
+            <button class="vm-item upd" onclick={openUpdate}><Icon name="download" size={14} /> {tr('Tablume {v} 받기', { v: app.update.latest })}</button>
+          {/if}
+          <label><input type="checkbox" bind:checked={app.updateCheck} onchange={saveWorkspaceSoon} /> {tr('시작할 때 새 버전 확인')}</label>
         </div>
       {/if}
     </div>
@@ -829,11 +875,27 @@
   </div>
 {/if}
 
+{#if schemaCmt}
+  <CellViewer
+    column="{schemaCmt.s.name} — {tr('스키마 코멘트')}"
+    value={schemaCmt.s.comment ?? ''}
+    editable
+    nullable={false}
+    onsave={(v) => schemaCmt && setSchemaComment(schemaCmt.connId, schemaCmt.s, v ?? '')}
+    onclose={() => (schemaCmt = null)}
+  />
+{/if}
+
 {#if picker}
   <SchemaPicker connId={picker.connId} x={picker.x} y={picker.y} onclose={() => (picker = null)} />
 {/if}
 
 <style>
+  .ro {
+    display: inline-flex;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
   aside {
     display: flex;
     flex-direction: column;
@@ -930,99 +992,8 @@
   .info {
     cursor: default;
   }
-  /* [−][150 ▾][+], 24px high */
-  .zoom-box {
-    display: flex;
-    height: 24px;
+  .zoom-row {
     margin: 2px 8px 4px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-  }
-  .zoom-box > button,
-  .zoom-drop {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    flex-shrink: 0;
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .zoom-box > button:first-child {
-    border-radius: 3px 0 0 3px;
-  }
-  .zoom-box > button:last-child {
-    border-radius: 0 3px 3px 0;
-  }
-  .zoom-box > button:hover:not(:disabled),
-  .zoom-drop:hover,
-  .zoom-drop.on {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-  .zoom-box > button:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .zoom-mid {
-    position: relative;
-    display: flex;
-    flex: 1;
-    min-width: 0;
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    background: var(--bg);
-  }
-  .zoom-in {
-    flex: 1;
-    min-width: 0;
-    height: 100%;
-    padding: 0 0 0 22px; /* centred over the field with the ▾ */
-    border: none;
-    border-radius: 0;
-    background: none;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .zoom-in:focus {
-    outline: none;
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-  .zoom-drop {
-    width: 22px;
-  }
-  .zoom-list {
-    position: absolute;
-    top: calc(100% + 3px);
-    left: -1px;
-    right: -1px;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 3px;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-  }
-  .zoom-list button {
-    padding: 3px 8px;
-    border: none;
-    border-radius: 3px;
-    background: none;
-    color: var(--text);
-    font: inherit;
-    font-variant-numeric: tabular-nums;
-    text-align: center;
-    cursor: pointer;
-  }
-  .zoom-list button:hover {
-    background: var(--bg-hover);
-  }
-  .zoom-list button.on {
-    background: var(--bg-select);
   }
   .theme-seg {
     display: flex;
@@ -1073,12 +1044,44 @@
     color: var(--text-faint);
   }
   .vm-version {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 6px;
     padding-top: 8px;
     border-top: 1px solid var(--border);
     color: var(--text-dim);
     font-size: 11px;
     user-select: text;
+  }
+  .vm-check {
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .vm-check:disabled {
+    color: var(--text-faint);
+    cursor: default;
+  }
+  .vm-item.upd,
+  .vm-item.upd :global(svg) {
+    color: var(--accent);
+  }
+  .viewopt .icon-btn {
+    position: relative;
+  }
+  .upd-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .vm-title.sep {
     margin-top: 6px;
@@ -1241,6 +1244,15 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    /* a short window: it scrolls instead of running off the bottom
+       (it opens 34px down: the bar, then the gap) */
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .viewmenu > :global(*) {
+    flex-shrink: 0; /* scroll, don't squeeze the rows */
   }
   .vm-title {
     color: var(--text-dim);
@@ -1269,7 +1281,11 @@
     text-decoration: none;
     cursor: pointer;
   }
-  .vm-item:hover {
+  .vm-item:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .vm-item:hover:not(:disabled) {
     background: var(--bg-hover);
   }
   .vm-item :global(svg) {
@@ -1299,18 +1315,6 @@
   }
   .col {
     gap: 6px;
-  }
-  .act {
-    display: none;
-  }
-  .conn:hover .act {
-    display: inline-flex;
-  }
-  .conn:hover .drv {
-    display: none;
-  }
-  .act {
-    margin-left: auto;
   }
   .small {
     width: 20px;

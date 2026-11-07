@@ -13,6 +13,7 @@ export interface ConnConfig {
   oracleSid: boolean
   params: string
   color: string
+  readOnly?: boolean
   ssh?: boolean
   sshHost?: string
   sshPort?: number
@@ -50,6 +51,46 @@ export interface Column {
   fk?: string // referenced "table.column"
   default?: string
   extra?: string // auto increment / identity / generated
+  collation?: string // MySQL/MariaDB, in column changes
+  onUpdate?: string
+  invisible?: boolean
+}
+
+// ERD data: a schema's tables and the foreign keys between them.
+export interface GraphTable {
+  name: string
+  view: boolean
+  comment: string
+  columns: Column[]
+}
+
+export interface ForeignKey {
+  name: string
+  table: string
+  columns: string[]
+  refSchema: string // '' = the same schema
+  refTable: string
+  refColumns: string[]
+  onUpdate: string
+  onDelete: string
+  one: boolean // child FK columns unique: 1:1
+  required: boolean // FK columns NOT NULL: the parent must exist
+  looseRef: boolean // referenced columns not unique: in effect N:M
+}
+
+export interface SchemaGraph {
+  tables: GraphTable[]
+  fks: ForeignKey[]
+}
+
+export interface TableFK {
+  name: string
+  columns: string[]
+  refTable: Table
+  refSchema: string // "" = the same schema
+  refColumns: string[]
+  onUpdate: string // "" where the database has no ON UPDATE (Oracle)
+  onDelete: string
 }
 
 export interface Index {
@@ -81,6 +122,7 @@ export interface Routine {
 export interface SchemaList {
   schemas: string[]
   current: string
+  comments?: Record<string, string> | null // the schemas that have one
 }
 
 export interface ResultColumn {
@@ -100,6 +142,13 @@ export interface StmtResult {
   cursorId: string
   rowsAffected: number
   elapsedMs: number
+  fetchMs: number // the part of elapsedMs spent reading rows
+  sentSql?: string // the statement as sent when it differs (paged: LIMIT/OFFSET added)
+  // Measured here: the app's own share of the wait (the round trip between
+  // the window and the Go side, the session's bookkeeping) and the time
+  // until the grid was painted.
+  appMs?: number
+  renderMs?: number
   error: string
   notice: string
   source: string[] | null
@@ -140,9 +189,20 @@ export interface RowChange {
   values: Record<string, Cell>
 }
 
+export interface ExportRequest {
+  connId: string
+  schema: string
+  tables: Table[] // none: every table and view in the schema
+  format: 'csv' | 'json' | 'sql'
+  ddl: boolean // sql: CREATE statements
+  data: boolean // sql: INSERT statements
+}
+
 export interface ExecResponse {
   results: StmtResult[]
   currentSchema: string
+  confirm?: string[] | null
+  inTx?: boolean
 }
 
 export const DRIVERS: { id: Driver; label: string; port: number }[] = [
@@ -156,4 +216,14 @@ export const DRIVERS: { id: Driver; label: string; port: number }[] = [
 
 export function driverLabel(d: Driver): string {
   return DRIVERS.find((x) => x.id === d)?.label ?? d
+}
+
+// An entry of a connection's saved run log.
+export interface LogEntry {
+  time: number // Unix ms
+  tab: string
+  kind: 'info' | 'error'
+  text: string
+  sql: string
+  auto?: boolean // made by the app (a table tab's SELECT, a page read on)
 }

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"tablume/internal/i18n"
 
 	_ "github.com/microsoft/go-mssqldb"
 )
@@ -372,6 +373,9 @@ func nq(s string) string { return "N" + sqlQuote(s, false) }
 
 func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Table, target string, a ColumnAlter) ([]string, error) {
 	d := diffOf(a)
+	if d.auto {
+		return nil, i18n.Error("이 DB에서는 기존 컬럼의 자동 증가를 바꿀 수 없습니다 (테이블을 새로 만들어야 합니다)")
+	}
 	sch := t.Schema
 	if sch == "" {
 		sch = "dbo"
@@ -382,10 +386,8 @@ func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Tab
 	// can change, and is added back afterwards.
 	var dfName sql.NullString
 	if d.typ || d.def || d.null {
-		err := q.QueryRowContext(ctx, `SELECT dc.name FROM `+msq(db)+`.sys.default_constraints dc
-			JOIN `+msq(db)+`.sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
-			WHERE dc.parent_object_id = OBJECT_ID(@p1) AND c.name = @p2`, target, a.Old.Name).Scan(&dfName)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		var err error
+		if dfName, err = mssqlDefault(ctx, q, db, target, a.Old.Name); err != nil {
 			return nil, err
 		}
 	}
@@ -417,7 +419,83 @@ func (mssqlDialect) alterColumn(ctx context.Context, q Querier, db string, t Tab
 			out = append(out, "EXEC "+proc+"sp_updateextendedproperty "+args+", @value = "+nq(a.New.Comment))
 		}
 	}
+	if d.name { // last: the statements above name the column as it was
+		out = append(out, "EXEC "+msq(db)+".sys.sp_rename "+nq(msq(sch)+"."+msq(t.Name)+"."+col)+", "+nq(a.New.Name)+", N'COLUMN'")
+	}
 	return out, nil
+}
+
+func (d mssqlDialect) addColumn(db string, t Table, target string, c Column) []string {
+	def, after := d.columnDef(db, t, target, c)
+	return append([]string{"ALTER TABLE " + target + " ADD " + def}, after...)
+}
+
+// columnDef: a new column's definition, then its comment (an extended
+// property).
+func (mssqlDialect) columnDef(db string, t Table, _ string, c Column) (string, []string) {
+	def := msq(c.Name) + " " + c.Type
+	if autoInc(c) {
+		def += " IDENTITY(1,1)"
+	}
+	if c.Nullable {
+		def += " NULL"
+	} else {
+		def += " NOT NULL"
+	}
+	if c.Default != "" {
+		def += " DEFAULT " + c.Default
+	}
+	var after []string
+	if c.Comment != "" {
+		sch := t.Schema
+		if sch == "" {
+			sch = "dbo"
+		}
+		after = append(after, "EXEC "+msq(db)+".sys.sp_addextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA', @level0name = "+nq(sch)+
+			", @level1type = N'TABLE', @level1name = "+nq(t.Name)+", @level2type = N'COLUMN', @level2name = "+nq(c.Name)+", @value = "+nq(c.Comment))
+	}
+	return def, after
+}
+
+// mssqlDefault: the name of a column's default constraint, if it has one.
+func mssqlDefault(ctx context.Context, q Querier, db, target, col string) (sql.NullString, error) {
+	var name sql.NullString
+	err := q.QueryRowContext(ctx, `SELECT dc.name FROM `+msq(db)+`.sys.default_constraints dc
+		JOIN `+msq(db)+`.sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+		WHERE dc.parent_object_id = OBJECT_ID(@p1) AND c.name = @p2`, target, col).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+	return name, err
+}
+
+// A column with a default can only be dropped after its constraint.
+func (mssqlDialect) dropColumn(ctx context.Context, q Querier, db string, _ Table, target, name string) ([]string, error) {
+	df, err := mssqlDefault(ctx, q, db, target, name)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	if df.Valid {
+		out = append(out, "ALTER TABLE "+target+" DROP CONSTRAINT "+msq(df.String))
+	}
+	return append(out, "ALTER TABLE "+target+" DROP COLUMN "+msq(name)), nil
+}
+
+func (mssqlDialect) tableComment(db string, t Table, target, comment string) []string {
+	sch := t.Schema
+	if sch == "" {
+		sch = "dbo"
+	}
+	args := "@name = N'MS_Description', @level0type = N'SCHEMA', @level0name = " + nq(sch) + ", @level1type = N'TABLE', @level1name = " + nq(t.Name)
+	proc := "EXEC " + msq(db) + ".sys."
+	switch {
+	case comment == "":
+		return []string{proc + "sp_dropextendedproperty " + args}
+	case t.Comment == "":
+		return []string{proc + "sp_addextendedproperty " + args + ", @value = " + nq(comment)}
+	}
+	return []string{proc + "sp_updateextendedproperty " + args + ", @value = " + nq(comment)}
 }
 
 func (mssqlDialect) Routines(ctx context.Context, q Querier, db string) ([]Routine, error) {

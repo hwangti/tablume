@@ -3,6 +3,7 @@ package dbx
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"tablume/internal/i18n"
 )
@@ -24,7 +25,61 @@ type AlterRequest struct {
 	Schema  string        `json:"schema"`
 	Table   Table         `json:"table"`
 	Changes []ColumnAlter `json:"changes"`
+	// Add: new columns, appended after the existing ones (Name, Type,
+	// Nullable, Default, Comment).
+	Add []Column `json:"add"`
+	// Order: when set, every column name (existing and new) in the wanted
+	// order, and Changes lists every existing column in its current order
+	// (Old = New where only the place changes). MySQL/MariaDB only.
+	Order []string `json:"order"`
+	// Drop: columns to drop (by name; not in Changes or Order).
+	Drop []string `json:"drop"`
+	// TableComment: the table's new comment; nil = unchanged (Table.Comment
+	// is the current one).
+	TableComment *string `json:"tableComment"`
+	// Rename: the table's new name ("" = unchanged), renamed last.
+	Rename string `json:"rename"`
+	// Engine: MySQL/MariaDB storage engine to change to ("" = unchanged).
+	Engine string `json:"engine"`
 }
+
+// TableOptions: settings of a table beyond its columns. Engine and Engines
+// (the ones the server offers) are MySQL/MariaDB only, "" / nil elsewhere.
+type TableOptions struct {
+	Engine  string   `json:"engine"`
+	Engines []string `json:"engines"`
+	// Columns: each column's collation and ON UPDATE; Collations: the
+	// server's collations.
+	Columns    map[string]ColumnOptions `json:"columns"`
+	Collations []string                 `json:"collations"`
+}
+
+type ColumnOptions struct {
+	Collation string `json:"collation"`
+	OnUpdate  string `json:"onUpdate"`
+	Invisible bool   `json:"invisible"`
+}
+
+type engineDialect interface {
+	tableEngine(ctx context.Context, q Querier, schema string, t Table) (TableOptions, error)
+}
+
+// TableOptions reads a table's options (see TableOptions).
+func (m *Manager) TableOptions(id, schema string, t Table) (TableOptions, error) {
+	p, err := m.pool(id)
+	if err != nil {
+		return TableOptions{}, err
+	}
+	ed, ok := p.d.(engineDialect)
+	if !ok {
+		return TableOptions{}, nil
+	}
+	ctx, cancel := metaCtx()
+	defer cancel()
+	return ed.tableEngine(ctx, p.db, schema, t)
+}
+
+var engineName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 type AlterResult struct {
 	Applied int    `json:"applied"` // statements that ran
@@ -37,8 +92,69 @@ type AlterResult struct {
 
 type alterDialect interface {
 	alterColumn(ctx context.Context, q Querier, schema string, t Table, target string, a ColumnAlter) ([]string, error)
+	addColumn(schema string, t Table, target string, c Column) []string
+	// columnDef: a new column's definition and the statements that follow
+	// it (comments), for CREATE TABLE
+	columnDef(schema string, t Table, target string, c Column) (string, []string)
+	dropColumn(ctx context.Context, q Querier, schema string, t Table, target, name string) ([]string, error)
+	tableComment(schema string, t Table, target, comment string) []string
 	// transactionalDDL: the statements can run in one transaction.
 	transactionalDDL() bool
+}
+
+// columnPlacer: a database whose ADD / MODIFY COLUMN take a position
+// (MySQL, MariaDB). Its addColumn and alterColumn give one statement, which
+// the position is appended to.
+type columnPlacer interface {
+	placeAfter(after string) string // "" = first
+}
+
+type placement struct{ name, after string }
+
+// placements: the columns to put in place, in turn, each right after the
+// one before it in order ("" = first), to turn orig into order. Columns of
+// a longest run already in their original order stay; new ones (not in
+// orig) and the rest are placed.
+func placements(orig, order []string) []placement {
+	pos := map[string]int{}
+	for i, n := range orig {
+		pos[n] = i
+	}
+	var names []string
+	var idx []int
+	for _, n := range order {
+		if i, ok := pos[n]; ok {
+			names, idx = append(names, n), append(idx, i)
+		}
+	}
+	// ponytail: O(n²) longest increasing run; fine for a table's columns
+	run, prev, best := make([]int, len(idx)), make([]int, len(idx)), -1
+	for i := range idx {
+		run[i], prev[i] = 1, -1
+		for j := 0; j < i; j++ {
+			if idx[j] < idx[i] && run[j]+1 > run[i] {
+				run[i], prev[i] = run[j]+1, j
+			}
+		}
+		if best < 0 || run[i] > run[best] {
+			best = i
+		}
+	}
+	stay := map[string]bool{}
+	for i := best; i >= 0; i = prev[i] {
+		stay[names[i]] = true
+	}
+	var out []placement
+	for i, n := range order {
+		if !stay[n] {
+			after := ""
+			if i > 0 {
+				after = order[i-1]
+			}
+			out = append(out, placement{n, after})
+		}
+	}
+	return out
 }
 
 func defaultOf(s string) string {
@@ -49,18 +165,35 @@ func defaultOf(s string) string {
 	return s
 }
 
-type colDiff struct{ typ, null, def, comment bool }
+// autoInc: the column numbers itself (Extra: MySQL "auto_increment",
+// PostgreSQL / SQL Server "identity ...").
+func autoInc(c Column) bool {
+	e := strings.ToLower(c.Extra)
+	return strings.Contains(e, "auto_increment") || strings.Contains(e, "identity")
+}
+
+type colDiff struct{ name, typ, null, def, comment, auto, opt bool }
 
 func diffOf(a ColumnAlter) colDiff {
 	return colDiff{
+		name:    a.Old.Name != a.New.Name,
 		typ:     !strings.EqualFold(strings.TrimSpace(a.Old.Type), strings.TrimSpace(a.New.Type)),
 		null:    a.Old.Nullable != a.New.Nullable,
 		def:     defaultOf(a.Old.Default) != defaultOf(a.New.Default),
 		comment: a.Old.Comment != a.New.Comment,
+		auto:    autoInc(a.Old) != autoInc(a.New),
+		opt:     a.Old.Collation != a.New.Collation || a.Old.OnUpdate != a.New.OnUpdate || a.Old.Invisible != a.New.Invisible,
 	}
 }
 
-func (d colDiff) any() bool { return d.typ || d.null || d.def || d.comment }
+func (d colDiff) any() bool {
+	return d.name || d.typ || d.null || d.def || d.comment || d.auto || d.opt
+}
+
+// plainIdent: a name the database would take unquoted. Oracle and
+// PostgreSQL fold those (upper / lower), so a typed "new_col" is given that
+// case instead of becoming a quoted, case-sensitive name.
+var plainIdent = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*$`)
 
 func sqlQuote(s string, backslash bool) string {
 	if backslash {
@@ -85,20 +218,136 @@ func (m *Manager) alterPlan(req AlterRequest) (*pool, alterDialect, []string, er
 	defer cancel()
 	target := p.d.QualifiedName(req.Schema, req.Table)
 	var out []string
-	for _, a := range req.Changes {
-		if strings.TrimSpace(a.New.Type) == "" {
-			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
-		}
-		if !diffOf(a).any() {
-			continue
-		}
-		stmts, err := ad.alterColumn(ctx, p.db, req.Schema, req.Table, target, a)
+	for _, n := range req.Drop {
+		stmts, err := ad.dropColumn(ctx, p.db, req.Schema, req.Table, target, n)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("%s: %w", a.Old.Name, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", n, err)
 		}
 		out = append(out, stmts...)
 	}
-	return p, ad, out, nil
+	var tail []string // after the column statements
+	if e := strings.TrimSpace(req.Engine); e != "" {
+		if _, ok := p.d.(engineDialect); !ok || !engineName.MatchString(e) {
+			return nil, nil, nil, i18n.Errorf("엔진을 바꿀 수 없습니다: %s", e)
+		}
+		tail = append(tail, "ALTER TABLE "+target+" ENGINE = "+e)
+	}
+	if c := req.TableComment; c != nil && *c != req.Table.Comment {
+		tail = append(tail, ad.tableComment(req.Schema, req.Table, target, *c)...)
+	}
+	if p.cfg.Driver == "sqlite" {
+		tc := ""
+		if req.TableComment != nil {
+			tc = *req.TableComment
+		}
+		if err := sqliteCheck(tc, req.Add, false); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	if n := strings.TrimSpace(req.Rename); n != "" && n != req.Table.Name {
+		rd, ok := p.d.(renameDialect)
+		if !ok {
+			return nil, nil, nil, i18n.Error("이 DB에서는 이름을 바꿀 수 없습니다")
+		}
+		tail = append(tail, rd.renameTable(req.Schema, req.Table, n))
+	}
+	for i, a := range req.Changes {
+		if strings.TrimSpace(a.New.Type) == "" {
+			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", a.Old.Name)
+		}
+		if req.Changes[i].New.Name = strings.TrimSpace(a.New.Name); req.Changes[i].New.Name == "" {
+			return nil, nil, nil, i18n.Errorf("%s: 새 이름이 비어 있습니다", a.Old.Name)
+		}
+	}
+	for i, c := range req.Add {
+		c.Name, c.Type, c.Default = strings.TrimSpace(c.Name), strings.TrimSpace(c.Type), defaultOf(c.Default)
+		if c.Name == "" {
+			return nil, nil, nil, i18n.Error("새 컬럼의 이름이 비어 있습니다")
+		}
+		if c.Type == "" {
+			return nil, nil, nil, i18n.Errorf("%s: 타입이 비어 있습니다", c.Name)
+		}
+		req.Add[i] = c
+	}
+	alter := func(a ColumnAlter, place string) error {
+		stmts, err := ad.alterColumn(ctx, p.db, req.Schema, req.Table, target, a)
+		if err != nil {
+			return fmt.Errorf("%s: %w", a.Old.Name, err)
+		}
+		if len(stmts) > 0 {
+			stmts[0] += place
+		}
+		out = append(out, stmts...)
+		return nil
+	}
+	if len(req.Order) == 0 {
+		for _, a := range req.Changes {
+			if diffOf(a).any() {
+				if err := alter(a, ""); err != nil {
+					return nil, nil, nil, err
+				}
+			}
+		}
+		for _, c := range req.Add {
+			out = append(out, ad.addColumn(req.Schema, req.Table, target, c)...)
+		}
+		return p, ad, append(out, tail...), nil
+	}
+
+	pl, ok := p.d.(columnPlacer)
+	if !ok {
+		return nil, nil, nil, i18n.Error("이 DB에서는 컬럼 순서를 바꿀 수 없습니다")
+	}
+	old := map[string]ColumnAlter{}
+	var orig []string
+	for _, a := range req.Changes {
+		old[a.Old.Name] = a
+		orig = append(orig, a.Old.Name)
+	}
+	added := map[string]Column{}
+	for _, c := range req.Add {
+		added[c.Name] = c
+	}
+	seen := map[string]bool{}
+	for _, n := range req.Order {
+		_, isOld := old[n]
+		_, isNew := added[n]
+		if seen[n] || isOld == isNew {
+			return nil, nil, nil, i18n.Errorf("컬럼 순서가 맞지 않습니다: %s", n)
+		}
+		seen[n] = true
+	}
+	if len(seen) != len(old)+len(added) {
+		return nil, nil, nil, i18n.Error("컬럼 순서에 빠진 컬럼이 있습니다")
+	}
+	// a column placed after one renamed before it goes after the new name
+	renamed := map[string]string{}
+	for _, a := range req.Changes {
+		if a.New.Name != a.Old.Name {
+			renamed[a.Old.Name] = a.New.Name
+		}
+	}
+	place := map[string]string{}
+	for _, pm := range placements(orig, req.Order) {
+		after := pm.after
+		if n, ok := renamed[after]; ok {
+			after = n
+		}
+		place[pm.name] = pl.placeAfter(after)
+	}
+	// in the wanted order, so the column each one goes after is in place
+	for _, n := range req.Order {
+		if c, ok := added[n]; ok {
+			stmts := ad.addColumn(req.Schema, req.Table, target, c)
+			stmts[0] += place[n]
+			out = append(out, stmts...)
+		} else if a, pos := old[n], place[n]; pos != "" || diffOf(a).any() {
+			if err := alter(a, pos); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	return p, ad, append(out, tail...), nil
 }
 
 // PreviewAlter returns the statements ApplyAlter would run.
@@ -121,6 +370,9 @@ func (m *Manager) ApplyAlter(req AlterRequest) (AlterResult, error) {
 // the database supports that, otherwise one by one up to the first error.
 func runDDL(p *pool, schema string, stmts []string) (AlterResult, error) {
 	res := AlterResult{Total: len(stmts)}
+	if err := p.writable(); err != nil {
+		return res, err
+	}
 	ctx, cancel := metaCtx()
 	defer cancel()
 	conn, err := p.db.Conn(ctx)

@@ -236,7 +236,7 @@ func (s *splitter) run() {
 		case s.delim != ";" && strings.HasPrefix(t[i:], s.delim),
 			c == ';' && s.delim == ";" && s.depth == 0 && !s.untilLine:
 			s.emit(i, i+len(s.delim))
-			i += len(s.delim)
+			i = s.trailingComment(i + len(s.delim))
 		case c == '\'':
 			s.hasContent = true
 			i = s.skipQuoted(i+1, '\'', s.style == "mysql")
@@ -270,6 +270,46 @@ func (s *splitter) run() {
 		}
 	}
 	s.emit(len(t), len(t))
+}
+
+// trailingComment: a comment after a delimiter, alone on the rest of its
+// line ("UPDATE …; -- 973 rows"), is about the statement it ends, so it isn't
+// put in front of the next one (which would be sent with it and logged
+// with it). Returns where to go on from.
+func (s *splitter) trailingComment(i int) int {
+	t := s.text
+	j := i
+	for j < len(t) && (t[j] == ' ' || t[j] == '\t') {
+		j++
+	}
+	var end int
+	switch {
+	case strings.HasPrefix(t[j:], "--"), s.style == "mysql" && strings.HasPrefix(t[j:], "#"):
+		end = len(t)
+		if e := strings.IndexByte(t[j:], '\n'); e >= 0 {
+			end = j + e
+		}
+	case strings.HasPrefix(t[j:], "/*"):
+		e := strings.Index(t[j+2:], "*/")
+		if e < 0 {
+			return i
+		}
+		end = j + 2 + e + 2
+		if strings.IndexByte(t[j:end], '\n') >= 0 {
+			return i // over several lines: about what follows
+		}
+		k := end
+		for k < len(t) && (t[k] == ' ' || t[k] == '\t' || t[k] == '\r') {
+			k++
+		}
+		if k < len(t) && t[k] != '\n' {
+			return i // "select 1; /* x */ select 2": the next one's
+		}
+	default:
+		return i
+	}
+	s.start = end
+	return end
 }
 
 func (s *splitter) skipQuoted(i int, q byte, backslash bool) int {

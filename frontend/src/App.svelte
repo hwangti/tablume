@@ -9,8 +9,12 @@
   import { installTooltips } from './lib/tooltip'
   import Sidebar from './components/Sidebar.svelte'
   import QueryTab from './components/QueryTab.svelte'
+  import ErdView from './components/ErdView.svelte'
   import ConnectionDialog from './components/ConnectionDialog.svelte'
+  import ExportDialog from './components/ExportDialog.svelte'
+  import ImportDialog from './components/ImportDialog.svelte'
   import Modal from './components/Modal.svelte'
+  import SqlPreview from './components/SqlPreview.svelte'
   import Icon from './components/Icon.svelte'
   import logo from './assets/logo.svg'
   import {
@@ -34,6 +38,8 @@
     closeTabWindow,
     toggleSidebar,
     initWebSessions,
+    checkUpdate,
+    dismissToast,
   } from './lib/state.svelte'
   import { Window } from '@wailsio/runtime'
   import { driverLabel } from './lib/types'
@@ -53,6 +59,8 @@
       await loadWorkspace()
       initMainWindowEvents()
       if (isWeb) initWebSessions()
+      // after the start-up work, so it never slows the first screen
+      if (app.updateCheck) setTimeout(() => checkUpdate(false), 4000)
     }
     ready = true
   })
@@ -91,8 +99,42 @@
     }
   }
 
+  // A phone: the tree is a drawer over the content, folded away by default.
+  // Not app.sidebarHidden: the workspace is shared with the desktop's browser.
+  const narrowMq = matchMedia('(max-width: 700px)')
+  let narrow = $state(narrowMq.matches)
+  narrowMq.addEventListener('change', (e) => ((narrow = e.matches), (drawer = false)))
+  let drawer = $state(false)
+  // Opening a table or a console from it is what it was opened for: a tap
+  // on a table (the one already shown too) or a tab opened from a menu. A
+  // moment later, so a double tap still reaches the tree (it pins the tab).
+  let closing: ReturnType<typeof setTimeout> | undefined
+  const closeDrawerSoon = () => {
+    clearTimeout(closing)
+    closing = setTimeout(() => (drawer = false), 300)
+  }
+  const shownKey = () => {
+    const t = app.tabs.find((x) => x.id === app.activeTab)
+    return `${app.activeTab}|${app.tabs.length}|${t?.schema}|${t?.title}`
+  }
+  let shown = shownKey()
+  $effect(() => {
+    const k = shownKey()
+    if (k !== shown && narrow && drawer) closeDrawerSoon()
+    shown = k
+  })
+  function drawerClick(e: MouseEvent) {
+    const el = e.target as Element
+    if (narrow && el.closest('.node.table, .node.routine') && !el.closest('.chev')) closeDrawerSoon()
+  }
+
   // The sidebar button and Ctrl/⌘+B; in 넓게 보기 they bring everything back.
   function sideToggle() {
+    if (narrow) {
+      drawer = app.wide || !drawer
+      app.wide = false
+      return
+    }
     if (app.wide) {
       app.wide = false
       if (app.sidebarHidden) toggleSidebar()
@@ -245,7 +287,12 @@
     }
   }
 
-  function tabMouseDown(e: MouseEvent, id: string) {
+  // A finger drags a tab after holding it (the menu that opened then
+  // closes); before that, a swipe scrolls the strip.
+  const TAB_HOLD_MS = 450
+  let tabHeld = false // a finger is dragging: the strip doesn't scroll
+
+  function tabDown(e: PointerEvent, id: string) {
     if (e.button === 1) {
       e.preventDefault()
       closeTab(id)
@@ -253,8 +300,18 @@
     }
     if (e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return
     const x0 = e.clientX
-    const move = (ev: MouseEvent) => {
-      if (!dragging && Math.abs(ev.clientX - x0) < 5) return
+    const touch = e.pointerType !== 'mouse'
+    // held: from here a move drags (the first touchmove too)
+    const hold = touch ? setTimeout(() => (tabHeld = true), TAB_HOLD_MS) : 0
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return
+      if (!dragging) {
+        if (Math.abs(ev.clientX - x0) < 5) return
+        if (touch) {
+          if (!tabHeld) return up() // a swipe
+          closeMenus()
+        }
+      }
       dragging = id
       // Positions among the shown tabs; tabs in their own windows aren't
       // in the strip and keep their place in app.tabs.
@@ -276,13 +333,26 @@
       }
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      clearTimeout(hold)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       if (dragging) saveWorkspaceSoon()
       dragging = null
+      tabHeld = false
     }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  // A drag after the hold mustn't scroll the strip (or the page) instead:
+  // only a touchmove that isn't passive can stop that, which Svelte's
+  // ontouchmove is.
+  function holdScroll(node: HTMLElement) {
+    const stop = (e: TouchEvent) => tabHeld && e.cancelable && e.preventDefault()
+    node.addEventListener('touchmove', stop, { passive: false })
+    return { destroy: () => node.removeEventListener('touchmove', stop) }
   }
 
   let renaming = $state<string | null>(null)
@@ -294,7 +364,8 @@
     document.title = t ? `${t.title} — Tablume` : 'Tablume'
   })
 
-  const sideGone = $derived(app.sidebarHidden || app.wide)
+  const sideHidden = $derived(narrow ? !drawer : app.sidebarHidden)
+  const sideGone = $derived(sideHidden || app.wide)
 
   // A tab window is titled after its tab.
   $effect(() => {
@@ -314,7 +385,7 @@
   <div class="tw">
     <div class="tw-bar" style:--conn-color={c?.color || 'transparent'}>
       {#if t}
-        <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
+        <Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={14} />
         <span class="tw-title">{t.title}</span>
         {#if c}<span class="tw-conn">{c.name}</span>{/if}
       {/if}
@@ -326,18 +397,26 @@
     </div>
     <div class="content">
       {#if t}
-        <div class="pane"><QueryTab tab={t} /></div>
+        <div class="pane">{#if t.erd}<ErdView tab={t} />{:else}<QueryTab tab={t} />{/if}</div>
       {:else if ready}
         <div class="welcome"><p>{tr('이 탭은 더 이상 없습니다.')}</p></div>
       {/if}
     </div>
   </div>
 {:else}
-<div class="layout" style:grid-template-columns={sideGone ? '1fr' : `${sideW}px 1px 1fr`}>
+<div class="layout" style:grid-template-columns={sideGone || narrow ? '1fr' : `${sideW}px 1px 1fr`}>
   <!-- hidden, not removed: the tree keeps what is expanded, the filter, … -->
-  <div class="side" class:gone={sideGone}><Sidebar /></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="vdivider" class:gone={sideGone} onmousedown={startDrag}></div>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="side" class:gone={sideGone} class:drawer={narrow} onclick={drawerClick}><Sidebar /></div>
+  {#if narrow}
+    {#if !sideGone}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="scrim" onclick={() => (drawer = false)}></div>
+    {/if}
+  {:else}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="vdivider" class:gone={sideGone} onmousedown={startDrag}></div>
+  {/if}
 
   <main>
     {#if app.wide}
@@ -345,7 +424,7 @@
       {@const c = t ? connById(t.connId) : undefined}
       <div class="tw-bar wide" style:--conn-color={c?.color || 'transparent'}>
         {#if t}
-          <Icon name={t.tableRef ? 'table' : 'console'} size={14} />
+          <Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={14} />
           <span class="tw-title">{t.title}</span>
           {#if c}<span class="tw-conn">{c.name}</span>{/if}
         {/if}
@@ -358,13 +437,13 @@
     <div class="strip">
     <button
       class="icon-btn strip-btn"
-      title="{tr(app.sidebarHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)"
+      title="{tr(sideHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)"
       onclick={sideToggle}
     >
-      <Icon name={app.sidebarHidden ? 'sidebarOff' : 'sidebar'} />
+      <Icon name={sideHidden ? 'sidebarOff' : 'sidebar'} />
     </button>
     <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
-    <div class="tabs" bind:this={tabsEl} onwheel={tabsWheel} onscroll={tabsEdges}>
+    <div class="tabs" bind:this={tabsEl} use:holdScroll onwheel={tabsWheel} onscroll={tabsEdges}>
       {#each app.tabs.filter((x) => !x.detached) as t (t.id)}
         {@const c = connById(t.connId)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -375,12 +454,12 @@
           class:dragging={dragging === t.id}
           style:--conn-color={c?.color || 'transparent'}
           onclick={() => (app.activeTab = t.id)}
-          onmousedown={(e) => tabMouseDown(e, t.id)}
+          onpointerdown={(e) => tabDown(e, t.id)}
           ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
           oncontextmenu={(e) => openTabMenu(e, t.id)}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
         >
-          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.tableRef ? 'table' : 'console'} size={13} />{/if}
+          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={13} />{/if}
           {#if renaming === t.id}
             <!-- svelte-ignore a11y_autofocus -->
             <input
@@ -393,6 +472,8 @@
           {:else}
             <span class="name" class:preview={t.preview} title={t.preview ? tr('미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.') : ''}>{t.title}</span>
           {/if}
+          {#if c?.readOnly}<span class="ro" title={tr('읽기 전용 연결입니다')}><Icon name="lock" size={11} /></span>{/if}
+          {#if t.inTx}<span class="tx" title={tr('커밋하지 않은 변경이 있습니다')}></span>{/if}
           <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label={tr('닫기')}><Icon name="close" size={14} /></button>
         </div>
       {/each}
@@ -419,7 +500,7 @@
       {#each app.tabs as t (t.id)}
         {#if !t.detached}
           <div class="pane" class:hidden={t.id !== app.activeTab}>
-            <QueryTab tab={t} />
+            {#if t.erd}<ErdView tab={t} />{:else}<QueryTab tab={t} />{/if}
           </div>
         {/if}
       {/each}
@@ -455,6 +536,14 @@
   <ConnectionDialog initial={app.editing} />
 {/if}
 
+{#if app.dataDialog}
+  {@const d = app.dataDialog}
+  {#key d}
+    {#if d.kind === 'export'}<ExportDialog connId={d.connId} schema={d.schema} tables={d.tables} />
+    {:else}<ImportDialog connId={d.connId} schema={d.schema} table={d.tables[0]} />{/if}
+  {/key}
+{/if}
+
 {#if filePick.req}
   {#key filePick.req}<FileBrowser req={filePick.req} />{/key}
 {/if}
@@ -465,8 +554,9 @@
       {#if app.prompt.value !== undefined}
         <input type="text" class="mono" bind:value={promptText} use:selectAll style="width:100%" spellcheck="false" />
       {:else}
-        <!-- svelte-ignore a11y_autofocus -->
-        <input type="password" bind:value={password} autofocus style="width:100%" placeholder={tr('비밀번호')} />
+        <!-- focused by hand: autofocus only acts when nothing else has the
+             focus, and a double-click in the tree leaves it on the tree -->
+        <input type="password" bind:value={password} use:selectAll style="width:100%" placeholder={tr('비밀번호')} />
       {/if}
     </form>
     {#snippet footer()}
@@ -478,8 +568,9 @@
 {/if}
 
 {#if app.confirm}
-  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={380}>
+  <Modal title={tr('확인')} onclose={() => app.confirm?.resolve(false)} width={app.confirm.sql ? 560 : 380}>
     <p style="margin:0">{app.confirm.text}</p>
+    {#if app.confirm.sql}<div class="confirm-sql"><SqlPreview code={app.confirm.sql.join("\n\n")} driver={app.confirm.driver} /></div>{/if}
     {#snippet footer()}
       <span style="flex:1"></span>
       <button class="btn" onclick={() => app.confirm?.resolve(false)}>{tr('취소')}</button>
@@ -490,7 +581,13 @@
 
 <div class="toasts">
   {#each app.toasts as t (t.id)}
-    <div class="toast" class:error={t.kind === 'error'}>{t.text}</div>
+    <div class="toast" class:error={t.kind === 'error'} class:act={t.action}>
+      <span>{t.text}</span>
+      {#if t.action}
+        <button class="btn primary" onclick={() => (t.action!.run(), dismissToast(t.id))}>{t.action.label}</button>
+        <button class="x-btn" title={tr('닫기')} onclick={() => dismissToast(t.id)}><Icon name="close" size={14} /></button>
+      {/if}
+    </div>
   {/each}
 </div>
 
@@ -546,6 +643,21 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  /* a phone: over the content from the left, the rest dimmed */
+  .side.drawer {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(86vw, 360px);
+    z-index: 40;
+    background: var(--bg-panel);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.28);
+  }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: rgba(0, 0, 0, 0.28);
   }
   .gone {
     display: none;
@@ -725,9 +837,14 @@
     cursor: pointer;
     visibility: hidden;
   }
-  .tab:hover .x,
   .tab.on .x {
     visibility: visible;
+  }
+  /* not on touch: a tap that reveals something is taken as a hover, not a tap */
+  @media (hover: hover) {
+    .tab:hover .x {
+      visibility: visible;
+    }
   }
   .x:hover {
     background: var(--bg-hover);
@@ -768,6 +885,21 @@
   .welcome p {
     margin: 4px;
   }
+  .tab .tx {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex-shrink: 0;
+  }
+  .tab .ro {
+    display: inline-flex;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
+  .confirm-sql {
+    margin-top: 10px;
+  }
   .toasts {
     position: fixed;
     right: 16px;
@@ -787,6 +919,15 @@
     word-break: break-word;
     user-select: text;
     -webkit-user-select: text;
+  }
+  .toast.act {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px 7px 14px;
+  }
+  .toast.act span {
+    flex: 1;
   }
   .toast.error {
     border-color: var(--danger);

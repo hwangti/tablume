@@ -123,6 +123,10 @@ func setupPlatform(svc *App, o *application.Options) func() {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
+			if r.URL.Path == "/x/export" {
+				svc.serveExport(w, r)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -204,3 +208,6 @@ func randHex(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+// openURL: the page opens links itself in the browser build.
+func openURL(string) error { return errors.New("not in the browser build") }

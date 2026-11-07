@@ -34,7 +34,12 @@
   let system = $derived(names.filter((n) => isSystemSchema(c, n)))
   let shown = $derived(names.filter((n) => schemaShown(connId, n)).length)
 
-  const q = (n: string) => !search.trim() || n.toLowerCase().includes(search.trim().toLowerCase())
+  const comment = (n: string) => st?.schemas.find((s) => s.name === n)?.comment ?? ''
+  // by name or comment
+  const q = (n: string) => {
+    const w = search.trim().toLowerCase()
+    return !w || n.toLowerCase().includes(w) || comment(n).toLowerCase().includes(w)
+  }
 
   function save(next: Partial<SchemaFilter>) {
     setSchemaFilter(connId, { ...$state.snapshot(f), ...next })
@@ -89,11 +94,18 @@
   function outside(e: MouseEvent) {
     if (el && !el.contains(e.target as Node)) onclose()
   }
+
+  // autofocus only acts when nothing has the focus, and the button that
+  // opened this keeps it. (Not on a touch screen, where the keyboard would
+  // cover the list.)
+  function focusSearch(node: HTMLInputElement) {
+    if (matchMedia('(pointer: fine)').matches) requestAnimationFrame(() => node.focus({ preventScroll: true }))
+  }
 </script>
 
 <svelte:window onmousedown={outside} onkeydown={(e) => e.key === 'Escape' && !addingPattern && onclose()} />
 
-<div class="picker" bind:this={el} style:left="{pos.left}px" style:top="{pos.top}px">
+<div class="picker" data-menu bind:this={el} style:left="{pos.left}px" style:top="{pos.top}px">
   <div class="head">
     <span class="title">{t('표시할 스키마')}</span>
     <span class="cnt">{shown}/{names.length}</span>
@@ -103,8 +115,7 @@
   </div>
   <div class="search">
     <Icon name="filter" size={13} />
-    <!-- svelte-ignore a11y_autofocus -->
-    <input bind:value={search} placeholder={t('스키마 검색')} spellcheck="false" autofocus />
+    <input bind:value={search} placeholder={t('스키마 검색')} spellcheck="false" use:focusSearch />
   </div>
 
   <div class="list">
@@ -152,6 +163,7 @@
       <label class="item" class:dim={s === 'off'}>
         <input type="checkbox" checked={s === 'on'} indeterminate={s === 'mixed'} onchange={() => toggle(n)} />
         <span class="name">{n}</span>
+        {#if comment(n)}<span class="cmt">{comment(n)}</span>{/if}
         {#if n === current}<span class="hint">{t('기본')}</span>{/if}
       </label>
     {/each}
@@ -269,6 +281,17 @@
   .name {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .item .cmt {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-faint);
+    font-size: 11.5px;
+  }
+  .name {
+    flex-shrink: 0;
+    max-width: 70%;
   }
   .item.dim .name {
     color: var(--text-dim);

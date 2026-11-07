@@ -5,18 +5,22 @@
   import SqlEditor, { setExecMark } from './SqlEditor.svelte'
   import ResultGrid from './ResultGrid.svelte'
   import Icon from './Icon.svelte'
+  import Dropdown from './Dropdown.svelte'
   import { closeMenus, onCloseMenus } from '../lib/fit'
   import SqlPreview from './SqlPreview.svelte'
   import FilterInput from './FilterInput.svelte'
   import StructureView from './StructureView.svelte'
   import IndexView from './IndexView.svelte'
+  import FkView from './FkView.svelte'
   import { api, errText } from '../lib/api'
-  import { modKey, isMac, copyText } from '../lib/clipboard'
+  import { modKey, isMac } from '../lib/clipboard'
   import {
     app,
     syncTreeRows,
     connById,
     runSQL,
+    endTx,
+    setManualCommit,
     fetchMore,
     cancel,
     loadCompletion,
@@ -24,6 +28,8 @@
     toast,
     confirmBox,
     reloadTable,
+    tableCreated,
+    connect,
     countResult,
     fetchPrev,
     jumpTo,
@@ -31,14 +37,31 @@
     PAGE_SIZES,
     openConsole,
     type Tab,
+    type Message,
     followForeignKey,
     logStatements,
     treeChanged,
   } from '../lib/state.svelte'
   import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
-  import type { Cell, StmtResult } from '../lib/types'
+  import type { Cell, LogEntry, StmtResult } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
+
+  // Shown: the whole wait; on hover, its parts (like DataGrip's execution / fetching).
+  // The bar over the list shows the same parts in proportion.
+  const timingTotal = (r: StmtResult) => r.elapsedMs + (r.appMs ?? 0) + (r.renderMs ?? 0)
+  function timingParts(r: StmtResult): [string, number][] {
+    return [
+      [t('실행#timing'), r.elapsedMs - r.fetchMs],
+      [t('가져오기'), r.fetchMs],
+      ...(r.appMs !== undefined ? [[t('앱 전달'), r.appMs] as [string, number]] : []),
+      ...(r.renderMs !== undefined ? [[t('그리기'), r.renderMs] as [string, number]] : []),
+    ]
+  }
+  function timingTitle(r: StmtResult): string {
+    const ms = (n: number) => num(n) + 'ms'
+    return [...timingParts(r).map(([name, n]) => `${name}\t${ms(n)}`), `${t('합계')}\t${ms(timingTotal(r))}`].join('\n')
+  }
 
   let view = $state<EditorView>()
   let editor = $state<ReturnType<typeof SqlEditor>>()
@@ -56,6 +79,64 @@
   let completion = $derived(app.completion[tab.connId + '|' + tab.schema] ?? {})
   // Table data tabs (opened from the tree) show only the data, its DDL and a log.
   let isTable = $derived(!!tab.tableRef)
+
+  // ---- the log pane: this tab's lines, or the connection's saved run log
+  let logQuery = $state('')
+  let connLog = $state<LogEntry[] | null>(null)
+  let logTimer: ReturnType<typeof setTimeout> | undefined
+  $effect(() => {
+    if (tab.logScope !== 'conn') return
+    const id = tab.connId
+    const q = logQuery
+    void app.logVersion // a new entry was saved
+    clearTimeout(logTimer)
+    logTimer = setTimeout(async () => {
+      try {
+        connLog = (await api.ReadLog(id, q, 500)) ?? []
+      } catch (e) {
+        toast(errText(e), 'error')
+      }
+    }, 250)
+  })
+  let tabLog = $derived.by(() => {
+    const q = logQuery.trim().toLowerCase()
+    const all = tab.messages.slice().reverse()
+    return q ? all.filter((m) => `${m.full ?? m.sql ?? ''}\n${m.text}`.toLowerCase().includes(q)) : all
+  })
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  function logTime(ms: number) {
+    const d = new Date(ms)
+    const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+    return d.toDateString() === new Date().toDateString() ? time : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${time}`
+  }
+  // a long script in one line of the log: its start (the button puts it all)
+  const clip = (sql: string) => {
+    const lines = sql.split('\n')
+    const head = lines.slice(0, 8).join('\n')
+    return head.length > 800 ? head.slice(0, 800) + '…' : lines.length > 8 ? head + '\n…' : head
+  }
+  /** Puts a logged statement in this console's editor (a table tab: a new console). */
+  function useSql(sql: string) {
+    sql = sql.trim()
+    if (!/;\s*$/.test(sql)) sql += ';' // the next statement typed after it stays apart
+    if (isTable) {
+      openConsole(tab.connId, { schema: tab.schema, sql })
+      return
+    }
+    tab.sql = tab.sql.trim() ? tab.sql.replace(/\s*$/, '\n\n') + sql : sql
+    if (tab.layout === 'results') tab.layout = 'split'
+    saveWorkspaceSoon()
+  }
+  async function clearConnLog() {
+    if (!(await confirmBox(t('이 연결에 저장된 실행 로그를 모두 지울까요?')))) return
+    try {
+      await api.ClearLog(tab.connId)
+      connLog = []
+    } catch (e) {
+      toast(errText(e), 'error')
+    }
+  }
+  const msgSql = (m: Message) => m.full ?? m.sql ?? ''
   let tableView = $state<'data' | 'ddl' | 'log'>('data')
   let current = $derived<StmtResult | undefined>(
     isTable ? tab.results[0] : tab.activeResult >= 0 ? tab.results[tab.activeResult] : undefined,
@@ -64,7 +145,9 @@
   // its connection is already up (otherwise it offers "connect and load").
   let autoLoaded = false
   $effect(() => {
-    if (autoLoaded || !isTable || current || tab.running || tab.opening) return
+    if (autoLoaded || !isTable || tab.creating) return
+    // loaded or being loaded some other way ("connect and load"): not again
+    if (current || tab.running || tab.opening) return void (autoLoaded = true)
     if (app.activeTab !== tab.id || !connected) return
     autoLoaded = true
     reloadTable(tab)
@@ -91,9 +174,20 @@
   let ddlError = $state('')
   let ddlFor = ''
   let ddlVersion = $state(0) // bumped when the columns were altered
+  // a key icon clicked in the columns: the index / foreign key rows to show
+  // (cleared after the flash: a structure view made again later, after the
+  // data or log, must not scroll to it again)
+  let keyHl = $state<{ kind: 'fk' | 'index'; column: string; n: number } | null>(null)
+  let keyHlTimer = 0
+  let keyHlN = 0 // only grows: each click is a new request
+  function showKey(kind: 'fk' | 'index', column: string) {
+    keyHl = { kind, column, n: ++keyHlN }
+    clearTimeout(keyHlTimer)
+    keyHlTimer = window.setTimeout(() => (keyHl = null), 2000)
+  }
   $effect(() => {
     const ref = tab.tableRef
-    if (!ref || tableView !== 'ddl') return
+    if (!ref || tableView !== 'ddl' || !connected) return // (restored tab: after "연결하고 불러오기")
     const key = `${tab.connId}|${ref.schema}|${ref.table.schema}.${ref.table.name}|${ddlVersion}`
     if (key === ddlFor) return
     ddlFor = key
@@ -138,7 +232,7 @@
       sql = (await previewChanges(tab, current)) ?? []
       const { count, inserted } = await applyChanges(tab, current)
       logStatements(tab, sql, t('{n}건 적용', { n: count }))
-      toast(t('{n}건 적용됨', { n: count }))
+      toast(tab.manual ? t('{n}건 적용됨 · 커밋해야 반영됩니다', { n: count }) : t('{n}건 적용됨', { n: count }))
       if (inserted) await rerun() // show generated values (auto ids, defaults)
     } catch (e) {
       if (sql.length) logStatements(tab, sql, '', errText(e) + '\n' + t('(모두 취소됨)'))
@@ -314,25 +408,27 @@
   // WHERE | ORDER BY split, shared by all table tabs (app.orderShare)
   let filterBar = $state<HTMLDivElement>()
   let splitting = $state(false)
-  function startSplit(e: MouseEvent) {
+  function startSplit(e: PointerEvent) {
     if (e.button !== 0 || !filterBar) return
     e.preventDefault()
     const r = filterBar.getBoundingClientRect()
     splitting = true
-    const move = (ev: MouseEvent) => {
+    const move = (ev: PointerEvent) => {
       const share = (r.right - ev.clientX) / r.width
       app.orderShare = Math.round(Math.max(0.12, Math.min(0.75, share)) * 1000) / 1000
     }
     const up = () => {
       splitting = false
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       document.body.style.cursor = ''
       saveWorkspaceSoon()
     }
     document.body.style.cursor = 'col-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   function setPageSize(n: number) {
@@ -414,18 +510,24 @@
     saveWorkspaceSoon()
   }
 
-  function startDrag(e: MouseEvent) {
+  let dividing = $state(false)
+  function startDrag(e: PointerEvent) {
+    if (e.button !== 0) return
     e.preventDefault()
+    dividing = true
     const rect = body.getBoundingClientRect()
-    const move = (ev: MouseEvent) => {
+    const move = (ev: PointerEvent) => {
       split = Math.max(10, Math.min(90, ((ev.clientY - rect.top) / rect.height) * 100))
     }
     const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      dividing = false
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
     }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   async function openFile() {
@@ -521,22 +623,61 @@
 
 {#snippet logList(hint: boolean)}
   <div class="messages">
-    {#if tab.messages.length === 0 && hint}
-      <div class="placeholder">
-        <p>{modKey}Enter — {t('커서가 있는 문장 실행 (선택했으면 선택 영역)')}</p>
-        <p>{modKey}Shift+Enter — {t('전체 실행')}</p>
-      </div>
-    {/if}
-    {#each tab.messages.slice().reverse() as m, i (tab.messages.length - i)}
-      <div class="msg" class:error={m.kind === 'error'}>
-        <span class="time">{m.time}</span>
-        <div class="mbody">
-          {#if m.sql}<SqlPreview code={m.sql} driver={conn?.driver} bare />{/if}
-          <pre>{m.text}</pre>
+    {#if tab.logScope === 'conn'}
+      {#if connLog?.length === 0}
+        <div class="placeholder"><p>{logQuery.trim() ? t('찾는 로그가 없습니다') : t('저장된 실행 로그가 없습니다')}</p></div>
+      {/if}
+      {#each connLog ?? [] as m, i (i)}
+        <div class="msg" class:error={m.kind === 'error'} class:auto={m.auto}>
+          <span class="time">{logTime(m.time)}</span>
+          <div class="mbody">
+            <SqlPreview code={clip(m.sql)} driver={conn?.driver} bare />
+            <pre>{m.text}{#if m.tab}<span class="from"> · {m.tab}</span>{/if}</pre>
+          </div>
+          <button class="icon-btn use" title={t('콘솔에 넣기')} onclick={() => useSql(m.sql)}><Icon name="console" size={13} /></button>
         </div>
-      </div>
-    {/each}
+      {/each}
+    {:else}
+      {#if tab.messages.length === 0 && hint}
+        <div class="placeholder">
+          <p>{modKey}Enter — {t('커서가 있는 문장 실행 (선택했으면 선택 영역)')}</p>
+          <p>{modKey}Shift+Enter — {t('전체 실행')}</p>
+        </div>
+      {:else if tabLog.length === 0 && logQuery.trim()}
+        <div class="placeholder"><p>{t('찾는 로그가 없습니다')}</p></div>
+      {/if}
+      {#each tabLog as m, i (tabLog.length - i)}
+        <div class="msg" class:error={m.kind === 'error'} class:auto={m.auto}>
+          <span class="time">{m.time}</span>
+          <div class="mbody">
+            {#if m.sql}<SqlPreview code={m.sql} driver={conn?.driver} bare />{/if}
+            <pre>{m.text}</pre>
+          </div>
+          {#if msgSql(m)}
+            <button class="icon-btn use" title={t('콘솔에 넣기')} onclick={() => useSql(msgSql(m))}><Icon name="console" size={13} /></button>
+          {/if}
+        </div>
+      {/each}
+    {/if}
   </div>
+{/snippet}
+
+<!-- Manual commit: the mode (a toggle), and Commit / Rollback. Those are
+     always there (off in autocommit), so switching moves nothing. -->
+{#snippet txControls(size: number)}
+  <button
+    class="txbtn"
+    class:on={tab.manual}
+    onclick={() => setManualCommit(tab, !tab.manual)}
+    title={tab.manual ? t('수동 커밋') + ' — ' + t('커밋할 때까지 변경을 트랜잭션에 둡니다') : t('자동 커밋') + ' — ' + t('문장마다 바로 반영합니다')}
+    >Tx: {tab.manual ? t('수동') : t('자동')}</button
+  >
+  <button class="icon-btn txc" onclick={() => endTx(tab, true)} disabled={!tab.inTx || tab.running} title="{t('커밋')} — {tab.manual ? t('변경을 반영합니다') : t('수동 커밋에서 씁니다')}">
+    <Icon name="check" {size} />
+  </button>
+  <button class="icon-btn" onclick={() => endTx(tab, false)} disabled={!tab.inTx || tab.running} title="{t('롤백')} — {tab.manual ? t('변경을 버립니다') : t('수동 커밋에서 씁니다')}">
+    <Icon name="undo" {size} />
+  </button>
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -552,23 +693,10 @@
       <button class="icon-btn stop" title={t('취소')} onclick={() => cancel(tab)} disabled={!tab.running}>
         <Icon name="stop" />
       </button>
-      <span class="sep"></span>
-      <select value={tab.connId} onchange={(e) => changeConn(e.currentTarget.value)} title={t('연결#선택')}>
-        {#each app.connections as c (c.id)}
-          <option value={c.id}>{c.name}</option>
-        {/each}
-      </select>
-      <select
-        bind:value={tab.schema}
-        onchange={saveWorkspaceSoon}
-        disabled={!connected || conn?.driver === 'sqlite'}
-        title={t('기본 스키마 / 데이터베이스')}
-      >
-        {#if !schemaOptions.length}<option value="">({t('스키마')})</option>{/if}
-        {#each schemaOptions as s (s)}
-          <option value={s}>{s}</option>
-        {/each}
-      </select>
+      {#if !conn?.readOnly}
+        <span class="sep"></span>
+        {@render txControls(16)}
+      {/if}
       <span class="sep"></span>
       <button class="icon-btn" title="{t('SQL 정렬')} ({isMac ? '⌘⌥L' : 'Ctrl+Alt+L'}) — {t('선택 영역 또는 전체')}" onclick={() => editor?.format()}
         ><Icon name="format" /></button
@@ -579,7 +707,26 @@
       <span class="grow"></span>
       {#if tab.running}
         <span class="running"><span class="spin"></span> {t('실행 중')} {elapsed}</span>
+      {:else if tab.inTx}
+        <span class="txwait">{t('커밋 대기 중')}</span>
       {/if}
+      <!-- (on a narrow screen, where nothing parts them from the buttons) -->
+      <span class="sep end"></span>
+      <Dropdown
+        value={tab.connId}
+        options={app.connections.map((c) => ({ value: c.id, label: c.name }))}
+        onchange={changeConn}
+        disabled={tab.inTx}
+        title={tab.inTx ? t('커밋하거나 롤백한 뒤 연결을 바꿀 수 있습니다') : t('연결#선택')}
+      />
+      <Dropdown
+        value={tab.schema}
+        options={schemaOptions.map((s) => ({ value: s, label: s }))}
+        onchange={(v) => ((tab.schema = v), saveWorkspaceSoon())}
+        placeholder="({t('스키마')})"
+        disabled={!connected || conn?.driver === 'sqlite'}
+        title={t('기본 스키마 / 데이터베이스')}
+      />
     </div>
   {/if}
 
@@ -591,15 +738,18 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="divider"
+        class:on={dividing}
         class:collapsed={tab.layout === 'results'}
-        onmousedown={startDrag}
+        onpointerdown={startDrag}
         ondblclick={toggleLayout}
         title={t('드래그: 크기 조절 · 더블클릭: 결과만 보기')}
       ></div>
     {/if}
     <div class="results">
       <div class="rtabs">
-        {#if isTable}
+        {#if tab.creating}
+          <span class="rtab on"><Icon name="table" size={13} /> {t('새 테이블')}</span>
+        {:else if isTable}
           <button class="rtab" class:on={tableView === 'data'} onclick={() => (tableView = 'data')}>
             <Icon name="table" size={13} /> {t('데이터')}
           </button>
@@ -625,15 +775,16 @@
         {/if}
         <span class="grow"></span>
         <!-- buttons in groups by role, separated by a line (.grp + .grp) -->
-        {#if !isTable}
+        {#if !tab.creating && (isTable ? tableView === 'log' : !current)}
           <div class="grp">
-            <button
-              class="icon-btn"
-              title={tab.layout === 'results' ? t('SQL 에디터 보이기') : t('결과만 크게 보기')}
-              onclick={toggleLayout}
-            >
-              <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
-            </button>
+            <input class="logq" type="search" placeholder={t('로그 검색')} bind:value={logQuery} />
+            <div class="seg" role="group">
+              <button class:on={tab.logScope !== 'conn'} onclick={() => (tab.logScope = 'tab')}>{t('이 탭')}</button>
+              <button class:on={tab.logScope === 'conn'} onclick={() => (tab.logScope = 'conn')} title={t('이 연결에서 실행한 것 전부 (저장됨)')}>{t('이 연결 전체')}</button>
+            </div>
+            {#if tab.logScope === 'conn'}
+              <button class="icon-btn" title={t('저장된 실행 로그 지우기')} onclick={clearConnLog}><Icon name="trash" size={14} /></button>
+            {/if}
           </div>
         {/if}
         {#if isTable && tableView === 'data' && !current && !busy}
@@ -664,6 +815,9 @@
               {/if}
             </div>
           {/if}
+          {#if isTable && !conn?.readOnly}
+            <div class="grp">{@render txControls(14)}</div>
+          {/if}
           <div class="grp">
             <button class="icon-btn" title={t('다시 조회')} onclick={isTable ? () => reloadTable(tab) : rerun} disabled={tab.running}>
               <Icon name="refresh" size={14} />
@@ -673,12 +827,18 @@
                 <Icon name="download" size={14} /><Icon name="chevronDown" size={10} />
               </button>
               {#if exportMenu}
-                <div class="menu" style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
+                <div class="menu" data-menu style:right="{exportMenu.right}px" style:top="{exportMenu.top}px">
                   <button onclick={() => exportResult('csv')}>CSV <span class="dim">.csv</span></button>
                   <button onclick={() => exportResult('tsv')}>TSV <span class="dim">.tsv</span></button>
                   <button onclick={() => exportResult('json')}>JSON <span class="dim">.json</span></button>
                   <button onclick={() => exportResult('sql')}>{t('INSERT 문')} <span class="dim">.sql</span></button>
                   <div class="hint">{t(current.hasMore ? '불러온 {n}행 (전체 아님)' : '불러온 {n}행', { n: num(current.rows!.length) })}</div>
+                  {#if tab.tableRef}
+                    <hr />
+                    <button onclick={() => ((exportMenu = null), (app.dataDialog = { kind: 'export', connId: tab.connId, schema: tab.tableRef!.schema, tables: [tab.tableRef!.table] }))}
+                      >{t('테이블 전체 내보내기…')}</button
+                    >
+                  {/if}
                 </div>
               {/if}
             </div>
@@ -687,17 +847,16 @@
             {/if}
           </div>
         {/if}
-        {#if isTable && tableView !== 'data'}
-          <div class="grp">
-            {#if tableView === 'ddl'}
+        {#if isTable && tableView !== 'data' && !tab.creating}
+          {#if tableView === 'ddl'}
+            <div class="grp">
               <div class="seg" role="group">
                 <button class:on={app.ddlMode === 'table'} onclick={() => ((app.ddlMode = 'table'), saveWorkspaceSoon())}>{t('컬럼·인덱스')}</button>
                 <button class:on={app.ddlMode === 'sql'} onclick={() => ((app.ddlMode = 'sql'), saveWorkspaceSoon())}>DDL</button>
               </div>
-              {#if app.ddlMode === 'sql' && ddl}
-                <button class="btn mini" onclick={() => ddl && copyText(ddl)}><Icon name="copy" size={13} /> {t('복사')}</button>
-              {/if}
-            {/if}
+            </div>
+          {/if}
+          <div class="grp">
             <button class="icon-btn" title={t('이 SELECT를 SQL 콘솔에서 열기')} onclick={openAsConsole}><Icon name="console" size={14} /></button>
           </div>
         {/if}
@@ -721,17 +880,29 @@
             <button class="icon-btn sm" title={t('다음 {n}행', { n: num(app.pageSize) })} disabled={busy || whole} onclick={() => goStep(1)}><Icon name="next" size={13} /></button>
             <button class="icon-btn sm" title={t('마지막으로')} disabled={busy || whole || (!current.hasMore && total !== null && start + loaded >= total)} onclick={goLast}><Icon name="last" size={13} /></button>
             {#if sizeMenu}
-              <div class="menu size-menu" style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
+              <div class="menu size-menu" data-menu style:right="{sizeMenu.right}px" style:top="{sizeMenu.top}px">
                 {#each PAGE_SIZES as n (n)}
                   <button class:on={app.pageSize === n} onclick={() => setPageSize(n)}>{num(n)}</button>
                 {/each}
               </div>
             {/if}
-            <span class="meta">{current.elapsedMs}ms</span>
+            <span class="meta" title={timingTitle(current)} data-tip-bar={timingParts(current).map((p) => p[1]).join(',')}>{num(timingTotal(current))}ms</span>
+          </div>
+        {/if}
+        {#if !isTable}
+          <!-- layout, at the end: it isn't about the result -->
+          <div class="grp">
+            <button
+              class="icon-btn"
+              title={tab.layout === 'results' ? t('SQL 에디터 보이기') : t('결과만 크게 보기')}
+              onclick={toggleLayout}
+            >
+              <Icon name={tab.layout === 'results' ? 'restore' : 'maximize'} size={14} />
+            </button>
           </div>
         {/if}
       </div>
-      {#if isTable && tableView === 'data' && tab.tableRef}
+      {#if isTable && tableView === 'data' && tab.tableRef && !tab.creating}
         <!-- DataGrip-style: part of the grid's surface, no boxed inputs -->
         <div class="filterbar" bind:this={filterBar}>
           <div class="fpart">
@@ -744,7 +915,7 @@
           </div>
           <div class="fpart order" style:flex="0 0 {app.orderShare * 100}%">
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="fsplit" class:on={splitting} title={t('끌어서 폭 조정 · 더블클릭하면 기본값')} onmousedown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
+            <div class="fsplit" class:on={splitting} title={t('끌어서 폭 조정 · 더블클릭하면 기본값')} onpointerdown={startSplit} ondblclick={() => ((app.orderShare = 0.32), saveWorkspaceSoon())}></div>
             <span class="ficon order"><Icon name="sortLines" size={14} /></span>
             <span class="kw" class:on={!!tab.tableRef.orderBy}>ORDER BY</span>
             <div class="fwrap">
@@ -762,25 +933,64 @@
             <div class="loading-pill"><span class="spin"></span> {t('데이터 불러오는 중…')} {elapsed}</div>
           </div>
         {/if}
-        {#if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
+        {#if tab.creating && tab.tableRef}
           <div class="structure">
-            <StructureView
-              connId={tab.connId}
-              schema={tab.tableRef.schema}
-              table={tab.tableRef.table}
-              driver={conn?.driver}
-              version={ddlVersion}
-              onchanged={structureChanged}
-              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
-            />
-            <IndexView
-              connId={tab.connId}
-              schema={tab.tableRef.schema}
-              table={tab.tableRef.table}
-              driver={conn?.driver}
-              onchanged={structureChanged}
-              onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
-            />
+            <div class="structure-in">
+              <StructureView
+                create
+                connId={tab.connId}
+                schema={tab.tableRef.schema}
+                table={tab.tableRef.table}
+                driver={conn?.driver}
+                onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+                oncreated={(made) => ((tableView = 'ddl'), tableCreated(tab, made))}
+              />
+            </div>
+          </div>
+        {:else if isTable && tableView === 'ddl' && !connected}
+          <!-- a tab restored from the last session: as for the data -->
+          <div class="reload-blank">
+            <button class="btn primary" disabled={st?.status === 'connecting'} onclick={() => connect(tab.connId)}>
+              <Icon name="plug" size={14} />
+              {st?.status === 'connecting' ? t('연결 중…') : t('연결하고 불러오기')}
+            </button>
+            {#if conn}<span class="dim">{conn.name}</span>{/if}
+          </div>
+        {:else if isTable && tableView === 'ddl' && app.ddlMode === 'table' && tab.tableRef}
+          <div class="structure">
+            <div class="structure-in">
+              <StructureView
+                connId={tab.connId}
+                schema={tab.tableRef.schema}
+                table={tab.tableRef.table}
+                driver={conn?.driver}
+                version={ddlVersion}
+                onchanged={structureChanged}
+                onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+                onkey={showKey}
+              />
+              <IndexView
+                highlight={keyHl?.kind === 'index' ? keyHl : null}
+                connId={tab.connId}
+                schema={tab.tableRef.schema}
+                table={tab.tableRef.table}
+                driver={conn?.driver}
+                onchanged={structureChanged}
+                onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+              />
+              {#if conn?.driver !== 'sqlite'}
+                <FkView
+                  highlight={keyHl?.kind === 'fk' ? keyHl : null}
+                  connId={tab.connId}
+                  schema={tab.tableRef.schema}
+                  table={tab.tableRef.table}
+                  driver={conn?.driver}
+                  version={ddlVersion}
+                  onchanged={structureChanged}
+                  onlog={(sql, outcome, err) => logStatements(tab, sql, outcome, err)}
+                />
+              {/if}
+            </div>
           </div>
         {:else if isTable && tableView === 'ddl'}
           {#if ddlError}
@@ -835,20 +1045,64 @@
     height: 100%;
   }
   .toolbar {
+    container-type: inline-size;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 1px;
     padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
+    /* sideways on a phone, as the results' row does */
+    overflow-x: auto;
+    scrollbar-width: none;
   }
-  .toolbar select {
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar > * {
+    flex-shrink: 0;
+  }
+  .toolbar :global(.dd) {
     max-width: 200px;
-    padding: 2px 6px;
-    height: 26px;
+  }
+  .toolbar :global(.dd + .dd) {
+    margin-left: 4px;
   }
   .run {
     color: var(--ok);
+  }
+  /* like .icon-btn, with text */
+  .txbtn {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    gap: 3px;
+    height: 26px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .txbtn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .txbtn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .txbtn.on {
+    color: var(--warn);
+  }
+  .txc:not(:disabled) {
+    color: var(--ok);
+  }
+  .txwait {
+    color: var(--warn);
+    font-size: 12px;
   }
   .stop {
     color: var(--danger);
@@ -856,11 +1110,11 @@
   .grp {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
   }
   .grp + .grp {
-    margin-left: 6px;
-    padding-left: 6px;
+    margin-left: 4px;
+    padding-left: 4px;
     border-left: 1px solid var(--border);
   }
   .sep {
@@ -871,6 +1125,11 @@
   }
   .grow {
     flex: 1;
+  }
+  @container (min-width: 720px) {
+    .sep.end {
+      display: none;
+    }
   }
   .running {
     display: flex;
@@ -892,14 +1151,34 @@
   .divider.collapsed {
     display: none;
   }
+  /* a 1px line, as the WHERE | ORDER BY split; the grip around it isn't seen */
   .divider {
-    height: 5px;
+    position: relative;
+    height: 1px;
     flex-shrink: 0;
     cursor: row-resize;
-    border-top: 1px solid var(--border);
-    background: var(--bg-panel);
+    background: var(--border);
+    touch-action: none;
   }
-  .divider:hover {
+  .divider::before {
+    content: '';
+    position: absolute;
+    inset: -3px 0;
+    z-index: 5;
+  }
+  /* a finger needs more */
+  @media (pointer: coarse) {
+    .divider::before {
+      inset: -10px 0;
+    }
+  }
+  /* (on touch a :hover stays after the finger lifts) */
+  @media (hover: hover) {
+    .divider:hover {
+      background: var(--accent);
+    }
+  }
+  .divider.on {
     background: var(--accent);
   }
   .results {
@@ -912,7 +1191,7 @@
     font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     padding: 0 6px;
     height: 30px;
     flex-shrink: 0;
@@ -926,6 +1205,12 @@
   }
   .rtabs::-webkit-scrollbar {
     display: none;
+  }
+  /* the row scrolls instead: nothing in it squeezes (zoomed in, a
+     narrow window) */
+  .rtabs > :not(.grow),
+  .grp > * {
+    flex-shrink: 0;
   }
   .rtab {
     display: flex;
@@ -956,6 +1241,12 @@
     overflow: auto;
     padding-bottom: 16px;
   }
+  /* columns, indexes and foreign keys as wide as each other: the view's
+     width, or (when one can't wrap enough to fit) the widest one's */
+  .structure-in {
+    width: fit-content;
+    min-width: 100%;
+  }
   .filterbar {
     display: flex;
     align-items: stretch;
@@ -984,10 +1275,39 @@
     width: 7px;
     cursor: col-resize;
     z-index: 2;
+    touch-action: none;
   }
-  .fsplit:hover,
+  /* a finger needs more than 7px to land on */
+  @media (pointer: coarse) {
+    .fsplit {
+      left: -10px;
+      width: 19px;
+    }
+    .fpart .fsplit.on {
+      background: linear-gradient(to right, transparent 9px, var(--accent) 9px, var(--accent) 10px, transparent 10px);
+    }
+  }
+  /* a phone: WHERE over ORDER BY, each the full width */
+  @media (max-width: 700px) {
+    .filterbar {
+      flex-direction: column;
+    }
+    .fpart.order {
+      flex: none !important;
+      border-left: none;
+      border-top: 1px solid var(--border);
+    }
+    .fsplit {
+      display: none;
+    }
+  }
   .fsplit.on {
     background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 4px, transparent 4px);
+  }
+  @media (hover: hover) {
+    .fsplit:hover {
+      background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 4px, transparent 4px);
+    }
   }
   .ficon {
     display: inline-flex;
@@ -1030,10 +1350,6 @@
     display: flex;
     align-items: center;
     gap: 1px;
-  }
-  .rtabs .icon-btn {
-    width: 26px;
-    height: 26px;
   }
   .rtabs .icon-btn.sm,
   .icon-btn.sm {
@@ -1084,28 +1400,6 @@
     font-weight: 600;
   }
 
-  .seg {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .seg button {
-    height: 22px;
-    padding: 0 10px;
-    border: none;
-    background: none;
-    color: var(--text-dim);
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .seg button + button {
-    border-left: 1px solid var(--border);
-  }
-  .seg button.on {
-    background: var(--bg-select);
-    color: var(--text);
-  }
   .icon-btn.split {
     width: auto;
     gap: 1px;
@@ -1231,6 +1525,29 @@
   }
   .mbody {
     min-width: 0;
+  }
+  /* queries the app made (a table tab's SELECT, pages read on): dimmed, so
+     what was typed stands out */
+  .msg.auto:not(.error) .mbody {
+    opacity: 0.5;
+  }
+  .msg .use {
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0.45;
+  }
+  .msg:hover .use,
+  .msg .use:focus-visible {
+    opacity: 1;
+  }
+  .msg .from {
+    color: var(--text-faint);
+  }
+  .logq {
+    width: 160px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 12px;
   }
   .msg pre {
     margin: 0;

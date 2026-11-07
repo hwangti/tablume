@@ -1,7 +1,6 @@
 <script lang="ts">
   import { t, num } from '../lib/i18n.svelte'
   import type { Cell } from '../lib/types'
-  import { copyText } from '../lib/clipboard'
   import Modal from './Modal.svelte'
   import TextEditor from './TextEditor.svelte'
   import { untrack } from 'svelte'
@@ -10,12 +9,14 @@
     column,
     value,
     editable = false,
+    nullable = true,
     onsave,
     onclose,
   }: {
     column: string
     value: Cell
     editable?: boolean
+    nullable?: boolean // offer "NULL로 설정" (not for a comment)
     onsave?: (v: Cell) => void
     onclose: () => void
   } = $props()
@@ -60,11 +61,10 @@
     {/if}
     {#if editable}
       {#if json && json !== text}<button class="btn" onclick={() => (text = json!)}>{t('JSON 정렬')}</button>{/if}
-      <button class="btn" onclick={() => ((isNull = true), (text = ''))}>{t('NULL로 설정')}</button>
+      {#if nullable}<button class="btn" onclick={() => ((isNull = true), (text = ''))}>{t('NULL로 설정')}</button>{/if}
       <button class="btn" onclick={onclose}>{t('취소')}</button>
       <button class="btn primary" onclick={save} title="Ctrl+Enter / Cmd+Enter">{t('적용')}</button>
     {:else}
-      <button class="btn" onclick={() => copyText(shown)} disabled={isNull}>{t('복사')}</button>
       <button class="btn primary" onclick={onclose}>{t('닫기')}</button>
     {/if}
   {/snippet}
