@@ -532,7 +532,7 @@ export default {
   "파일 고르기…": "Choose file…",
   "행마다 객체 하나인 배열입니다. 숫자는 숫자로, 바이너리는 0x… 문자열로 씁니다.": "An array with one object per row. Numbers are numbers, binary is a 0x… string.",
   "형식": "Format",
-  '“{name}” 스키마 코멘트': 'Comment of schema “{name}”',
+  '스키마 코멘트': 'Schema comment',
   '스키마 코멘트를 바꿨습니다': 'Schema comment changed',
   '스키마 코멘트를 지웠습니다': 'Schema comment removed',
   '코멘트 수정…': 'Edit comment…',
