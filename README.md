@@ -29,11 +29,12 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 - Clicking a table opens it in a preview tab that the next click reuses; double-click keeps it. A table that is already open switches to its tab, and ⌖ above the tree finds the open table.
 - Connections and schemas expand with ▸ or a double-click; the keyboard works too (↑↓ move, → expand, ← collapse). The current connection's name stays pinned at the top while scrolling.
 - The table filter shows only schemas with matching tables, among the ones already loaded.
-- View options can add table and column comments, row counts and sizes. Counts and sizes are estimates from the database statistics, fetched only while the option is on; a full count in a table tab updates the tree.
+- View options can add schema, table and column comments, row counts and sizes. Counts and sizes are estimates from the database statistics, fetched only while the option is on; a full count in a table tab updates the tree.
 - Hovering a table or column shows its comment, row count and size.
 - "Procedures · Functions" under a schema lists routines (packages on Oracle; not SQLite). Clicking one opens its source in a console, wrapped to run as is (`DELIMITER`, `GO`, `/`).
 - Table menu: view data, view DDL, put a SELECT in the console, copy names, rename (`F2`; open tabs follow), export data, import a CSV, empty the table, drop the table or view. Emptying (`TRUNCATE`; `DELETE` on SQLite) and dropping ask first, and tabs of a dropped table close.
-- Schema menu: create a table, table and routine lists (comments, row counts, sizes, dates and more from the catalog, opened as a grid you can sort, filter and export), ERD (MySQL/MariaDB), export the schema, drop the schema.
+- Schema menu: create a table, table and routine lists (comments, row counts, sizes, dates and more from the catalog, opened as a grid you can sort, filter and export), ERD (MySQL/MariaDB), edit the comment, export the schema, drop the schema.
+- Schema comments: a database's comment on MariaDB (10.5+), `COMMENT ON SCHEMA` on PostgreSQL and a database's `MS_Description` property on SQL Server (SSMS's "Description") show in the tree, its tooltips and the schema picker, and "Edit comment…" in the schema menu changes them. MySQL, Oracle and SQLite have no schema comments.
 - Creating and dropping schemas: schemas on PostgreSQL (`DROP SCHEMA … CASCADE`), databases on MySQL/MariaDB and SQL Server. Creating is in the connection and schema menus; dropping asks first and isn't offered for system schemas. Not on Oracle or SQLite.
 - DDL run in a console (`CREATE`/`ALTER`/`DROP`/`RENAME`, `CREATE DATABASE`/`SCHEMA`) reloads the affected parts of the tree.
 
