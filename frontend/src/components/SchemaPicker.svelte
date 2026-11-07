@@ -94,6 +94,13 @@
   function outside(e: MouseEvent) {
     if (el && !el.contains(e.target as Node)) onclose()
   }
+
+  // autofocus only acts when nothing has the focus, and the button that
+  // opened this keeps it. (Not on a touch screen, where the keyboard would
+  // cover the list.)
+  function focusSearch(node: HTMLInputElement) {
+    if (matchMedia('(pointer: fine)').matches) requestAnimationFrame(() => node.focus({ preventScroll: true }))
+  }
 </script>
 
 <svelte:window onmousedown={outside} onkeydown={(e) => e.key === 'Escape' && !addingPattern && onclose()} />
@@ -108,8 +115,7 @@
   </div>
   <div class="search">
     <Icon name="filter" size={13} />
-    <!-- svelte-ignore a11y_autofocus -->
-    <input bind:value={search} placeholder={t('스키마 검색')} spellcheck="false" autofocus />
+    <input bind:value={search} placeholder={t('스키마 검색')} spellcheck="false" use:focusSearch />
   </div>
 
   <div class="list">
