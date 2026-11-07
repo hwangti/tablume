@@ -517,6 +517,11 @@ export interface SchemaGraph {
 export interface SchemaList {
     "schemas": string[] | null;
     "current": string;
+
+    /**
+     * Comments of the schemas that have one (MariaDB, PostgreSQL, SQL Server).
+     */
+    "comments": { [_ in string]?: string } | null;
 }
 
 export interface StmtResult {

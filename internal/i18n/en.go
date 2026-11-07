@@ -196,4 +196,5 @@ var en = map[string]string{
 	"연결 파일을 읽지 못했습니다: %v":         "Couldn't read the connection file: %v",
 	"Tablume 연결 파일이 아닙니다":         "Not a Tablume connection file",
 	"더 새 버전의 Tablume에서 내보낸 파일입니다": "The file was exported by a newer version of Tablume",
+	"이 DB에서는 스키마 코멘트를 쓸 수 없습니다":   "This database has no schema comments",
 }

@@ -56,7 +56,7 @@ export default {
   '배율 고르기': 'Choose zoom',
   '트리에 표시': 'Show in tree',
   '스키마별 테이블 수': 'Table count per schema',
-  '테이블 · 컬럼 코멘트': 'Table and column comments',
+  '코멘트 (스키마 · 테이블 · 컬럼)': 'Comments (schemas, tables, columns)',
   '테이블 행 수': 'Table row counts',
   '테이블 크기': 'Table sizes',
   '결과 표': 'Result grid',
@@ -601,4 +601,8 @@ export default {
   '연결 목록': 'Connections',
   '모두 내보내기…': 'Export all…',
   '가져오기…': 'Import…',
+  '“{name}” 스키마 코멘트': 'Comment of schema “{name}”',
+  '스키마 코멘트를 바꿨습니다': 'Schema comment changed',
+  '스키마 코멘트를 지웠습니다': 'Schema comment removed',
+  '코멘트 수정…': 'Edit comment…',
 } as Record<string, string>

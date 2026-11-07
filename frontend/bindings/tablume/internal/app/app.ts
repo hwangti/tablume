@@ -383,6 +383,13 @@ export function SetLanguage(lang: string): $CancellablePromise<void> {
 }
 
 /**
+ * SetSchemaComment sets or (empty) removes a schema's comment; returns the statement it ran.
+ */
+export function SetSchemaComment(id: string, name: string, comment: string): $CancellablePromise<string> {
+    return $Call.ByID(2815426728, id, name, comment);
+}
+
+/**
  * SetSchemaFilter stores which schemas the tree shows for a connection.
  */
 export function SetSchemaFilter(id: string, f: dbx$0.SchemaFilter | null): $CancellablePromise<void> {
