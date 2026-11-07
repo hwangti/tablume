@@ -541,9 +541,23 @@
     return true
   }
 
+  // Alt released after Alt+click would go to the browser's (or Windows')
+  // menu, which then keeps the keyboard and the wheel until a click; the
+  // desktop app also stops it natively (altmenu_windows.go).
+  function swallowAltUp() {
+    const up = (k: KeyboardEvent) => {
+      if (k.key !== 'Alt') return
+      k.preventDefault()
+      removeEventListener('keyup', up, true)
+    }
+    addEventListener('keyup', up, true)
+    setTimeout(() => removeEventListener('keyup', up, true), 10000)
+  }
+
   function cellDown(e: MouseEvent, vi: number, c: number) {
     if (e.button === 0 && linkKey(e) && !e.shiftKey && follow(vi, c)) {
       e.preventDefault()
+      if (e.altKey) swallowAltUp()
       return
     }
     if (e.button === 2 && isSel(vi, c)) return

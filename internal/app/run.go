@@ -38,6 +38,7 @@ func Run(assets fs.FS, icon []byte, ver string) error {
 		},
 		Windows: application.WindowsOptions{WebviewUserDataPath: webviewDir},
 	}
+	guardAltMenu(&opts)
 	start := setupPlatform(svc, &opts)
 	app := application.New(opts)
 
