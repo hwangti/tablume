@@ -294,7 +294,14 @@ func (mysqlDialect) RoutineSource(ctx context.Context, conn *sql.Conn, schema st
 	return "DELIMITER $$\n" + strings.TrimSpace(rows[0][2]) + "$$\nDELIMITER ;", nil
 }
 
-func (mysqlDialect) Param(int, string) string { return "?" }
+// A BIT column is shown as its number, and a string would be stored as its
+// bytes ('1' is 0x31: out of range for BIT(1)), so the number is cast.
+func (mysqlDialect) Param(_ int, typ string) string {
+	if base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(typ)), "("); base == "bit" {
+		return "CAST(? AS UNSIGNED)"
+	}
+	return "?"
+}
 
 // ---- indexes
 

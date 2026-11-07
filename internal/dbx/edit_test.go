@@ -48,3 +48,20 @@ func TestEditableType(t *testing.T) {
 		}
 	}
 }
+
+func TestBitValues(t *testing.T) {
+	for _, c := range []struct {
+		in   []byte
+		want string
+	}{{[]byte{1}, "1"}, {[]byte{0}, "0"}, {[]byte{1, 2}, "258"}, {[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, "18446744073709551615"}} {
+		if got := cell(c.in, "BIT"); got != c.want {
+			t.Errorf("cell(%v, BIT) = %v, want %s", c.in, got, c.want)
+		}
+	}
+	if got := cell([]byte("x"), "VARCHAR"); got != "x" {
+		t.Errorf("varchar: %v", got)
+	}
+	if d := (mysqlDialect{}); d.Param(1, "bit(1)") != "CAST(? AS UNSIGNED)" || d.Param(1, "bigint(20)") != "?" {
+		t.Error("Param")
+	}
+}
