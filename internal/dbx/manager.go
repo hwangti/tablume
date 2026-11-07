@@ -904,6 +904,15 @@ func cell(v any, dbType string) any {
 		if strings.EqualFold(dbType, "UNIQUEIDENTIFIER") && len(x) == 16 {
 			return mssqlGUID(x)
 		}
+		// MySQL/MariaDB BIT(n) comes as its bytes (b'1' is "\x01", which
+		// showed as a control character): its number, as the server prints it
+		if strings.EqualFold(dbType, "BIT") && len(x) <= 8 {
+			var n uint64
+			for _, b := range x {
+				n = n<<8 | uint64(b)
+			}
+			return strconv.FormatUint(n, 10)
+		}
 		if utf8.Valid(x) && !isBinaryType(dbType) {
 			return plainFloat(clip(string(x)), dbType)
 		}

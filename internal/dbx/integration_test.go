@@ -831,3 +831,44 @@ func TestOracleMviewListedOnce(t *testing.T) {
 		t.Fatalf("TB_MV listed %d times", n)
 	}
 }
+
+// BIT came as raw bytes (b'1' showed as a control character), and an edit
+// sent '1' as a string, which is 0x31.
+func TestMySQLBit(t *testing.T) {
+	tg := targets(t)["mariadb"]
+	m := NewManager()
+	if _, err := m.Connect(tg.cfg); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Disconnect(tg.cfg.ID)
+	run := func(sql string) ExecResponse {
+		t.Helper()
+		res, err := m.Execute(ExecRequest{TabID: "b", ConnID: tg.cfg.ID, Schema: tg.schema, SQL: sql, Cursor: -1})
+		if err != nil || res.Results[len(res.Results)-1].Error != "" {
+			t.Fatal(err, res.Results)
+		}
+		return res
+	}
+	defer run("DROP TABLE IF EXISTS bits")
+	run("DROP TABLE IF EXISTS bits; CREATE TABLE bits (id INT PRIMARY KEY, f BIT(1), w BIT(10)); INSERT INTO bits VALUES (1, b'1', b'1000000010'), (2, b'0', NULL)")
+	rows := run("SELECT id, f, w FROM bits ORDER BY id").Results[0].Rows
+	if rows[0][1] != "1" || rows[0][2] != "514" || rows[1][1] != "0" || rows[1][2] != nil {
+		t.Fatalf("read %v", rows)
+	}
+	info, err := m.EditInfo(tg.cfg.ID, tg.schema, []string{"bits"}, []string{"id", "f", "w"})
+	if err != nil || !info.Editable {
+		t.Fatal(err, info)
+	}
+	n, err := m.ApplyChanges(ApplyRequest{ConnID: tg.cfg.ID, Schema: tg.schema, Table: info.Table, Changes: []RowChange{
+		{Kind: "update", Key: map[string]any{"id": "1"}, Values: map[string]any{"f": "0", "w": "3"}},
+		{Kind: "update", Key: map[string]any{"id": "2"}, Values: map[string]any{"f": "1"}},
+		{Kind: "insert", Values: map[string]any{"id": "3", "f": "1", "w": "1023"}},
+	}})
+	if err != nil || n != 3 {
+		t.Fatal(n, err)
+	}
+	rows = run("SELECT id, f, w FROM bits ORDER BY id").Results[0].Rows
+	if rows[0][1] != "0" || rows[0][2] != "3" || rows[1][1] != "1" || rows[2][1] != "1" || rows[2][2] != "1023" {
+		t.Fatalf("after edit %v", rows)
+	}
+}
