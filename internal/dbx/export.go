@@ -119,6 +119,13 @@ func exportValue(v any, dbType string) (string, valKind) {
 		if strings.EqualFold(dbType, "UNIQUEIDENTIFIER") && len(x) == 16 {
 			return mssqlGUID(x), vText
 		}
+		if strings.EqualFold(dbType, "BIT") && len(x) <= 8 { // MySQL/MariaDB: as cell() shows it
+			var n uint64
+			for _, b := range x {
+				n = n<<8 | uint64(b)
+			}
+			return strconv.FormatUint(n, 10), vNum
+		}
 		if utf8.Valid(x) && !isBinaryType(dbType) {
 			return num(plainFloat(string(x), dbType))
 		}
