@@ -574,7 +574,7 @@
       </label>
       <label class="prop wide">
         <span>{t('코멘트')}</span>
-        <span class="with-dots">
+        <span class="with-dots on-focus">
           <input
             class:edited={tcDraft !== null}
             value={tcDraft ?? tableComment}
@@ -587,6 +587,7 @@
             <button
               class="dots"
               title={t('큰 창에서 편집')}
+              onmousedown={(e) => e.preventDefault()}
               onclick={(e) => (e.preventDefault(), (viewing = { title: t('테이블 코멘트'), value: tcDraft ?? tableComment, save: (v) => (tcDraft = v === tableComment ? null : v) }))}>…</button
             >
           {/if}
@@ -927,6 +928,14 @@
   }
   .rel {
     position: relative;
+  }
+  /* the table comment: "…" only while it's being typed in, as in a cell
+     (pressing it keeps the focus, so it stays to be clicked) */
+  .on-focus:not(:focus-within) .dots {
+    display: none;
+  }
+  .with-dots.on-focus:not(:focus-within) input {
+    padding-right: 7px;
   }
   input.with-dots,
   .with-dots input {
