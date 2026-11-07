@@ -36,10 +36,32 @@ jobs:
         run: wails3 package
       - name: Zip macOS app
         if: runner.os == 'macOS'
-        run: cd build/bin && ditto -c -k --keepParent Tablume.app Tablume-macos.zip
+        run: cd build/bin && ditto -c -k --keepParent Tablume.app Tablume-macos-arm64.zip
+      # zipped: browsers and mail often block a bare .exe
+      - name: Zip Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path build/bin/Tablume.exe -DestinationPath build/bin/Tablume-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            build/bin/*.zip
-            build/bin/*.exe
+          path: build/bin/*.zip
+
+  # On a tag, a draft release with both zips. Publishing it (on GitHub) makes
+  # it the latest release, which is what the app's update check reads.
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/*.zip --repo "$GITHUB_REPOSITORY" --draft --title "Tablume ${TAG#v}" --generate-notes --verify-tag
