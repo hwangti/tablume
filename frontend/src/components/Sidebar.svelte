@@ -38,7 +38,7 @@
     exportConnections,
     importConnections,
     schemaCommentable,
-    editSchemaComment,
+    setSchemaComment,
     schemaShown,
     ensureStats,
     moveConnection,
@@ -57,6 +57,7 @@
   import { copyText, isMac, modKey } from '../lib/clipboard'
   import { DRIVERS, driverLabel, type ConnConfig, type Column, type Routine, type Table } from '../lib/types'
   import SchemaPicker from './SchemaPicker.svelte'
+  import CellViewer from './CellViewer.svelte'
 
   let filter = $state('')
   let viewMenu = $state(false)
@@ -416,6 +417,8 @@
   // native title which truncates and appears late.
   let tip = $state<null | { top: number; left: number; title: string; lines: string[] }>(null)
   let tipTimer: ReturnType<typeof setTimeout> | undefined
+  // a schema's comment in the large editor, as a table's
+  let schemaCmt = $state<null | { connId: string; s: SchemaNode }>(null)
 
   const routineLabel = (type: string) => ({ PROCEDURE: tr('프로시저'), FUNCTION: tr('함수'), PACKAGE: tr('패키지') })[type] ?? type
 
@@ -606,7 +609,7 @@
         ...(ERD_DRIVERS.includes(c.driver) ? [{ label: tr('ERD 보기'), icon: 'erd', run: () => openErd(c.id, s.name) }] : []),
         ...(c.readOnly ? [] : [{ label: tr('테이블 만들기'), icon: 'plus', run: () => openCreateTable(c.id, s.name), sep: true }]),
         ...(!c.readOnly && SCHEMA_DRIVERS.includes(c.driver) ? [{ label: tr('스키마 만들기…'), icon: 'plus', run: () => createSchema(c.id) }] : []),
-        ...(!c.readOnly && schemaCommentable(c) ? [{ label: tr('코멘트 수정…'), icon: 'edit', run: () => editSchemaComment(c.id, s) }] : []),
+        ...(!c.readOnly && schemaCommentable(c) ? [{ label: tr('코멘트 수정…'), icon: 'edit', run: () => (schemaCmt = { connId: c.id, s }) }] : []),
         { label: tr('스키마 내보내기…'), icon: 'download', run: () => (app.dataDialog = { kind: 'export', connId: c.id, schema: s.name, tables: [] }), sep: true },
         { label: tr('새로고침'), icon: 'refresh', run: () => loadTables(c.id, s), sep: true },
         ...(c.driver !== 'sqlite' ? [{ label: tr('표시할 스키마…'), icon: 'schemas', run: () => openPicker(c.id, e) }] : []),
@@ -870,6 +873,17 @@
       </button>
     {/each}
   </div>
+{/if}
+
+{#if schemaCmt}
+  <CellViewer
+    column="{schemaCmt.s.name} — {tr('스키마 코멘트')}"
+    value={schemaCmt.s.comment ?? ''}
+    editable
+    nullable={false}
+    onsave={(v) => schemaCmt && setSchemaComment(schemaCmt.connId, schemaCmt.s, v ?? '')}
+    onclose={() => (schemaCmt = null)}
+  />
 {/if}
 
 {#if picker}

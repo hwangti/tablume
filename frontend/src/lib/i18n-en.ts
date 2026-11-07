@@ -601,7 +601,7 @@ export default {
   '연결 목록': 'Connections',
   '모두 내보내기…': 'Export all…',
   '가져오기…': 'Import…',
-  '“{name}” 스키마 코멘트': 'Comment of schema “{name}”',
+  '스키마 코멘트': 'Schema comment',
   '스키마 코멘트를 바꿨습니다': 'Schema comment changed',
   '스키마 코멘트를 지웠습니다': 'Schema comment removed',
   '코멘트 수정…': 'Edit comment…',

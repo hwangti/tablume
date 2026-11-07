@@ -1288,10 +1288,9 @@ export function schemaCommentable(c: ConnConfig): boolean {
   return c.driver === 'mysql' && /mariadb/i.test(app.conn[c.id]?.version ?? '')
 }
 
-/** Asks for a schema's comment and sets it (empty removes it). */
-export async function editSchemaComment(connId: string, s: SchemaNode) {
-  const v = await askText(tr('“{name}” 스키마 코멘트', { name: s.name }), s.comment ?? '', tr('저장'))
-  if (v === null || v.trim() === (s.comment ?? '')) return
+/** Sets a schema's comment (empty removes it). */
+export async function setSchemaComment(connId: string, s: SchemaNode, v: string) {
+  if (v.trim() === (s.comment ?? '')) return
   try {
     await api.SetSchemaComment(connId, s.name, v)
   } catch (e) {
