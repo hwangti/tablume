@@ -467,7 +467,7 @@
   }
   table {
     border-collapse: collapse;
-    min-width: 100%;
+    width: 100%; /* the width QueryTab gives the three tables */
   }
   th {
     position: sticky;
@@ -525,12 +525,21 @@
   td.k span {
     display: inline-flex;
   }
+  th.k,
+  td.k {
+    width: 1%;
+    padding: 0 4px;
+  }
   td.c {
     text-align: center;
     color: var(--ok);
   }
   .name {
     font-weight: 600;
+    /* a long one-word name wraps rather than widening the table */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 160px;
   }
   .cols {
     color: var(--syn-ident);
@@ -538,7 +547,7 @@
   /* long column lists and expressions wrap instead of widening the table */
   .cols,
   .cond {
-    min-width: 220px;
+    min-width: 150px;
     padding-top: 3px;
     padding-bottom: 3px;
     white-space: normal;
