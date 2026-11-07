@@ -295,6 +295,9 @@
     storeLayout()
   }
 
+  // primary key values in semi-bold
+  let pkCol = $derived(columns.map((_, i) => !!info?.keys?.[i]?.includes('PK')))
+
   function keyIcons(c: number): { icon: string; color: string; label: string }[] {
     const k = info?.keys?.[c]
     if (!k) return []
@@ -975,6 +978,7 @@
             class:deleted={st?.deleted[ri]}
             class:editing={editing?.ri === ri && editing?.c === c}
             class:fk={!!onfollow && !!info?.refs?.[c] && v !== null}
+            class:pk={pkCol[c] && v !== null}
             style:width="{cw[c]}px"
             onmousedown={(e) => cellDown(e, vi, p)}
             onmouseover={(e) => cellOver(e, vi, p)}
@@ -1267,10 +1271,20 @@
   .cell-input.with-dots {
     padding-right: 26px; /* room for the "…" button */
   }
+  .td.pk {
+    font-weight: 600;
+  }
+  /* a value that leads to its row (⌘/Alt/Ctrl+click): underlined, faintly
+     until the key is held */
+  .td.fk {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 2px;
+  }
   .grid.link-held .td.fk:hover {
     cursor: pointer;
     color: var(--accent);
-    text-decoration: underline;
+    text-decoration-color: currentColor;
   }
   .td.same {
     background: var(--cell-same);
