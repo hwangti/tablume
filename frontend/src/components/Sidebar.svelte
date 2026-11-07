@@ -1241,6 +1241,15 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    /* a short window: it scrolls instead of running off the bottom
+       (it opens 34px down: the bar, then the gap) */
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .viewmenu > :global(*) {
+    flex-shrink: 0; /* scroll, don't squeeze the rows */
   }
   .vm-title {
     color: var(--text-dim);
