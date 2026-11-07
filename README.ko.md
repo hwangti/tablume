@@ -331,9 +331,11 @@ wails3 task version VERSION=0.9.1
 
 ### GitHub Actions로 배포 파일 만들기
 
-`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(Apple Silicon) `.app` zip과 Windows `.exe`를 만들어 아티팩트로 올립니다. 태그는 `VERSION`과 같아야 합니다(`0.9.0`이면 `v0.9.0`).
+`.github/workflows/build.yml`은 `v*` 태그를 푸시하거나 Actions 탭에서 수동으로 실행하면 돌아갑니다. macOS(Apple Silicon) `.app` zip과 Windows `.exe` zip을 만들어 아티팩트로 올립니다. 태그는 `VERSION`과 같아야 합니다(`1.0.0`이면 `v1.0.0`).
 
-macOS 빌드는 서명되지 않았기 때문에 처음 실행할 때 Finder에서 우클릭 → 열기를 하거나, 다음 명령을 실행해야 합니다.
+태그로 실행하면 두 zip을 붙인 Release 초안도 만듭니다. 초안은 GitHub의 Releases 화면에서 릴리스 노트를 다듬은 뒤 게시합니다. 게시해야 최신 Release가 되고, 그때부터 앱의 새 버전 확인에 잡힙니다.
+
+macOS 빌드는 서명되지 않았기 때문에 처음 실행할 때 Finder에서 우클릭 → 열기를 하거나, 다음 명령을 실행해야 합니다. Windows `.exe`도 서명되지 않아서 처음 실행할 때 SmartScreen이 막으면 "추가 정보" → "실행"을 누릅니다.
 
 ```bash
 xattr -dr com.apple.quarantine Tablume.app
@@ -410,10 +412,12 @@ frontend/                  Svelte 5 + CodeMirror 6 UI
 
 ## 다음에 하면 좋을 것
 
-- 수동 커밋 모드 토글
-- 쿼리 히스토리
-- 인덱스/제약조건 트리
+- 실행 계획(EXPLAIN) 버튼
+- 쿼리 파라미터 (`:id`처럼 써 두면 실행할 때 값을 묻기)
+- 트리에 트리거·시퀀스·인덱스·제약조건
 - 여러 컬럼으로 된 외래 키 따라가기 (지금은 셀 하나의 값으로만 찾습니다)
+- MySQL/MariaDB 외 DB의 ERD
+- Intel Mac·Linux 빌드
 
 ## 라이선스
 

@@ -333,9 +333,11 @@ wails3 task version VERSION=0.9.1
 
 ### Release builds with GitHub Actions
 
-`.github/workflows/build.yml` runs when a `v*` tag is pushed, or by hand from the Actions tab. It builds a macOS (Apple Silicon) `.app` zip and a Windows `.exe` and uploads them as artifacts. A tag must match `VERSION` (`v0.9.0` for `0.9.0`).
+`.github/workflows/build.yml` runs when a `v*` tag is pushed, or by hand from the Actions tab. It builds a macOS (Apple Silicon) `.app` zip and a Windows `.exe` zip and uploads them as artifacts. A tag must match `VERSION` (`v1.0.0` for `1.0.0`).
 
-The macOS build isn't signed, so the first launch needs right-click → Open in Finder, or:
+Run by a tag, it also drafts a release with both zips. Polish the notes on GitHub's Releases page, then publish it: only then is it the latest release, which the app's update check looks for.
+
+The macOS build isn't signed, so the first launch needs right-click → Open in Finder, or the command below. The Windows `.exe` isn't signed either: if SmartScreen stops the first launch, choose "More info" → "Run anyway".
 
 ```bash
 xattr -dr com.apple.quarantine Tablume.app
@@ -412,10 +414,12 @@ Settings are stored in:
 
 ## Ideas for later
 
-- A manual-commit mode toggle
-- Query history
-- Indexes/constraints in the tree
+- An EXPLAIN (query plan) button
+- Query parameters (`:id` in the SQL, asked for on running)
+- Triggers, sequences, indexes and constraints in the tree
 - Following multi-column foreign keys (today a single cell's value is looked up)
+- ERD for databases other than MySQL/MariaDB
+- Intel Mac and Linux builds
 
 ## License
 
