@@ -44,7 +44,6 @@
     dismissToast,
     groupTabs,
     tabShown,
-    joinGroup,
     moveToGroup,
     splitTo,
     unsplitAll,
@@ -279,7 +278,11 @@
   // before that, a swipe scrolls the strip.
   const TAB_HOLD_MS = 450
   let tabHeld = false
-  let drop = $state<{ gid: string; zone: Side | 'center'; rect: Rect } | null>(null)
+  // Where the dragged tab would go: a part of a group (the rect is shown),
+  // or a place in another group's strip (before that tab, or at its end;
+  // the line is shown, in px within the tab area).
+  type Drop = { gid: string; zone: Side | 'center'; rect: Rect } | { gid: string; before?: string; line: { x: number; y: number; h: number } }
+  let drop = $state<Drop | null>(null)
 
   function tabDown(e: PointerEvent, id: string) {
     if (e.button === 1) {
@@ -313,7 +316,8 @@
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       if (app.tabDrag) {
-        if (drop) drop.zone === 'center' ? moveToGroup(id, drop.gid) : splitTo(id, drop.gid, drop.zone)
+        if (drop && 'line' in drop) moveToGroup(id, drop.gid, drop.before)
+        else if (drop) drop.zone === 'center' ? moveToGroup(id, drop.gid) : splitTo(id, drop.gid, drop.zone)
         app.tabDrag = '' // (emptied groups go now)
         saveWorkspaceSoon()
       }
@@ -328,20 +332,27 @@
   function dragOver(id: string, x: number, y: number) {
     const t = app.tabs.find((v) => v.id === id)
     if (!t) return
-    // along a strip: placed among its tabs, live
+    // along a strip: its own is reordered live; another's shows where the
+    // tab would go in, and only the drop moves it there
     for (const el of contentEl.querySelectorAll<HTMLElement>('.strip')) {
       const r = el.getBoundingClientRect()
       if (x < r.left || x > r.right || y < r.top - 6 || y > r.bottom + 6) continue
       drop = null
       const gid = el.dataset.gid ?? ''
-      if (gid) joinGroup(id, gid)
       const els = [...el.querySelectorAll<HTMLElement>('.tab')].filter((v) => v.dataset.id !== id)
       const order = els.map((v) => v.dataset.id!)
-      const to = els.findIndex((v) => {
+      let to = els.findIndex((v) => {
         const b = v.getBoundingClientRect()
         return x < b.left + b.width / 2
       })
-      order.splice(to < 0 ? order.length : to, 0, id)
+      if (to < 0) to = order.length
+      if (gid && gid !== t.group) {
+        const box = contentEl.getBoundingClientRect()
+        const at = els[to]?.getBoundingClientRect().left ?? els[els.length - 1]?.getBoundingClientRect().right ?? el.querySelector('.tabs')!.getBoundingClientRect().left
+        drop = { gid, before: order[to], line: { x: at - box.left, y: r.top - box.top, h: r.height } }
+        return
+      }
+      order.splice(to, 0, id)
       reorder(gid, order)
       return
     }
@@ -582,7 +593,9 @@
         ></div>
       {/each}
 
-      {#if drop}
+      {#if drop && 'line' in drop}
+        <div class="drop-at" style="left:{drop.line.x}px;top:{drop.line.y}px;height:{drop.line.h}px"></div>
+      {:else if drop}
         <div class="drop" style={place(drop.rect)}></div>
       {/if}
 
@@ -874,6 +887,16 @@
     z-index: 6;
     background: color-mix(in srgb, var(--accent) 22%, transparent);
     border: 2px solid var(--accent);
+    pointer-events: none;
+  }
+  /* where a dragged tab would go in another group's strip */
+  .drop-at {
+    position: absolute;
+    z-index: 6;
+    width: 3px;
+    margin-left: -1.5px;
+    border-radius: 2px;
+    background: var(--accent);
     pointer-events: none;
   }
   .welcome {
