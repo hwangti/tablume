@@ -3,7 +3,7 @@
   import { isWeb } from '../lib/platform'
   import { pickServerFile } from '../lib/webfiles.svelte'
   import { api, errText } from '../lib/api'
-  import { app, loadConnections, disconnect, connect, toast, confirmBox } from '../lib/state.svelte'
+  import { app, loadConnections, disconnect, connect, toast, confirmBox, closeGone } from '../lib/state.svelte'
   import { DRIVERS, type ConnConfig, type Driver } from '../lib/types'
   import Modal from './Modal.svelte'
   import { untrack } from 'svelte'
@@ -112,7 +112,7 @@
   async function remove() {
     if (!(await confirmBox(t("'{name}' 연결을 삭제할까요?", { name: c.name })))) return
     await api.DeleteConnection(c.id)
-    app.tabs = app.tabs.filter((t) => t.connId !== c.id)
+    closeGone(app.tabs.filter((t) => t.connId === c.id))
     await loadConnections()
     app.editing = null
   }

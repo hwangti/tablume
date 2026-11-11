@@ -6,6 +6,7 @@ import { getTheme, setTheme } from './theme'
 import { tabPending } from './editing.svelte'
 import { DRIVERS } from './types'
 import { DEFAULT_AUDIT } from './erd'
+import { group, groups, removeGroup, splitAt, validate, type Pane, type Side } from './panes'
 import type { Cell, Column, ConnConfig, Driver, Routine, SchemaFilter, StmtResult, Table } from './types'
 
 export interface TableNode {
@@ -91,6 +92,8 @@ export interface Tab {
   // A table being designed (the structure view only; nothing in the
   // database yet, not saved with the workspace).
   creating?: boolean
+  // The tab group (split pane) it is in: an id of a group in app.panes.
+  group?: string
 }
 
 export interface TableRef {
@@ -145,6 +148,10 @@ export const app = $state({
   zoom: 1, // whole window (desktop app; the browser zooms the web page itself)
   sidebarHidden: false, // the connection tree folded away (Ctrl/⌘+B)
   wide: false, // 넓게 보기: only the active tab, no tree or tab strip (not saved)
+  // Split tab groups (see panes.ts) and the one with the active tab.
+  panes: group('g') as Pane,
+  focus: 'g',
+  tabDrag: '', // a tab being dragged (emptied groups stay until it's dropped)
   orderShare: 0.32, // ORDER BY part of a table tab's filter bar (WHERE gets the rest)
   gridColNumbers: false, // column numbers in result headers
   erdAudit: [...DEFAULT_AUDIT] as string[], // column names the ERD takes for audit columns (* wildcards)
@@ -589,6 +596,119 @@ export function activeTab(): Tab | undefined {
   return app.tabs.find((t) => t.id === app.activeTab)
 }
 
+// ---- tab groups (split panes)
+// Each tab belongs to a group in app.panes; tabs keep their order in
+// app.tabs, and a group shows its own in that order. app.activeTab is the
+// focused group's active tab: setting it focuses that tab's group.
+
+const findGroup = (id: string) => groups(app.panes).find((g) => g.id === id)
+
+/** The tabs a group's strip shows. */
+export function groupTabs(id: string): Tab[] {
+  return app.tabs.filter((t) => !t.detached && t.group === id)
+}
+
+/** The tab is the one its group shows (whether or not that group is on screen). */
+export function tabShown(t: Tab): boolean {
+  return !t.detached && !!t.group && findGroup(t.group)?.active === t.id
+}
+
+/** Keeps groups, tabs and the focus consistent: a tab without a group goes
+ *  to the focused one, an emptied group goes, each group's active tab is
+ *  one of its tabs. Runs after every change (an effect below). */
+function tidyGroups() {
+  const shown = app.tabs.filter((t) => !t.detached)
+  let all = groups(app.panes)
+  const focus = all.some((g) => g.id === app.focus) ? app.focus : all[0].id
+  for (const t of shown) if (!t.group || !all.some((g) => g.id === t.group)) t.group = focus
+  if (!app.tabDrag)
+    for (const g of all)
+      if (all.length > 1 && !shown.some((t) => t.group === g.id)) {
+        app.panes = removeGroup(app.panes, g.id)
+        all = groups(app.panes)
+      }
+  const cur = shown.find((t) => t.id === app.activeTab)
+  if (cur) {
+    if (app.focus !== cur.group) app.focus = cur.group!
+    const g = findGroup(cur.group!)
+    if (g && g.active !== cur.id) g.active = cur.id
+  }
+  for (const g of all) {
+    if (shown.some((t) => t.id === g.active && t.group === g.id)) continue
+    const v = shown.find((t) => t.group === g.id)?.id ?? ''
+    if (g.active !== v) g.active = v
+  }
+  if (!all.some((g) => g.id === app.focus)) app.focus = all[0].id
+  if (!cur) {
+    const a = findGroup(app.focus)?.active ?? ''
+    if (app.activeTab !== a) app.activeTab = a
+  }
+}
+$effect.root(() => {
+  $effect(tidyGroups)
+})
+
+/** Before tabs close (or leave for a window of their own): each group that
+ *  shows one of them shows its nearest neighbour instead, and the focus
+ *  stays in its group while that has tabs left. */
+function beforeClose(ids: Set<string>) {
+  const shown = app.tabs.filter((t) => !t.detached)
+  for (const g of groups(app.panes)) {
+    if (!ids.has(g.active)) continue
+    const mine = shown.filter((t) => t.group === g.id)
+    const i = mine.findIndex((t) => t.id === g.active)
+    const next = mine.slice(i + 1).find((t) => !ids.has(t.id)) ?? [...mine.slice(0, i)].reverse().find((t) => !ids.has(t.id))
+    g.active = next?.id ?? ''
+  }
+  if (ids.has(app.activeTab))
+    app.activeTab =
+      findGroup(app.focus)?.active || groups(app.panes).find((g) => g.active && !ids.has(g.active))?.active || shown.find((t) => !ids.has(t.id))?.id || ''
+}
+
+/** The tab goes into another group (where it is in app.tabs stays) and is
+ *  shown there; the group it left shows its neighbour. */
+export function joinGroup(id: string, to: string) {
+  const t = app.tabs.find((x) => x.id === id)
+  if (!t || t.group === to || !findGroup(to)) return
+  beforeClose(new Set([id]))
+  t.group = to
+  app.activeTab = id
+}
+
+/** Moves a tab into a group (before the tab before, else after that group's last). */
+export function moveToGroup(id: string, to: string, before?: string) {
+  if (!findGroup(to)) return
+  joinGroup(id, to)
+  const i = app.tabs.findIndex((t) => t.id === id)
+  if (i < 0) return
+  const [t] = app.tabs.splice(i, 1)
+  let at = before ? app.tabs.findIndex((x) => x.id === before) : -1
+  if (at < 0) {
+    const last = app.tabs.map((x) => x.group === to && !x.detached).lastIndexOf(true)
+    at = last < 0 ? app.tabs.length : last + 1
+  }
+  app.tabs.splice(at, 0, t)
+  app.activeTab = id
+  saveWorkspaceSoon()
+}
+
+/** Splits the group target and moves the tab into the new group on that side. */
+export function splitTo(id: string, target: string, side: Side) {
+  const t = app.tabs.find((x) => x.id === id)
+  if (!t || !findGroup(target)) return
+  const g = 'g' + newId()
+  app.panes = splitAt(app.panes, target, side, group(g))
+  moveToGroup(id, g)
+}
+
+/** One group again, tabs in the order they were. */
+export function unsplitAll() {
+  const keep = app.focus
+  for (const t of app.tabs) t.group = keep
+  app.panes = group(keep, app.activeTab)
+  saveWorkspaceSoon()
+}
+
 export function openConsole(connId: string, opts: { schema?: string; sql?: string; title?: string } = {}): Tab {
   const c = connById(connId)
   const st = app.conn[connId]
@@ -606,6 +726,7 @@ export function openConsole(connId: string, opts: { schema?: string; sql?: strin
     loadingMore: false,
     messages: [],
     startedAt: 0,
+    group: app.focus,
   }
   app.tabs.push(tab)
   app.activeTab = tab.id
@@ -634,8 +755,8 @@ export async function closeTab(id: string) {
   if (!(await okToClose(app.tabs[i]))) return
   if (app.tabs[i].detached) api.CloseTabWindow(id)
   api.CloseSession(id)
-  app.tabs.splice(i, 1)
-  if (app.activeTab === id) app.activeTab = app.tabs[Math.min(i, app.tabs.length - 1)]?.id ?? ''
+  beforeClose(new Set([id]))
+  app.tabs.splice(app.tabs.findIndex((t) => t.id === id), 1)
   saveWorkspaceSoon()
 }
 
@@ -652,16 +773,9 @@ export async function closeTabs(ids: string[]) {
   if (!n && edited.length === 1 && !(await okToClose(edited[0]))) return
   if (!n && edited.length > 1 && !(await confirmBox(tr('닫을 탭 중 콘솔 {n}개에 편집한 SQL이 있습니다. 닫으면 사라집니다. 닫을까요?', { n: edited.length }))))
     return
-  const activeIdx = app.tabs.findIndex((t) => t.id === app.activeTab)
   for (const t of closing) api.CloseSession(t.id)
-  const remaining = app.tabs.filter((t) => !set.has(t.id))
-  if (set.has(app.activeTab)) {
-    // the nearest surviving tab to the right, else to the left
-    const right = app.tabs.slice(activeIdx).find((t) => !set.has(t.id))
-    const left = [...app.tabs.slice(0, activeIdx)].reverse().find((t) => !set.has(t.id))
-    app.activeTab = (right ?? left)?.id ?? ''
-  }
-  app.tabs = remaining
+  beforeClose(set)
+  app.tabs = app.tabs.filter((t) => !set.has(t.id))
   saveWorkspaceSoon()
 }
 
@@ -671,6 +785,7 @@ export async function duplicateTab(id: string) {
   const src = app.tabs.find((t) => t.id === id)
   if (!src) return
   const tab = openConsole(src.connId, { schema: src.schema, sql: src.sql, title: src.title + tr(' 복사본') })
+  tab.group = src.group
   tab.layout = src.layout
   if (src.tableRef) tab.tableRef = $state.snapshot(src.tableRef)
   tab.erd = src.erd
@@ -1076,7 +1191,8 @@ export async function openTableData(connId: string, schema: string, t: Table, wh
     return open
   }
   // A preview tab with unsaved edits is never replaced.
-  let tab = open ?? app.tabs.find((x) => x.preview && !x.detached && !x.running && tabPending(x) === 0)
+  // (the focused group's: a table clicked opens where the user is working)
+  let tab = open ?? app.tabs.find((x) => x.preview && !x.detached && x.group === app.focus && !x.running && tabPending(x) === 0)
   if (tab && tab.connId === connId && tab.tableRef?.schema === schema && sameTable(tab.tableRef.table, t)) {
     app.activeTab = tab.id // same table clicked again: keep its filter
     // (a tab restored from the last session hasn't run yet)
@@ -1147,7 +1263,7 @@ export async function openRoutine(connId: string, schema: string, r: Routine) {
     return
   }
   const title = r.name
-  let tab = app.tabs.find((x) => x.preview && !x.running && tabPending(x) === 0)
+  let tab = app.tabs.find((x) => x.preview && !x.detached && x.group === app.focus && !x.running && tabPending(x) === 0)
   if (tab) {
     tab.connId = connId
     tab.schema = schema
@@ -1337,14 +1453,20 @@ export async function dropSchema(connId: string, name: string) {
     return
   }
   toast(tr('{name} 삭제함', { name }))
-  for (const tab of app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === name)) {
-    if (tab.detached) api.CloseTabWindow(tab.id)
-    api.CloseSession(tab.id)
-    app.tabs.splice(app.tabs.indexOf(tab), 1)
-    if (app.activeTab === tab.id) app.activeTab = app.tabs[app.tabs.length - 1]?.id ?? ''
-  }
+  closeGone(app.tabs.filter((x) => x.connId === connId && x.tableRef?.schema === name))
   saveWorkspaceSoon()
   await treeChanged(connId, [], st, true)
+}
+
+/** Closes tabs whose table, schema or connection is gone, without asking. */
+export function closeGone(tabs: Tab[]) {
+  for (const tab of tabs) {
+    if (tab.detached) api.CloseTabWindow(tab.id)
+    api.CloseSession(tab.id)
+  }
+  const set = new Set(tabs.map((t) => t.id))
+  beforeClose(set)
+  app.tabs = app.tabs.filter((t) => !set.has(t.id))
 }
 
 // Tabs showing a table (its data, structure, DDL).
@@ -1363,13 +1485,8 @@ export async function dropTable(connId: string, schema: string, t: Table) {
     return
   }
   toast(tr('{name} 삭제함', { name: t.name }))
-  for (const tab of tabsOf(connId, schema, t)) {
-    // (no asking about unapplied edits: there is nothing to apply them to)
-    if (tab.detached) api.CloseTabWindow(tab.id)
-    api.CloseSession(tab.id)
-    app.tabs.splice(app.tabs.indexOf(tab), 1)
-    if (app.activeTab === tab.id) app.activeTab = app.tabs[app.tabs.length - 1]?.id ?? ''
-  }
+  // (no asking about unapplied edits: there is nothing to apply them to)
+  closeGone(tabsOf(connId, schema, t))
   saveWorkspaceSoon()
   await treeChanged(connId, [schema], st)
 }
@@ -1459,7 +1576,7 @@ export function pinTab(tab: Tab | undefined) {
 // ---------------------------------------------------------------- workspace
 
 // The saved form of a tab (workspace file, and what a tab window gets).
-export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef' | 'erd' | 'manual'>
+export type SavedTab = Pick<Tab, 'id' | 'title' | 'connId' | 'schema' | 'sql' | 'sqlBase' | 'preview' | 'layout' | 'tableRef' | 'erd' | 'manual' | 'group'>
 
 function savedTab(t: Tab): SavedTab {
   return $state.snapshot({
@@ -1474,6 +1591,7 @@ function savedTab(t: Tab): SavedTab {
     tableRef: t.tableRef,
     erd: t.erd,
     manual: t.manual,
+    group: t.group,
   })
 }
 
@@ -1507,6 +1625,7 @@ export function saveWorkspaceSoon() {
       theme: app.theme,
       lang: i18n.lang,
       sidebarHidden: app.sidebarHidden,
+      panes: $state.snapshot(app.panes),
       tabs: app.tabs.filter((t) => !t.creating).map(savedTab),
     }
     api.SaveWorkspace(JSON.stringify(data)).catch(() => {})
@@ -1545,6 +1664,8 @@ export async function loadWorkspace(tabs = true) {
     }
     if (!tabs) return
     let active = data.activeTab
+    const panes = validate(data.panes)
+    const ids = new Map<string, string>()
     for (const t of data.tabs ?? []) {
       if (!connById(t.connId)) continue
       // In the browser build every page gets tab ids (and so DB sessions) of
@@ -1552,9 +1673,14 @@ export async function loadWorkspace(tabs = true) {
       if (isWeb) {
         const id = newId()
         if (t.id === active) active = id
+        ids.set(t.id, id)
         t.id = id
       }
       app.tabs.push(tabFromSaved(t))
+    }
+    if (panes) {
+      for (const g of groups(panes)) g.active = ids.get(g.active) ?? g.active
+      app.panes = panes
     }
     app.activeTab = app.tabs.find((t) => t.id === active)?.id ?? app.tabs[0]?.id ?? ''
   } catch {
@@ -1600,11 +1726,7 @@ export async function detachTab(id: string) {
   if (!t || t.detached) return
   const n = tabPending(t)
   if (n && !(await confirmBox(tr('적용하지 않은 변경 {n}건이 있습니다. 버리고 새 창으로 열까요?', { n })))) return
-  if (app.activeTab === id) {
-    const rest = app.tabs.filter((x) => !x.detached && x.id !== id)
-    const right = app.tabs.slice(i + 1).find((x) => !x.detached)
-    app.activeTab = (right ?? rest[rest.length - 1])?.id ?? ''
-  }
+  beforeClose(new Set([id]))
   t.detached = true
   t.preview = false // never reused for another table while it's away
   await api.OpenTabWindow(id, t.title, JSON.stringify(savedTab(t)))
