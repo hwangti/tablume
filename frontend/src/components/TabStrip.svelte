@@ -97,6 +97,7 @@
           style:--conn-color={c?.color || 'transparent'}
           onclick={() => (app.activeTab = t.id)}
           onpointerdown={(e) => ondown(e, t.id)}
+          ondragstart={(e) => e.preventDefault()}
           ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
           oncontextmenu={(e) => onmenu(e, t.id)}
           title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"

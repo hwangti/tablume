@@ -302,6 +302,8 @@
           closeMenus()
         }
         app.tabDrag = id
+        // (WebKit carries a selection begun on the tab into an editor it passes over)
+        getSelection()?.removeAllRanges()
       }
       dragOver(id, ev.clientX, ev.clientY)
     }
@@ -509,7 +511,7 @@
       </div>
     {/if}
 
-    <div class="content" class:resizing={!!resizing} style:cursor={resizing || null} bind:this={contentEl}>
+    <div class="content" class:resizing={!!resizing} class:tab-drag={!!app.tabDrag} style:cursor={resizing || null} bind:this={contentEl}>
       {#snippet sideBtn()}
         <button class="icon-btn strip-btn" title="{tr(sideHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)" onclick={sideToggle}>
           <Icon name={sideHidden ? 'sidebarOff' : 'sidebar'} />
@@ -832,9 +834,15 @@
     visibility: hidden;
     pointer-events: none;
   }
-  /* while a line is dragged the panes under it don't take the pointer */
-  .content.resizing .pane {
+  /* while a line or a tab is dragged the panes under it don't take the
+     pointer, and nothing gets selected on the way */
+  .content.resizing .pane,
+  .content.tab-drag .pane {
     pointer-events: none;
+  }
+  .content.tab-drag {
+    user-select: none;
+    -webkit-user-select: none;
   }
   .bar {
     position: absolute;
