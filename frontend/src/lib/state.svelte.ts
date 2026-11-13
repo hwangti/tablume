@@ -942,6 +942,7 @@ export async function runSQL(tab: Tab, sql: string, cursor: number, offset = 0):
 export async function endTx(tab: Tab, commit: boolean) {
   if (tab.running) return
   tab.running = true
+  tab.startedAt = Date.now()
   try {
     await api.EndTx(tab.id, commit)
     log(tab, 'info', commit ? tr('커밋함') : tr('롤백함'), commit ? 'COMMIT' : 'ROLLBACK')
@@ -1551,6 +1552,7 @@ export async function reloadTable(tab: Tab): Promise<boolean> {
   // fires once the connection is up) then leaves it alone instead of
   // running the same SELECT again.
   tab.opening = true
+  tab.startedAt = Date.now()
   try {
     // a tab restored from the last session: connect first
     if (!(await connect(tab.connId))) return false
