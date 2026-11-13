@@ -1,8 +1,9 @@
-// ERD layout checks: a hub schema (one table most others reference) comes
-// out about as wide as tall, parents stay left of their children, and no
-// box sits far below the one before it. Run: node scripts/erd-test.ts
+// ERD layout checks on a generated hub schema (one table most others
+// reference): the hub sits in the middle, linked tables near each other,
+// the picture about as wide as tall, and no boxes overlapping, with the
+// default view and with every column shown. Run: node scripts/erd-test.ts
 import assert from 'node:assert/strict'
-import { DEFAULT_OPTIONS, K, isWaypoint, layout, stack } from '../src/lib/erd.ts'
+import { DEFAULT_OPTIONS, K, layout, stack } from '../src/lib/erd.ts'
 import type { ForeignKey, GraphTable } from '../src/lib/types.ts'
 
 let seed = 7
@@ -23,27 +24,30 @@ for (let i = 0; i < 95; i++) {
 }
 
 const L = layout({ tables, fks }, (t, px) => t.length * px * 0.58)
-const h = new Map([...L.nodes].map(([n, b]) => [n, K.HEAD_H + Math.min(b.lines.length, K.MAX_LINES + 1) * K.LINE_H + K.BOX_PAD]))
-const P = stack(L, h, DEFAULT_OPTIONS, () => K.HEAD_H)
-assert.ok(P.w / P.h > 0.7 && P.w / P.h < 2.5, `aspect ${P.w}x${P.h}`)
-
-for (const e of L.edges) {
-  const [a, b] = [L.nodes.get(e.a)!, L.nodes.get(e.b)!]
-  if (a.band === b.band && e.a !== e.b) assert.ok(a.x > b.x, `${e.b} left of ${e.a}`)
-}
-for (const G of L.groups)
-  for (const l of G.layers) {
-    // each slot (a box, or a line passing: a waypoint) at most GAP_FAR below the last
-    let last = ''
-    let slots = 0
-    for (const n of l) {
-      slots++
-      if (isWaypoint(n)) continue
-      if (last) {
-        const gap = P.y.get(n)! - P.y.get(last)! - h.get(last)!
-        assert.ok(gap <= slots * K.GAP_FAR + 1, `${n} ${Math.round(gap)} px below ${last}`)
-      }
-      ;[last, slots] = [n, 0]
+const linked = [...L.nodes.values()].filter((b) => !b.iso)
+for (const lines of [K.MAX_LINES + 1, 30]) {
+  const h = new Map([...L.nodes].map(([n, b]) => [n, K.HEAD_H + Math.min(b.lines.length, lines) * K.LINE_H + K.BOX_PAD]))
+  const P = stack(L, h, DEFAULT_OPTIONS)
+  for (let i = 0; i < linked.length; i++)
+    for (let j = i + 1; j < linked.length; j++) {
+      const [a, b] = [linked[i], linked[j]]
+      const [ya, yb] = [P.y.get(a.name)!, P.y.get(b.name)!]
+      assert.ok(!(a.x < b.x + b.w && b.x < a.x + a.w && ya < yb + h.get(b.name)! && yb < ya + h.get(a.name)!), `${a.name} over ${b.name}`)
     }
-  }
+  if (lines > K.MAX_LINES + 1) break // every column shown: only that nothing overlaps
+
+  assert.ok(P.w / P.h > 0.7 && P.w / P.h < 2.5, `aspect ${P.w}x${P.h}`)
+  const c = (n: string) => [L.nodes.get(n)!.x + L.nodes.get(n)!.w / 2, P.y.get(n)! + h.get(n)! / 2]
+  const xs = linked.map((b) => c(b.name)[0])
+  const ys = linked.map((b) => c(b.name)[1])
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
+  const [hx, hy] = c('member')
+  const off = Math.hypot((2 * hx - x0 - x1) / (x1 - x0), (2 * hy - y0 - y1) / (y1 - y0)) / Math.SQRT2
+  assert.ok(off < 0.35, `the hub is ${off.toFixed(2)} of the way out to a corner`)
+
+  const len = L.edges.map((e) => Math.hypot(c(e.a)[0] - c(e.b)[0], c(e.a)[1] - c(e.b)[1])).sort((a, b) => a - b)
+  const boxW = linked.reduce((s, b) => s + b.w, 0) / linked.length
+  assert.ok(len[len.length >> 1] < 3 * boxW, `median line ${Math.round(len[len.length >> 1])} px`)
+  assert.ok(len[len.length - 1] < 8 * boxW, `longest line ${Math.round(len[len.length - 1])} px`)
+}
 console.log('erd ok')

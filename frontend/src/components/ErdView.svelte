@@ -107,13 +107,7 @@
       }
     return m
   })
-  // A column's row from the top of its box; a hidden one: the middle.
-  const rowAt = (n: string, col: string) => {
-    const v = views.get(n)!
-    const r = v.rows.find((r) => r.line.name === col)
-    return r ? r.y - 4 : v.h / 2
-  }
-  let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt, rowAt) : null)
+  let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt) : null)
   let nodes = $derived(L ? [...L.nodes.values()] : [])
 
   // Where each shown box is now: the layout plus what was done by hand.
@@ -420,17 +414,7 @@
 
   let loose = $derived(L ? L.edges.filter((e) => e.fk.looseRef).length : 0)
   let statText = $derived(L ? t('테이블 {t} · 관계 {e}', { t: num(L.stats.tables + L.stats.iso), e: num(L.stats.edges) }) : '')
-  let statTitle = $derived.by(() => {
-    if (!L) return ''
-    const s = L.stats
-    return [
-      s.tables ? t('테이블 {t} · 관계 {e} · {l}층 · 선 교차 {c}', { t: num(s.tables), e: num(s.edges), l: s.layers, c: s.cross }) : '',
-      s.iso ? t('관계 없는 테이블 {n}', { n: num(s.iso) }) : '',
-      s.tables ? t('배치 전 교차 {n}개에서 줄인 결과입니다', { n: s.cross0 }) : '',
-    ]
-      .filter(Boolean)
-      .join('\n')
-  })
+  let statTitle = $derived(L?.stats.iso ? t('관계 없는 테이블 {n}', { n: num(L.stats.iso) }) : '')
 </script>
 
 <svelte:window
@@ -564,7 +548,7 @@
               <path class="edh" d={e.d} onpointerenter={() => !pan && litEdges([e.i])} onpointerleave={() => (hot = null)}><title>{edgeTitle(e.fk)}</title></path>
             {/each}
           </g>
-          {#if opt.iso && L.isoBand >= 0}
+          {#if opt.iso && L.grid}
             <text class="isolbl" x={K.PAD} y={pos.isoY - 12}>{t('관계(FK) 없는 테이블 {n}', { n: num(L.stats.iso) })}</text>
           {/if}
           <g class="boxes">
