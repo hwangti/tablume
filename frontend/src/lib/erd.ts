@@ -295,8 +295,9 @@ function order(names: string[], rank: Map<string, number>, edges: Edge[], frac: 
   const addNb = (n: string, x: Nb) => (nb.get(n) ?? nb.set(n, []).get(n)!).push(x)
   const fr = (n: string, col: string) => (isWaypoint(n) ? 0.5 : frac(n, col))
   edges.forEach((e, ei) => {
-    e.via = []
+    // (only this group's: the other groups' lines keep their waypoints)
     if (e.a === e.b || !inG.has(e.a) || !inG.has(e.b)) return
+    e.via = []
     const ca = colOf.get(e.a)!
     const cb = colOf.get(e.b)!
     if (ca === cb) return // in one column (a cut cycle): drawn beside it
