@@ -2,7 +2,9 @@
 // their children. Lines leave a box from the side, at the row of their
 // column, so the columns of a layered layout run left to right:
 //   1. ranks: a table that references nothing is rank 0, one that references
-//      it rank 1, and so on (cycles are cut); a rank is a column;
+//      it rank 1, and so on (cycles are cut); a rank is a column, or several
+//      side by side when one column would make the group much taller than
+//      wide (spread);
 //   2. connected groups are laid out one by one, so unrelated tables don't mix;
 //   3. a line that skips columns gets a waypoint in each, so it runs through
 //      a gap instead of behind a box;
@@ -12,7 +14,8 @@
 //   5. the groups are packed on shelves to a 2.2:1 picture;
 //   6. tables in no foreign key go in a grid underneath.
 // The order and x are worked out once; the view options change box heights
-// and rows, from which stack() works out y, lining rows up across columns.
+// and rows, from which stack() works out y, lining rows up across columns
+// (but never pulling a box more than GAP_FAR from the one above it).
 import type { Column, ForeignKey, SchemaGraph } from './types'
 
 export const K = {
@@ -23,6 +26,7 @@ export const K = {
   MAX_LINES: 9, // columns shown before "… n more"
   GAP_COL: 110, // between columns: room for the crow's feet and the curve
   GAP_V: 30, // between boxes in a column
+  GAP_FAR: 120, // the most a box is pulled away from the one before it
   GAP_WP: 14, // around a waypoint
   PAD: 40,
   GAP_GROUP: 130, // between unconnected groups on a shelf
@@ -171,6 +175,62 @@ function ranks(nodes: string[], edges: Edge[]): Map<string, number> {
   }
   for (const n of nodes) calc(n, new Set())
   return rank
+}
+
+/**
+ * Columns for one group. One column per rank makes a tall strip when many
+ * tables share a rank (a hub everything references): then the tables are
+ * dealt into more columns, each still right of its parents, until the group
+ * comes out about `aspect` wide. Tables with the longest chains after them
+ * go first, so the chains keep their columns; the rest go as far left as
+ * there is room, near their parents.
+ */
+function spread(names: string[], rank: Map<string, number>, edges: Edge[], h: (n: string) => number, w: (n: string) => number, aspect: number) {
+  const inG = new Set(names)
+  const up = new Map<string, string[]>()
+  const down = new Map<string, string[]>()
+  for (const e of edges) {
+    // (a line against the ranks, from a cut cycle, binds nothing)
+    if (!inG.has(e.a) || !inG.has(e.b) || rank.get(e.b)! >= rank.get(e.a)!) continue
+    ;(up.get(e.a) ?? up.set(e.a, []).get(e.a)!).push(e.b)
+    ;(down.get(e.b) ?? down.set(e.b, []).get(e.b)!).push(e.a)
+  }
+  const colH = new Map<number, number>()
+  const colW = new Map<number, number>()
+  for (const n of names) {
+    const r = rank.get(n)!
+    colH.set(r, (colH.get(r) ?? 0) + h(n) + K.GAP_V)
+    colW.set(r, Math.max(colW.get(r) ?? 0, w(n)))
+  }
+  const ws = [...colW.values()]
+  const W = ws.reduce((s, v) => s + v + K.GAP_COL, 0)
+  const total = [...colH.values()].reduce((s, v) => s + v, 0)
+  if (W >= aspect * Math.max(...colH.values())) return rank
+  // C columns of total / C each: C · (column width) ≈ aspect · total / C
+  const C = Math.max(ws.length, Math.round(Math.sqrt((aspect * total * ws.length) / W)))
+  const cap = total / C
+
+  const tail = new Map<string, number>()
+  const tailOf = (n: string): number => {
+    if (!tail.has(n)) tail.set(n, Math.max(-1, ...(down.get(n) ?? []).map(tailOf)) + 1)
+    return tail.get(n)!
+  }
+  const col = new Map<string, number>()
+  const after = (n: string) => Math.max(-1, ...(up.get(n) ?? []).map((p) => col.get(p) ?? Infinity))
+  let left = names.filter((n) => !up.has(n))
+  const waiting = new Set(names.filter((n) => up.has(n)))
+  for (let k = 0; left.length || waiting.size; k++) {
+    for (const n of waiting) if (after(n) < k) waiting.delete(n), left.push(n)
+    left.sort((a, b) => tailOf(b) - tailOf(a) || after(a) - after(b) || rank.get(a)! - rank.get(b)! || byName(a, b))
+    let used = 0
+    const rest: string[] = []
+    for (const n of left) {
+      if (used && used + h(n) > cap) rest.push(n)
+      else col.set(n, k), (used += h(n) + K.GAP_V)
+    }
+    left = rest
+  }
+  return col
 }
 
 /** Connected groups, the biggest first. */
@@ -376,7 +436,7 @@ export function layout(g: SchemaGraph, m: Measure, audit: (column: string) => bo
   let cross0 = 0
   let layerN = 0
   const groups: Group[] = components(nodesIn, edges).map((names) => {
-    const o = order(names, rank, edges, frac)
+    const o = order(names, spread(names, rank, edges, (n) => heights.get(n)!, (n) => bw.get(n)!, K.ASPECT), edges, frac)
     cross += o.c
     cross0 += o.c0
     layerN = Math.max(layerN, o.layers.length)
@@ -571,6 +631,13 @@ export function stack(L: Layout, h: Map<string, number>, o: ViewOptions, anchor:
           next = bot[i]
         }
         l.forEach((n, i) => t.set(n, (top[i] + bot[i]) / 2))
+        // A box its lines pull far off would sit alone (the lines are
+        // long anyway): no gap over GAP_FAR, the boxes after move up.
+        let lift = 0
+        l.forEach((n, i) => {
+          if (i) lift += Math.max(0, t.get(n)! - lift - (t.get(l[i - 1])! + hOf(l[i - 1])) - Math.max(gap(l[i - 1], n), K.GAP_FAR))
+          t.set(n, t.get(n)! - lift)
+        })
       }
     }
     const min = Math.min(...t.values())
