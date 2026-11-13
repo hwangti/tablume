@@ -1,22 +1,16 @@
-// ERD layout: boxes for tables, lines for foreign keys, parents left of
-// their children. Lines leave a box from the side, at the row of their
-// column, so the columns of a layered layout run left to right:
-//   1. ranks: a table that references nothing is rank 0, one that references
-//      it rank 1, and so on (cycles are cut); a rank is a column, or several
-//      side by side when one column would make the group much taller than
-//      wide (spread);
-//   2. connected groups are laid out one by one, so unrelated tables don't mix;
-//   3. a line that skips columns gets a waypoint in each: it counts in the
-//      ordering below and keeps a little room where the line passes (the
-//      line itself is one curve, and may pass behind a box);
-//   4. inside a column, order by the mean of the neighbours' rows, then swap
-//      neighbours while that removes crossings, keeping the best order. Rows
-//      count: two lines into one box cross or not by the rows they meet;
-//   5. the groups are packed on shelves to a 2.2:1 picture;
-//   6. tables in no foreign key go in a grid underneath.
-// The order and x are worked out once; the view options change box heights
-// and rows, from which stack() works out y, lining rows up across columns
-// (but never pulling a box more than GAP_FAR from the one above it).
+// ERD layout: boxes for tables, lines for foreign keys. Tables that are
+// linked sit near each other, and a table with many links in the middle of
+// them, so the picture reads like the data does:
+//   1. connected groups are laid out one by one, so unrelated tables don't mix;
+//   2. in a group, every line pulls its two tables together and every two
+//      tables push apart (springs); the most-linked tables end up central;
+//   3. boxes that still overlap are pushed apart;
+//   4. the groups are packed on shelves to a 2.2:1 picture;
+//   5. tables in no foreign key go in a grid underneath.
+// Lines are one curve each, from the side of a box at the row of their
+// column, and may pass behind a box. Positions are worked out once, with the
+// default view's box heights; stack() moves boxes down where the view options
+// make the ones above taller.
 import type { Column, ForeignKey, SchemaGraph } from './types'
 
 export const K = {
@@ -25,10 +19,8 @@ export const K = {
   HEAD_H: 26,
   LINE_H: 17,
   MAX_LINES: 9, // columns shown before "… n more"
-  GAP_COL: 110, // between columns: room for the crow's feet and the curve
-  GAP_V: 30, // between boxes in a column
-  GAP_FAR: 120, // the most a box is pulled away from the one before it
-  GAP_WP: 14, // around a waypoint
+  GAP_H: 80, // between boxes side by side: room for the crow's feet and the curve
+  GAP_V: 30, // between boxes one above the other
   PAD: 40,
   GAP_GROUP: 130, // between unconnected groups on a shelf
   GAP_BAND: 120, // between shelves
@@ -62,8 +54,8 @@ export interface Node {
   lines: Line[] // keys first, then the rest, each in column order
   w: number
   x: number
-  rank: number // column inside its group; row in the grid
-  band: number // shelf; the grid is a band of its own
+  y: number // top, with the default view (tables in a foreign key)
+  row: number // row in the grid (tables in none)
   iso: boolean // in no foreign key
 }
 
@@ -73,16 +65,14 @@ export interface Edge {
   b: string // parent table
   ac: string // the column the line leaves from (the first of a composite key)
   bc: string
-  via: string[] // waypoints, from the child's side
 }
 
 export interface Layout {
   nodes: Map<string, Node>
   edges: Edge[]
-  groups: Group[]
-  isoBand: number // -1: no grid
+  grid: boolean // tables in no foreign key, under the rest
   mainW: number // width without the grid
-  stats: { tables: number; iso: number; edges: number; layers: number; cross: number; cross0: number }
+  stats: { tables: number; iso: number; edges: number }
 }
 
 export interface ViewOptions {
@@ -160,80 +150,6 @@ function firstH(lines: Line[]): number {
 
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
-function ranks(nodes: string[], edges: Edge[]): Map<string, number> {
-  const up = new Map<string, Set<string>>() // child -> parents
-  for (const e of edges) if (e.a !== e.b) (up.get(e.a) ?? up.set(e.a, new Set()).get(e.a)!).add(e.b)
-  const rank = new Map<string, number>()
-  const calc = (n: string, path: Set<string>): number => {
-    if (rank.has(n)) return rank.get(n)!
-    if (path.has(n)) return 0 // a cycle: cut it here
-    path.add(n)
-    let r = 0
-    for (const p of up.get(n) ?? []) r = Math.max(r, calc(p, path) + 1)
-    path.delete(n)
-    rank.set(n, r)
-    return r
-  }
-  for (const n of nodes) calc(n, new Set())
-  return rank
-}
-
-/**
- * Columns for one group. One column per rank makes a tall strip when many
- * tables share a rank (a hub everything references): then the tables are
- * dealt into more columns, each still right of its parents, until the group
- * comes out about `aspect` wide. Tables with the longest chains after them
- * go first, so the chains keep their columns; the rest go as far left as
- * there is room, near their parents.
- */
-function spread(names: string[], rank: Map<string, number>, edges: Edge[], h: (n: string) => number, w: (n: string) => number, aspect: number) {
-  const inG = new Set(names)
-  const up = new Map<string, string[]>()
-  const down = new Map<string, string[]>()
-  for (const e of edges) {
-    // (a line against the ranks, from a cut cycle, binds nothing)
-    if (!inG.has(e.a) || !inG.has(e.b) || rank.get(e.b)! >= rank.get(e.a)!) continue
-    ;(up.get(e.a) ?? up.set(e.a, []).get(e.a)!).push(e.b)
-    ;(down.get(e.b) ?? down.set(e.b, []).get(e.b)!).push(e.a)
-  }
-  const colH = new Map<number, number>()
-  const colW = new Map<number, number>()
-  for (const n of names) {
-    const r = rank.get(n)!
-    colH.set(r, (colH.get(r) ?? 0) + h(n) + K.GAP_V)
-    colW.set(r, Math.max(colW.get(r) ?? 0, w(n)))
-  }
-  const ws = [...colW.values()]
-  const W = ws.reduce((s, v) => s + v + K.GAP_COL, 0)
-  const total = [...colH.values()].reduce((s, v) => s + v, 0)
-  if (W >= aspect * Math.max(...colH.values())) return rank
-  // C columns of total / C each: C · (column width) ≈ aspect · total / C
-  const C = Math.max(ws.length, Math.round(Math.sqrt((aspect * total * ws.length) / W)))
-  const cap = total / C
-
-  const tail = new Map<string, number>()
-  const tailOf = (n: string): number => {
-    if (!tail.has(n)) tail.set(n, Math.max(-1, ...(down.get(n) ?? []).map(tailOf)) + 1)
-    return tail.get(n)!
-  }
-  const col = new Map<string, number>()
-  const after = (n: string) => Math.max(-1, ...(up.get(n) ?? []).map((p) => col.get(p) ?? Infinity))
-  let left = names.filter((n) => !up.has(n))
-  const waiting = new Set(names.filter((n) => up.has(n)))
-  for (let k = 0; left.length || waiting.size; k++) {
-    for (const n of waiting) if (after(n) < k) waiting.delete(n), left.push(n)
-    left.sort((a, b) => tailOf(b) - tailOf(a) || after(a) - after(b) || rank.get(a)! - rank.get(b)! || byName(a, b))
-    let used = 0
-    const rest: string[] = []
-    for (const n of left) {
-      if (used && used + h(n) > cap) rest.push(n)
-      else col.set(n, k), (used += h(n) + K.GAP_V)
-    }
-    left = rest
-  }
-  return col
-}
-
 /** Connected groups, the biggest first. */
 function components(nodes: string[], edges: Edge[]): string[][] {
   const adj = new Map<string, string[]>()
@@ -260,155 +176,107 @@ function components(nodes: string[], edges: Edge[]): string[][] {
   return out.sort((a, b) => b.length - a.length || byName(a[0], b[0]))
 }
 
-// A slot in a column: a table, or a waypoint of a line that crosses the
-// column (an id starting with WP): it counts when ordering the column and
-// keeps a little room where the line passes.
-const WP = '\u0001'
-export const isWaypoint = (id: string) => id.startsWith(WP)
-
-/** Lines between neighbouring columns: their ends, each with a fraction of
- *  the box's height (the column's row) so lines to one box keep their order. */
-type Seg = { u: string; fu: number; v: string; fv: number }
-/** A slot's lines to the column on its left (-1) or right (+1). */
-type Nb = { other: string; side: -1 | 1; col: string; otherCol: string }
-
-export interface Group {
-  layers: string[][] // columns, left (parents) to right; each top to bottom
-  colX: number[] // the columns' left edges, from the group's
-  colW: number[]
-  nb: Map<string, Nb[]>
-  x0: number // the group's left edge in the picture
-  band: number
-  w: number
-}
-
-/** Orders the slots of each column for few crossings: mean sweeps both
- *  ways and neighbour swaps, keeping the best order seen. */
-function order(names: string[], rank: Map<string, number>, edges: Edge[], frac: (n: string, col: string) => number) {
-  const inG = new Set(names)
-  const used = [...new Set(names.map((n) => rank.get(n)!))].sort((a, b) => a - b)
-  const colOf = new Map(names.map((n) => [n, used.indexOf(rank.get(n)!)]))
-  const R = used.length
-  const layers: string[][] = Array.from({ length: R }, () => [])
-  for (const n of [...names].sort(byName)) layers[colOf.get(n)!].push(n)
-
-  const segs: Seg[][] = Array.from({ length: Math.max(0, R - 1) }, () => [])
-  const nb = new Map<string, Nb[]>()
-  const addNb = (n: string, x: Nb) => (nb.get(n) ?? nb.set(n, []).get(n)!).push(x)
-  const fr = (n: string, col: string) => (isWaypoint(n) ? 0.5 : frac(n, col))
-  edges.forEach((e, ei) => {
-    // (only this group's: the other groups' lines keep their waypoints)
-    if (e.a === e.b || !inG.has(e.a) || !inG.has(e.b)) return
-    e.via = []
-    const ca = colOf.get(e.a)!
-    const cb = colOf.get(e.b)!
-    if (ca === cb) return // in one column (a cut cycle): drawn beside it
-    const step = cb < ca ? -1 : 1
-    for (let k = ca + step; k !== cb; k += step) {
-      const id = `${WP}${ei}:${k}`
-      layers[k].push(id)
-      e.via.push(id)
-    }
-    const pts = [e.a, ...e.via, e.b]
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const [p, q] = [pts[i], pts[i + 1]]
-      const pc = i === 0 ? e.ac : ''
-      const qc = i + 2 === pts.length ? e.bc : ''
-      const [l, lc, r, rc] = step < 0 ? [q, qc, p, pc] : [p, pc, q, qc]
-      segs[Math.min(ca + i * step, ca + (i + 1) * step)].push({ u: l, fu: fr(l, lc), v: r, fv: fr(r, rc) })
-      addNb(l, { other: r, side: 1, col: lc, otherCol: rc })
-      addNb(r, { other: l, side: -1, col: rc, otherCol: lc })
-    }
+/**
+ * One group's boxes, by springs: each line pulls its two tables together
+ * (by distance²), each two tables push apart (by 1 / distance), cooling
+ * down step by step. Distances count in boxes, a box being wider than
+ * tall, so the picture comes out about as many boxes wide as high. The
+ * start is a spiral, the most-linked tables innermost, so a layout is the
+ * same every time. Then boxes that overlap are pushed apart, along the
+ * axis they overlap least. Returns the boxes' centres.
+ */
+function springs(names: string[], edges: Edge[], w: (n: string) => number, h: (n: string) => number) {
+  const n = names.length
+  const at = new Map(names.map((v, i) => [v, i]))
+  const links: [number, number][] = []
+  const deg = new Array<number>(n).fill(0)
+  for (const e of edges) {
+    const a = at.get(e.a)
+    const b = at.get(e.b)
+    if (a === undefined || b === undefined || a === b) continue
+    links.push([a, b])
+    deg[a]++
+    deg[b]++
+  }
+  const W = names.map((v) => w(v) + K.GAP_H)
+  const H = names.map((v) => h(v) + K.GAP_V)
+  const sx = W.reduce((s, v) => s + v, 0) / n
+  const sy = H.reduce((s, v) => s + v, 0) / n
+  const x = new Float64Array(n)
+  const y = new Float64Array(n)
+  const inner = [...names.keys()].sort((a, b) => deg[b] - deg[a] || byName(names[a], names[b]))
+  inner.forEach((i, r) => {
+    x[i] = Math.sqrt(r) * Math.cos(r * 2.4)
+    y[i] = Math.sqrt(r) * Math.sin(r * 2.4)
   })
-
-  const posOf = (ls: string[][]) => {
-    const p = new Map<string, number>()
-    for (const l of ls) l.forEach((n, i) => p.set(n, i))
-    return p
-  }
-  const crossPair = (ss: Seg[], pos: Map<string, number>) => {
-    let c = 0
-    for (let i = 0; i < ss.length; i++) {
-      const a = ss[i]
-      const au = pos.get(a.u)! + a.fu
-      const av = pos.get(a.v)! + a.fv
-      for (let j = i + 1; j < ss.length; j++) {
-        const b = ss[j]
-        if ((au - pos.get(b.u)! - b.fu) * (av - pos.get(b.v)! - b.fv) < 0) c++
+  // ponytail: every pair every step, O(n²); a quadtree (Barnes–Hut) if schemas of thousands of linked tables get slow
+  const k = 0.6 // a line's length, in boxes (the overlap pass then spaces them out)
+  const dx = new Float64Array(n)
+  const dy = new Float64Array(n)
+  const STEPS = 300
+  for (let it = 0; it < STEPS; it++) {
+    const temp = (0.5 + Math.sqrt(n) * 0.1) * (1 - it / STEPS)
+    dx.fill(0)
+    dy.fill(0)
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        let ux = x[i] - x[j]
+        let uy = y[i] - y[j]
+        let d2 = ux * ux + uy * uy
+        if (d2 < 1e-6) (ux = 1e-3 * (i - j)), (uy = 1e-3), (d2 = ux * ux + uy * uy)
+        const f = (k * k) / d2
+        dx[i] += ux * f
+        dy[i] += uy * f
+        dx[j] -= ux * f
+        dy[j] -= uy * f
       }
+    for (const [a, b] of links) {
+      const ux = x[a] - x[b]
+      const uy = y[a] - y[b]
+      const f = Math.hypot(ux, uy) / k
+      dx[a] -= ux * f
+      dy[a] -= uy * f
+      dx[b] += ux * f
+      dy[b] += uy * f
     }
-    return c
-  }
-  const crossings = (ls: string[][]) => {
-    const pos = posOf(ls)
-    return segs.reduce((s, ss) => s + crossPair(ss, pos), 0)
+    for (let i = 0; i < n; i++) {
+      const d = Math.hypot(dx[i], dy[i])
+      if (d > temp) (dx[i] *= temp / d), (dy[i] *= temp / d)
+      x[i] += dx[i]
+      y[i] += dy[i]
+    }
   }
 
-  // Each slot to the mean of its neighbours on one side; the ones with none stay.
-  const sweep = (ls: string[][], right: boolean) => {
-    ls = ls.map((l) => [...l])
-    const ks = right ? [...Array(R).keys()].slice(1) : [...Array(R).keys()].reverse().slice(1)
-    for (const k of ks) {
-      const pos = posOf(ls)
-      const key = new Map<string, number>()
-      ls[k].forEach((n, i) => {
-        const vs = (nb.get(n) ?? []).filter((x) => x.side === (right ? -1 : 1)).map((x) => pos.get(x.other)! + fr(x.other, x.otherCol))
-        key.set(n, vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : i)
-      })
-      ls[k].sort((a, b) => key.get(a)! - key.get(b)! || pos.get(a)! - pos.get(b)!)
-    }
-    return ls
-  }
-
-  // Swapping neighbours u, v only changes how u's lines cross v's.
-  const transpose = (ls: string[][]) => {
-    ls = ls.map((l) => [...l])
-    const pos = posOf(ls)
-    const between = (u: string, v: string) => {
-      let c = 0
-      for (const a of nb.get(u) ?? [])
-        for (const b of nb.get(v) ?? []) {
-          if (a.side !== b.side) continue
-          const d1 = pos.get(u)! + fr(u, a.col) - pos.get(v)! - fr(v, b.col)
-          const d2 = pos.get(a.other)! + fr(a.other, a.otherCol) - pos.get(b.other)! - fr(b.other, b.otherCol)
-          if (d1 * d2 < 0) c++
+  const cx = Array.from(x, (v) => v * sx)
+  const cy = Array.from(y, (v) => v * sy)
+  for (let pass = 0; pass < 300; pass++) {
+    let moved = false
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        const ox = (W[i] + W[j]) / 2 - Math.abs(cx[i] - cx[j])
+        const oy = (H[i] + H[j]) / 2 - Math.abs(cy[i] - cy[j])
+        if (ox <= 0 || oy <= 0) continue
+        moved = true
+        if (ox / sx < oy / sy) {
+          const s = (cx[i] < cx[j] || (cx[i] === cx[j] && i < j) ? -1 : 1) * (ox / 2 + 0.5)
+          cx[i] += s
+          cx[j] -= s
+        } else {
+          const s = (cy[i] < cy[j] || (cy[i] === cy[j] && i < j) ? -1 : 1) * (oy / 2 + 0.5)
+          cy[i] += s
+          cy[j] -= s
         }
-      return c
-    }
-    for (let improved = true, guard = 0; improved && guard < 12; guard++) {
-      improved = false
-      for (const l of ls)
-        for (let i = 0; i + 1 < l.length; i++) {
-          const [u, v] = [l[i], l[i + 1]]
-          const before = between(u, v)
-          if (!before) continue
-          pos.set(u, i + 1), pos.set(v, i)
-          if (between(u, v) < before) {
-            ;[l[i], l[i + 1]] = [v, u]
-            improved = true
-          } else pos.set(u, i), pos.set(v, i + 1)
-        }
-    }
-    return ls
+      }
+    if (!moved) break
   }
-
-  let cur = layers
-  let best = layers
-  let bestC = crossings(layers)
-  const c0 = bestC
-  for (let it = 0; it < 24 && bestC > 0; it++) {
-    cur = transpose(sweep(cur, it % 2 === 0))
-    const c = crossings(cur)
-    if (c < bestC) [bestC, best] = [c, cur]
-  }
-  return { layers: best, nb, c0, c: bestC }
+  return names.map((v, i) => ({ name: v, x: cx[i], y: cy[i] }))
 }
 
 export function layout(g: SchemaGraph, m: Measure, audit: (column: string) => boolean = isAudit): Layout {
   const cols = new Map(g.tables.map((t) => [t.name, t]))
   const edges: Edge[] = g.fks
     .filter((f) => !f.refSchema && cols.has(f.table) && cols.has(f.refTable))
-    .map((f) => ({ fk: f, a: f.table, b: f.refTable, ac: f.columns[0] ?? '', bc: f.refColumns[0] ?? '', via: [] }))
+    .map((f) => ({ fk: f, a: f.table, b: f.refTable, ac: f.columns[0] ?? '', bc: f.refColumns[0] ?? '' }))
   const fkCols = new Map<string, Set<string>>()
   for (const f of g.fks) for (const c of f.columns) (fkCols.get(f.table) ?? fkCols.set(f.table, new Set()).get(f.table)!).add(c)
 
@@ -421,80 +289,53 @@ export function layout(g: SchemaGraph, m: Measure, audit: (column: string) => bo
   for (const n of [...nodesIn, ...isoNames]) {
     const t = cols.get(n)!
     const lines = linesOf(t.columns, fkCols.get(n) ?? new Set(), audit)
-    nodes.set(n, { name: n, comment: t.comment, lines, w: boxW(n, lines, m), x: 0, rank: 0, band: 0, iso: !inFk.has(n) })
+    nodes.set(n, { name: n, comment: t.comment, lines, w: boxW(n, lines, m), x: 0, y: 0, row: 0, iso: !inFk.has(n) })
     heights.set(n, firstH(lines))
   }
-  const bw = new Map([...nodes].map(([n, b]) => [n, b.w]))
-  const rank = ranks(nodesIn, edges)
+  const bw = (n: string) => nodes.get(n)!.w
+  const bh = (n: string) => heights.get(n)!
 
-  // Where a column's row sits in its box, as drawn with the default options.
-  const frac = (n: string, col: string) => {
-    const shown = nodes.get(n)!.lines.filter((l) => !l.audit)
-    const i = shown.findIndex((l) => l.name === col)
-    const vis = Math.min(shown.length, K.MAX_LINES)
-    return i < 0 || i >= vis ? 0.5 : (i + 1) / (vis + 2)
-  }
-
-  let cross = 0
-  let cross0 = 0
-  let layerN = 0
-  const groups: Group[] = components(nodesIn, edges).map((names) => {
-    const o = order(names, spread(names, rank, edges, (n) => heights.get(n)!, (n) => bw.get(n)!, K.ASPECT), edges, frac)
-    cross += o.c
-    cross0 += o.c0
-    layerN = Math.max(layerN, o.layers.length)
-    const colW = o.layers.map((l) => Math.max(0, ...l.filter((n) => !isWaypoint(n)).map((n) => bw.get(n)!)))
-    const colX: number[] = []
-    let x = 0
-    for (const w of colW) colX.push(x), (x += w + K.GAP_COL)
-    o.layers.forEach((l, k) =>
-      l.forEach((n) => {
-        if (!isWaypoint(n)) Object.assign(nodes.get(n)!, { x: colX[k] + (colW[k] - bw.get(n)!) / 2, rank: k })
-      }),
-    )
-    return { layers: o.layers, colX, colW, nb: o.nb, x0: 0, band: 0, w: x - K.GAP_COL }
+  // each group from its top left corner
+  const groups = components(nodesIn, edges).map((names) => {
+    const c = springs(names, edges, bw, bh)
+    const x0 = Math.min(...c.map((p) => p.x - bw(p.name) / 2))
+    const y0 = Math.min(...c.map((p) => p.y - bh(p.name) / 2))
+    const at = c.map((p) => ({ name: p.name, x: p.x - bw(p.name) / 2 - x0, y: p.y - bh(p.name) / 2 - y0 }))
+    return {
+      at,
+      w: Math.max(...at.map((p) => p.x + bw(p.name))),
+      h: Math.max(...at.map((p) => p.y + bh(p.name))),
+    }
   })
 
   // Shelves: one long strip gets very wide when there are many groups.
-  // Heights here are the default view's; stack() works out the real ones.
-  const tallOf = (G: Group) =>
-    Math.max(...G.layers.map((l) => l.reduce((s, n) => s + (isWaypoint(n) ? K.GAP_WP : heights.get(n)! + K.GAP_V), 0)))
   const len = groups.reduce((s, G) => s + G.w + K.GAP_GROUP, 0)
-  const wide = Math.max(0, ...groups.map((G) => G.w))
-  const tall = Math.max(0, ...groups.map(tallOf))
+  const tall = Math.max(0, ...groups.map((G) => G.h))
   const rows = tall > 0 ? Math.max(1, Math.round(Math.sqrt(len / (K.ASPECT * tall)))) : 1
-  const target = Math.max(wide, Math.ceil(len / rows))
-  let band = 0
+  const target = Math.max(0, ...groups.map((G) => G.w), Math.ceil(len / rows))
   let curX = 0
+  let top = K.PAD
+  let shelfH = 0
   let maxX = 0
   for (const G of groups) {
-    if (curX > 0 && curX + G.w > target) band++, (curX = 0)
-    G.x0 = K.PAD + curX
-    G.band = band
-    for (const l of G.layers)
-      for (const n of l) {
-        if (isWaypoint(n)) continue
-        const b = nodes.get(n)!
-        b.x += G.x0
-        b.band = band
-      }
-    maxX = Math.max(maxX, G.x0 + G.w)
+    if (curX > 0 && curX + G.w > target) (top += shelfH + K.GAP_BAND), (curX = 0), (shelfH = 0)
+    for (const p of G.at) Object.assign(nodes.get(p.name)!, { x: K.PAD + curX + p.x, y: top + p.y })
+    shelfH = Math.max(shelfH, G.h)
+    maxX = Math.max(maxX, K.PAD + curX + G.w)
     curX += G.w + K.GAP_GROUP
   }
   const mainW = Math.round(maxX) + K.PAD
 
   // The grid: as wide as the diagram, or near ASPECT when that's narrow.
-  let isoBand = -1
   if (isoNames.length) {
-    isoBand = groups.length ? band + 1 : 0
-    const area = isoNames.reduce((s, n) => s + (bw.get(n)! + K.ISO_GAP) * (heights.get(n)! + K.ISO_GAP), 0)
-    const gridW = Math.max(maxX - K.PAD, Math.sqrt(area * K.ASPECT), ...isoNames.map((n) => bw.get(n)!))
+    const area = isoNames.reduce((s, n) => s + (bw(n) + K.ISO_GAP) * (bh(n) + K.ISO_GAP), 0)
+    const gridW = Math.max(maxX - K.PAD, Math.sqrt(area * K.ASPECT), ...isoNames.map(bw))
     let row = 0
     let cx = 0
     for (const n of isoNames) {
       const b = nodes.get(n)!
       if (cx > 0 && cx + b.w > gridW) row++, (cx = 0)
-      Object.assign(b, { x: K.PAD + cx, rank: row, band: isoBand })
+      Object.assign(b, { x: K.PAD + cx, row })
       cx += b.w + K.ISO_GAP
     }
   }
@@ -502,10 +343,9 @@ export function layout(g: SchemaGraph, m: Measure, audit: (column: string) => bo
   return {
     nodes,
     edges,
-    groups,
-    isoBand,
+    grid: isoNames.length > 0,
     mainW,
-    stats: { tables: nodesIn.length, iso: isoNames.length, edges: edges.length, layers: layerN, cross, cross0 },
+    stats: { tables: nodesIn.length, iso: isoNames.length, edges: edges.length },
   }
 }
 
@@ -583,94 +423,38 @@ export function boxView(b: Node, o: ViewOptions, m: Measure, markW: number, full
 }
 
 /**
- * y of every shown box. Inside a group each slot is
- * pulled so the rows its lines leave from line up with the other ends
- * (straight lines), keeping the column's order and the gaps between.
- * anchor: a column's row, from the top of its box.
+ * y of every shown box: where the layout put it, pushed down where a box
+ * above, taller with these view options than the layout's, reaches into it.
  */
-export function stack(L: Layout, h: Map<string, number>, o: ViewOptions, anchor: (n: string, col: string) => number) {
+export function stack(L: Layout, h: Map<string, number>, o: ViewOptions) {
   const y = new Map<string, number>()
-  const hOf = (n: string) => (isWaypoint(n) ? 0 : h.get(n)!)
-  const off = (n: string, col: string) => (isWaypoint(n) ? 0 : anchor(n, col))
-  const gap = (a: string, b: string) => (isWaypoint(a) || isWaypoint(b) ? K.GAP_WP : K.GAP_V)
-  const median = (vs: number[]) => {
-    vs.sort((a, b) => a - b)
-    const c = vs.length
-    return c % 2 ? vs[c >> 1] : (vs[c / 2 - 1] + vs[c / 2]) / 2
-  }
-
-  const groupH: number[] = []
-  const groupT: Map<string, number>[] = []
-  for (const G of L.groups) {
-    const t = new Map<string, number>()
-    for (const l of G.layers) {
-      let cur = 0
-      l.forEach((n, i) => (i && (cur += gap(l[i - 1], n)), t.set(n, cur), (cur += hOf(n))))
-    }
-    const R = G.layers.length
-    for (let it = 0; it < 12; it++) {
-      // one way, the other, and last both: the median over every neighbour
-      const side = it === 11 ? 0 : it % 2 ? 1 : -1
-      const ks = side === 1 ? [...Array(R).keys()].reverse() : [...Array(R).keys()]
-      for (const k of ks) {
-        const l = G.layers[k]
-        const want = l.map((n) => {
-          const vs = (G.nb.get(n) ?? []).filter((x) => !side || x.side === side).map((x) => t.get(x.other)! + off(x.other, x.otherCol) - off(n, x.col))
-          return vs.length ? median(vs) : t.get(n)!
-        })
-        // Packing from the top only pushes down, so pack from both ends
-        // and take the middle; both keep the gaps, so the mean does too.
-        const top: number[] = []
-        let prev = -Infinity
-        l.forEach((n, i) => (top.push(Math.max(want[i], i ? prev + gap(l[i - 1], n) : -Infinity)), (prev = top[i] + hOf(n))))
-        const bot: number[] = []
-        let next = Infinity
-        for (let i = l.length - 1; i >= 0; i--) {
-          bot[i] = Math.min(want[i], i < l.length - 1 ? next - gap(l[i], l[i + 1]) - hOf(l[i]) : Infinity)
-          next = bot[i]
-        }
-        l.forEach((n, i) => t.set(n, (top[i] + bot[i]) / 2))
-        // A box its lines pull far off would sit alone (the lines are
-        // long anyway): no gap over GAP_FAR, the boxes after move up.
-        let lift = 0
-        l.forEach((n, i) => {
-          if (i) lift += Math.max(0, t.get(n)! - lift - (t.get(l[i - 1])! + hOf(l[i - 1])) - Math.max(gap(l[i - 1], n), K.GAP_FAR))
-          t.set(n, t.get(n)! - lift)
-        })
-      }
-    }
-    const min = Math.min(...t.values())
-    let max = 0
-    for (const [n, v] of t) t.set(n, v - min), (max = Math.max(max, v - min + hOf(n)))
-    groupH.push(max)
-    groupT.push(t)
-  }
-
-  // Bands of groups, one under the other, then the grid.
+  const placed: { x: number; w: number; y: number; h: number }[] = []
   let top = K.PAD
-  const bands = [...new Set(L.groups.map((G) => G.band))].sort((a, b) => a - b)
-  for (const band of bands) {
-    let bh = 0
-    L.groups.forEach((G, gi) => {
-      if (G.band !== band) return
-      const t = groupT[gi]
-      for (const l of G.layers) for (const n of l) if (!isWaypoint(n)) y.set(n, top + t.get(n)!)
-      bh = Math.max(bh, groupH[gi])
-    })
-    top += bh + K.GAP_BAND
+  const linked = [...L.nodes.values()].filter((b) => !b.iso).sort((a, b) => a.y - b.y || a.x - b.x)
+  for (const b of linked) {
+    const bh = h.get(b.name)!
+    let t = b.y
+    for (let again = true; again; ) {
+      again = false
+      for (const p of placed)
+        if (p.x < b.x + b.w && b.x < p.x + p.w && p.y < t + bh + K.GAP_V && t < p.y + p.h + K.GAP_V) (t = p.y + p.h + K.GAP_V), (again = true)
+    }
+    placed.push({ x: b.x, w: b.w, y: t, h: bh })
+    y.set(b.name, t)
+    top = Math.max(top, t + bh + K.GAP_BAND)
   }
   let isoY = 0
-  if (o.iso && L.isoBand >= 0) {
+  const showIso = o.iso && L.grid
+  if (showIso) {
     const rowH = new Map<number, number>()
-    for (const b of L.nodes.values()) if (b.iso) rowH.set(b.rank, Math.max(rowH.get(b.rank) ?? 0, h.get(b.name)!))
+    for (const b of L.nodes.values()) if (b.iso) rowH.set(b.row, Math.max(rowH.get(b.row) ?? 0, h.get(b.name)!))
     isoY = top + K.ISO_LBL
     const rowY = new Map<number, number>()
     let cur = isoY
     for (const r of [...rowH.keys()].sort((a, b) => a - b)) rowY.set(r, cur), (cur += rowH.get(r)! + K.ISO_GAP)
-    for (const b of L.nodes.values()) if (b.iso) y.set(b.name, rowY.get(b.rank)!)
+    for (const b of L.nodes.values()) if (b.iso) y.set(b.name, rowY.get(b.row)!)
     top = cur - K.ISO_GAP + K.GAP_BAND
   }
-  const showIso = o.iso && L.isoBand >= 0
   const fullW = Math.round(Math.max(L.mainW - K.PAD, ...[...L.nodes.values()].filter((b) => b.iso).map((b) => b.x + b.w))) + K.PAD
   return { y, isoY, w: showIso ? fullW : L.mainW, h: Math.round(top - K.GAP_BAND + K.PAD) }
 }
