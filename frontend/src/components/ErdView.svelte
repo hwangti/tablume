@@ -7,7 +7,7 @@
   import { app, askText, connect, globMatch, openDDL, openTableData, saveWorkspaceSoon, type Tab } from '../lib/state.svelte'
   import { copyText } from '../lib/clipboard'
   import { closeMenus, fitMenu, onCloseMenus } from '../lib/fit'
-  import { layout, boxView, stack, edgePath, routedPath, DEFAULT_OPTIONS, DEFAULT_AUDIT, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
+  import { layout, boxView, stack, edgePath, DEFAULT_OPTIONS, DEFAULT_AUDIT, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
   import type { ForeignKey, SchemaGraph, Table } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
@@ -154,10 +154,7 @@
         },
       }
     }
-    // Through the waypoints while neither end was moved by hand.
-    const routed = (e: Layout['edges'][number]) =>
-      e.via.length && pos && !manual[e.a] && !manual[e.b] ? routedPath(at(e.a), at(e.b), e.ac, e.bc, e.via.map((id) => pos!.via.get(id)!)) : null
-    return L.edges.map((e, i) => ({ ...e, i, d: routed(e) ?? edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
+    return L.edges.map((e, i) => ({ ...e, i, d: edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
   })
 
   // ------------------------------------------------------------ highlight
