@@ -6,8 +6,9 @@
 //      side by side when one column would make the group much taller than
 //      wide (spread);
 //   2. connected groups are laid out one by one, so unrelated tables don't mix;
-//   3. a line that skips columns gets a waypoint in each, so it runs through
-//      a gap instead of behind a box;
+//   3. a line that skips columns gets a waypoint in each: it counts in the
+//      ordering below and keeps a little room where the line passes (the
+//      line itself is one curve, and may pass behind a box);
 //   4. inside a column, order by the mean of the neighbours' rows, then swap
 //      neighbours while that removes crossings, keeping the best order. Rows
 //      count: two lines into one box cross or not by the rows they meet;
@@ -260,7 +261,8 @@ function components(nodes: string[], edges: Edge[]): string[][] {
 }
 
 // A slot in a column: a table, or a waypoint of a line that crosses the
-// column (an id starting with WP), so the line runs through a gap.
+// column (an id starting with WP): it counts when ordering the column and
+// keeps a little room where the line passes.
 const WP = '\u0001'
 export const isWaypoint = (id: string) => id.startsWith(WP)
 
@@ -580,18 +582,14 @@ export function boxView(b: Node, o: ViewOptions, m: Measure, markW: number, full
   }
 }
 
-/** A line's run through a column it only crosses. */
-export type Via = { xL: number; xR: number; y: number }
-
 /**
- * y of every shown box, and of the waypoints. Inside a group each slot is
+ * y of every shown box. Inside a group each slot is
  * pulled so the rows its lines leave from line up with the other ends
  * (straight lines), keeping the column's order and the gaps between.
  * anchor: a column's row, from the top of its box.
  */
 export function stack(L: Layout, h: Map<string, number>, o: ViewOptions, anchor: (n: string, col: string) => number) {
   const y = new Map<string, number>()
-  const via = new Map<string, Via>()
   const hOf = (n: string) => (isWaypoint(n) ? 0 : h.get(n)!)
   const off = (n: string, col: string) => (isWaypoint(n) ? 0 : anchor(n, col))
   const gap = (a: string, b: string) => (isWaypoint(a) || isWaypoint(b) ? K.GAP_WP : K.GAP_V)
@@ -656,13 +654,7 @@ export function stack(L: Layout, h: Map<string, number>, o: ViewOptions, anchor:
     L.groups.forEach((G, gi) => {
       if (G.band !== band) return
       const t = groupT[gi]
-      G.layers.forEach((l, k) =>
-        l.forEach((n) => {
-          const v = top + t.get(n)!
-          if (isWaypoint(n)) via.set(n, { xL: G.x0 + G.colX[k], xR: G.x0 + G.colX[k] + G.colW[k], y: v })
-          else y.set(n, v)
-        }),
-      )
+      for (const l of G.layers) for (const n of l) if (!isWaypoint(n)) y.set(n, top + t.get(n)!)
       bh = Math.max(bh, groupH[gi])
     })
     top += bh + K.GAP_BAND
@@ -680,7 +672,7 @@ export function stack(L: Layout, h: Map<string, number>, o: ViewOptions, anchor:
   }
   const showIso = o.iso && L.isoBand >= 0
   const fullW = Math.round(Math.max(L.mainW - K.PAD, ...[...L.nodes.values()].filter((b) => b.iso).map((b) => b.x + b.w))) + K.PAD
-  return { y, via, isoY, w: showIso ? fullW : L.mainW, h: Math.round(top - K.GAP_BAND + K.PAD) }
+  return { y, isoY, w: showIso ? fullW : L.mainW, h: Math.round(top - K.GAP_BAND + K.PAD) }
 }
 
 type Box = { x: number; y: number; w: number; h: number; anchor: (col: string) => number }
@@ -716,32 +708,4 @@ export function edgePath(A: Box, B: Box, ac: string, bc: string, self: boolean):
   const y2 = B.anchor(bc)
   const d = sa === sb ? Math.max(40, Math.min(90, Math.abs(y2 - y1) * 0.3)) : Math.max(34, Math.abs(x2 - x1) * 0.45)
   return `M${f(x1)},${f(y1)} C${f(x1 + sa * d)},${f(y1)} ${f(x2 + sb * d)},${f(y2)} ${f(x2)},${f(y2)}`
-}
-
-/**
- * A line that crosses columns between its tables: through the gaps its
- * waypoints keep, level across each column, curving between them. null when
- * a box was moved past them, for edgePath to draw it directly.
- */
-export function routedPath(A: Box, B: Box, ac: string, bc: string, via: Via[]): string | null {
-  const f = (n: number) => n.toFixed(1)
-  const s = B.x < A.x ? -1 : 1 // the way from the child to the parent
-  const x1 = (s < 0 ? A.x : A.x + A.w) + s * K.MARK_C
-  const x2 = (s < 0 ? B.x + B.w : B.x) - s * K.MARK_P
-  const ins = via.map((v) => (s < 0 ? v.xR : v.xL))
-  const outs = via.map((v) => (s < 0 ? v.xL : v.xR))
-  if ((ins[0] - x1) * s < 0 || (x2 - outs[outs.length - 1]) * s < 0) return null
-  let d = `M${f(x1)},${f(A.anchor(ac))}`
-  let [px, py] = [x1, A.anchor(ac)]
-  const curve = (x: number, y: number) => {
-    const c = Math.max(24, Math.abs(x - px) * 0.5)
-    d += ` C${f(px + s * c)},${f(py)} ${f(x - s * c)},${f(y)} ${f(x)},${f(y)}`
-  }
-  via.forEach((v, i) => {
-    curve(ins[i], v.y)
-    d += ` L${f(outs[i])},${f(v.y)}`
-    ;[px, py] = [outs[i], v.y]
-  })
-  curve(x2, B.anchor(bc))
-  return d
 }

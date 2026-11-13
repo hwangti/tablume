@@ -33,12 +33,17 @@ for (const e of L.edges) {
 }
 for (const G of L.groups)
   for (const l of G.layers) {
-    // (a waypoint is a line passing through: no height)
-    const top = (n: string) => (isWaypoint(n) ? P.via.get(n)!.y : P.y.get(n)!)
-    const bottom = (n: string) => top(n) + (isWaypoint(n) ? 0 : h.get(n)!)
-    for (let i = 1; i < l.length; i++) {
-      const gap = top(l[i]) - bottom(l[i - 1])
-      assert.ok(gap <= K.GAP_FAR + 1, `${l[i]} ${Math.round(gap)} px below ${l[i - 1]}`)
+    // each slot (a box, or a line passing: a waypoint) at most GAP_FAR below the last
+    let last = ''
+    let slots = 0
+    for (const n of l) {
+      slots++
+      if (isWaypoint(n)) continue
+      if (last) {
+        const gap = P.y.get(n)! - P.y.get(last)! - h.get(last)!
+        assert.ok(gap <= slots * K.GAP_FAR + 1, `${n} ${Math.round(gap)} px below ${last}`)
+      }
+      ;[last, slots] = [n, 0]
     }
   }
 console.log('erd ok')
