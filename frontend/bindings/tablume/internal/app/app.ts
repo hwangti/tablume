@@ -254,10 +254,12 @@ export function OpenSQLFile(): $CancellablePromise<$models.OpenedFile | null> {
 
 /**
  * OpenTabWindow shows the tab in a window of its own; state is the tab's
- * saved form (JSON), read back by the window with TabWindowState.
+ * saved form (JSON), read back by the window with TabWindowState. at: the
+ * window's top left goes near screen point x, y (a tab dropped outside the
+ * main window), else the system places it.
  */
-export function OpenTabWindow(tabID: string, title: string, state: string): $CancellablePromise<void> {
-    return $Call.ByID(58602739, tabID, title, state);
+export function OpenTabWindow(tabID: string, title: string, state: string, x: number, y: number, at: boolean): $CancellablePromise<void> {
+    return $Call.ByID(58602739, tabID, title, state, x, y, at);
 }
 
 /**

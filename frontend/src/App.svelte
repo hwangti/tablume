@@ -16,6 +16,8 @@
   import Modal from './components/Modal.svelte'
   import SqlPreview from './components/SqlPreview.svelte'
   import Icon from './components/Icon.svelte'
+  import TabStrip from './components/TabStrip.svelte'
+  import { layout, groups, zoneAt, zoneRect, resize, equalize, type Bar, type Rect, type Side } from './lib/panes'
   import logo from './assets/logo.svg'
   import {
     app,
@@ -40,6 +42,12 @@
     initWebSessions,
     checkUpdate,
     dismissToast,
+    groupTabs,
+    tabShown,
+    moveToGroup,
+    splitTo,
+    unsplitAll,
+    type Tab,
   } from './lib/state.svelte'
   import { Window } from '@wailsio/runtime'
   import { driverLabel } from './lib/types'
@@ -91,7 +99,7 @@
       e.preventDefault()
       closeTab(app.activeTab)
     } else if (/^[1-9]$/.test(k) && !e.shiftKey) {
-      const t = app.tabs.filter((x) => !x.detached)[Number(k) - 1]
+      const t = stripTabs()[Number(k) - 1]
       if (t) {
         e.preventDefault()
         app.activeTab = t.id
@@ -175,7 +183,7 @@
   // and on macOS also ⌘⇧] / ⌘⇧[. Caught before the editor or the grid
   // (where Tab moves between cells) see the key.
   function switchKey(e: KeyboardEvent) {
-    const tabs = app.tabs.filter((t) => !t.detached)
+    const tabs = stripTabs()
     if (app.editing || app.prompt || tabs.length < 2) return
     let dir = 0
     if (e.ctrlKey && e.key === 'Tab') dir = e.shiftKey ? -1 : 1
@@ -208,43 +216,177 @@
     })
   }
 
-  // Tabs reorder by dragging; the array is reordered live while moving.
-  let dragging = $state<string | null>(null)
-  let tabsEl = $state<HTMLDivElement>() as HTMLDivElement
+  // ---------------------------------------------------------------- tab groups
+  // The tab area: each group's strip and its shown tab where the split tree
+  // puts them (see panes.ts). Every tab's pane stays mounted where it is;
+  // only its place and visibility change, so nothing reloads on a split.
+  // 넓게 보기 shows the active tab alone; a phone, one strip of all tabs.
 
-  // The active tab is always scrolled into view (a new tab opens at the end).
-  $effect(() => {
-    const id = app.activeTab
-    void app.tabs.length
-    requestAnimationFrame(() => {
-      const el = tabsEl?.querySelector<HTMLElement>(`.tab[data-id="${CSS.escape(id)}"]`)
-      el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    })
+  const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 }
+  const STRIP = 34 // px
+
+  const flat = $derived(narrow)
+  const view = $derived.by(() => {
+    if (app.wide || flat) return { rects: new Map<string, Rect>(), bars: [] as Bar[] }
+    return layout(app.panes)
   })
+  const multi = $derived(view.rects.size > 1)
 
-  // No scrollbar on the tab strip (it took height): the wheel scrolls it,
-  // and a shadow on either side shows there are more tabs that way.
-  function tabsWheel(e: WheelEvent) {
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      tabsEl.scrollLeft += e.deltaY
+  /** The tabs ⌘1–9 and Ctrl+Tab go through: the focused group's. */
+  const stripTabs = () => (flat ? app.tabs.filter((t) => !t.detached) : groupTabs(app.focus))
+
+  const paneShown = (t: Tab) => (app.wide || flat ? t.id === app.activeTab : tabShown(t))
+  const paneRect = (t: Tab) => (app.wide || flat ? FULL : (view.rects.get(t.group ?? '') ?? FULL))
+
+  const pct = (v: number) => `${+(v * 100).toFixed(4)}%`
+  function place(r: Rect, top = 0, height?: number) {
+    return `left:${pct(r.x)};width:${pct(r.w)};top:calc(${pct(r.y)} + ${top}px);height:${height !== undefined ? height + 'px' : `calc(${pct(r.h)} - ${top}px)`}`
+  }
+
+  // A click or the keyboard in a pane makes its tab the active one.
+  const focusTab = (t: Tab) => app.activeTab !== t.id && (app.activeTab = t.id)
+
+  let contentEl = $state<HTMLDivElement>() as HTMLDivElement
+
+  // The line between two groups: dragged to resize, double-clicked to share evenly.
+  function barDown(e: PointerEvent, b: Bar) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const box = contentEl.getBoundingClientRect()
+    const row = b.dir === 'row'
+    resizing = row ? 'col-resize' : 'row-resize'
+    const move = (ev: PointerEvent) => {
+      const f = row ? ((ev.clientX - box.left) / box.width - b.rect.x) / b.rect.w : ((ev.clientY - box.top) / box.height - b.rect.y) / b.rect.h
+      const min = row ? 160 / (b.rect.w * box.width) : (STRIP + 80) / (b.rect.h * box.height)
+      app.panes = resize(app.panes, b.path, b.i, f, min)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      resizing = ''
+      saveWorkspaceSoon()
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  let resizing = $state('') // the cursor while a line is dragged
+
+  // Dragging a tab: along a strip it moves (into that strip's group, if
+  // another); over a group's pane it shows where it would go, and dropping
+  // there splits that group (an edge) or moves the tab into it (the middle).
+  // Dropped outside the window (desktop), it gets a window of its own there.
+  // A finger drags after holding the tab (the menu that opened then closes);
+  // before that, a swipe scrolls the strip.
+  const TAB_HOLD_MS = 450
+  let tabHeld = false
+  // Where the dragged tab would go: a part of a group (the rect is shown),
+  // or a place in another group's strip (before that tab, or at its end;
+  // the line is shown, in px within the tab area).
+  type Drop = { gid: string; zone: Side | 'center'; rect: Rect } | { gid: string; before?: string; line: { x: number; y: number; h: number } }
+  let drop = $state<Drop | null>(null)
+
+  function tabDown(e: PointerEvent, id: string) {
+    if (e.button === 1) {
       e.preventDefault()
+      closeTab(id)
+      return
+    }
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return
+    const x0 = e.clientX
+    const y0 = e.clientY
+    const touch = e.pointerType !== 'mouse'
+    // held: from here a move drags (the first touchmove too)
+    const hold = touch ? setTimeout(() => (tabHeld = true), TAB_HOLD_MS) : 0
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return
+      if (!touch && !ev.buttons) return up(ev) // let go where the page didn't hear it
+      if (!app.tabDrag) {
+        if (Math.abs(ev.clientX - x0) < 5 && Math.abs(ev.clientY - y0) < 5) return
+        if (touch) {
+          if (!tabHeld) return up() // a swipe
+          closeMenus()
+        }
+        app.tabDrag = id
+        // (WebKit carries a selection begun on the tab into an editor it passes over)
+        getSelection()?.removeAllRanges()
+      }
+      dragOver(id, ev.clientX, ev.clientY)
+    }
+    const up = (ev?: PointerEvent) => {
+      clearTimeout(hold)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      const out = !isWeb && ev?.type !== 'pointercancel' && !!ev && (ev.clientX < 0 || ev.clientY < 0 || ev.clientX > innerWidth || ev.clientY > innerHeight)
+      if (app.tabDrag) {
+        if (out) detachTab(id, { x: ev!.screenX, y: ev!.screenY })
+        else if (drop && 'line' in drop) moveToGroup(id, drop.gid, drop.before)
+        else if (drop) drop.zone === 'center' ? moveToGroup(id, drop.gid) : splitTo(id, drop.gid, drop.zone)
+        app.tabDrag = '' // (emptied groups go now)
+        saveWorkspaceSoon()
+      }
+      drop = null
+      tabHeld = false
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  function dragOver(id: string, x: number, y: number) {
+    const t = app.tabs.find((v) => v.id === id)
+    if (!t) return
+    // along a strip: its own is reordered live; another's shows where the
+    // tab would go in, and only the drop moves it there
+    for (const el of contentEl.querySelectorAll<HTMLElement>('.strip')) {
+      const r = el.getBoundingClientRect()
+      if (x < r.left || x > r.right || y < r.top - 6 || y > r.bottom + 6) continue
+      drop = null
+      const gid = el.dataset.gid ?? ''
+      const els = [...el.querySelectorAll<HTMLElement>('.tab')].filter((v) => v.dataset.id !== id)
+      const order = els.map((v) => v.dataset.id!)
+      let to = els.findIndex((v) => {
+        const b = v.getBoundingClientRect()
+        return x < b.left + b.width / 2
+      })
+      if (to < 0) to = order.length
+      if (gid && gid !== t.group) {
+        const box = contentEl.getBoundingClientRect()
+        const at = els[to]?.getBoundingClientRect().left ?? els[els.length - 1]?.getBoundingClientRect().right ?? el.querySelector('.tabs')!.getBoundingClientRect().left
+        drop = { gid, before: order[to], line: { x: at - box.left, y: r.top - box.top, h: r.height } }
+        return
+      }
+      order.splice(to, 0, id)
+      reorder(gid, order)
+      return
+    }
+    // over a group: an edge splits it, the middle takes the tab in
+    drop = null
+    if (!view.rects.size) return
+    const box = contentEl.getBoundingClientRect()
+    const fx = (x - box.left) / box.width
+    const fy = (y - box.top) / box.height
+    for (const [gid, r] of view.rects) {
+      if (fx < r.x || fx > r.x + r.w || fy < r.y || fy > r.y + r.h) continue
+      // (a group's only tab can't split it)
+      if (t.group === gid && groupTabs(gid).length < 2) return
+      const zone = zoneAt(r, fx, fy)
+      if (zone === 'center' && t.group === gid) return
+      drop = { gid, zone, rect: zoneRect(r, zone) }
+      return
     }
   }
 
-  let moreLeft = $state(false)
-  let moreRight = $state(false)
-  function tabsEdges() {
-    if (!tabsEl) return
-    moreLeft = tabsEl.scrollLeft > 1
-    moreRight = tabsEl.scrollLeft + tabsEl.clientWidth < tabsEl.scrollWidth - 1
+  // A strip's tabs in this order ('' = every tab, on a phone); they keep
+  // the places in app.tabs that the strip's tabs had.
+  function reorder(gid: string, order: string[]) {
+    const mine = (t: Tab) => !t.detached && (!gid || t.group === gid)
+    if (app.tabs.filter(mine).length !== order.length) return
+    const byId = new Map(app.tabs.map((t) => [t.id, t]))
+    let k = 0
+    const next = app.tabs.map((t) => (mine(t) ? byId.get(order[k++])! : t))
+    if (next.some((t, i) => t !== app.tabs[i])) app.tabs = next
   }
-  $effect(() => {
-    void app.tabs.length
-    requestAnimationFrame(tabsEdges)
-    const ro = new ResizeObserver(tabsEdges)
-    if (tabsEl) ro.observe(tabsEl)
-    return () => ro.disconnect()
-  })
 
   // ---------------------------------------------------------------- tab menu
   type TabMenuItem = { label: string; icon?: string; run: () => void; disabled?: boolean; sep?: boolean; danger?: boolean; kbd?: string }
@@ -256,9 +398,14 @@
     const i = app.tabs.findIndex((t) => t.id === id)
     const t = app.tabs[i]
     if (!t) return
-    // Bulk closes leave tabs in their own windows alone.
+    // Bulk closes act on this strip (tabs in their own windows aren't in one).
     const ids = app.tabs.map((x) => x.id)
-    const here = (x: string) => !app.tabs.find((y) => y.id === x)?.detached
+    const here = (x: string) => {
+      const y = app.tabs.find((v) => v.id === x)
+      return !!y && !y.detached && (flat || y.group === t.group)
+    }
+    const all = groups(app.panes).map((g) => g.id)
+    const mine = groupTabs(t.group ?? '')
     const left = ids.slice(0, i).filter(here)
     const right = ids.slice(i + 1).filter(here)
     const others = ids.filter((x) => x !== id && here(x))
@@ -279,80 +426,24 @@
         app.wide && app.activeTab === id
           ? { label: tr('넓게 보기 종료'), icon: 'unwide', run: () => (app.wide = false), sep: true }
           : { label: tr('넓게 보기'), icon: 'wide', run: () => ((app.activeTab = id), (app.wide = true)), sep: true },
-        ...(isWeb ? [] : [{ label: tr('새 창으로 열기'), icon: 'detach', run: () => detachTab(id) }]),
+        ...(flat
+          ? []
+          : [
+              { label: tr('오른쪽으로 분할'), icon: 'splitRight', run: () => splitTo(id, t.group!, 'right'), disabled: mine.length < 2, sep: true },
+              { label: tr('아래로 분할'), icon: 'splitDown', run: () => splitTo(id, t.group!, 'bottom'), disabled: mine.length < 2 },
+              ...(all.length > 1
+                ? [
+                    { label: tr('다른 그룹으로 옮기기'), run: () => moveToGroup(id, all[(all.indexOf(t.group!) + 1) % all.length]) },
+                    { label: tr('분할 모두 해제'), run: unsplitAll },
+                  ]
+                : []),
+            ]),
+        ...(isWeb ? [] : [{ label: tr('새 창으로 열기'), icon: 'detach', run: () => detachTab(id), sep: true }]),
         { label: tr('탭 복제'), icon: 'copy', run: () => duplicateTab(id) },
         ...(t.preview ? [{ label: tr('탭 고정'), icon: 'lock', run: () => pinTab(t) }] : []),
         { label: tr('이름 바꾸기'), icon: 'edit', run: () => (renaming = id) },
       ],
     }
-  }
-
-  // A finger drags a tab after holding it (the menu that opened then
-  // closes); before that, a swipe scrolls the strip.
-  const TAB_HOLD_MS = 450
-  let tabHeld = false // a finger is dragging: the strip doesn't scroll
-
-  function tabDown(e: PointerEvent, id: string) {
-    if (e.button === 1) {
-      e.preventDefault()
-      closeTab(id)
-      return
-    }
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button, input')) return
-    const x0 = e.clientX
-    const touch = e.pointerType !== 'mouse'
-    // held: from here a move drags (the first touchmove too)
-    const hold = touch ? setTimeout(() => (tabHeld = true), TAB_HOLD_MS) : 0
-    const move = (ev: PointerEvent) => {
-      if (ev.pointerId !== e.pointerId) return
-      if (!dragging) {
-        if (Math.abs(ev.clientX - x0) < 5) return
-        if (touch) {
-          if (!tabHeld) return up() // a swipe
-          closeMenus()
-        }
-      }
-      dragging = id
-      // Positions among the shown tabs; tabs in their own windows aren't
-      // in the strip and keep their place in app.tabs.
-      const els = [...tabsEl.querySelectorAll<HTMLElement>('.tab')]
-      const shown = els.map((el) => el.dataset.id!)
-      const from = shown.indexOf(id)
-      let to = els.findIndex((el) => {
-        const r = el.getBoundingClientRect()
-        return ev.clientX < r.left + r.width / 2
-      })
-      if (to < 0) to = els.length - 1
-      else if (to > from) to -= 1
-      if (from >= 0 && to !== from && to >= 0) {
-        shown.splice(from, 1)
-        shown.splice(to, 0, id)
-        const byId = new Map(app.tabs.map((t) => [t.id, t]))
-        let k = 0
-        app.tabs = app.tabs.map((t) => (t.detached ? t : byId.get(shown[k++])!))
-      }
-    }
-    const up = () => {
-      clearTimeout(hold)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-      if (dragging) saveWorkspaceSoon()
-      dragging = null
-      tabHeld = false
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-  }
-
-  // A drag after the hold mustn't scroll the strip (or the page) instead:
-  // only a touchmove that isn't passive can stop that, which Svelte's
-  // ontouchmove is.
-  function holdScroll(node: HTMLElement) {
-    const stop = (e: TouchEvent) => tabHeld && e.cancelable && e.preventDefault()
-    node.addEventListener('touchmove', stop, { passive: false })
-    return { destroy: () => node.removeEventListener('touchmove', stop) }
   }
 
   let renaming = $state<string | null>(null)
@@ -433,79 +524,87 @@
           <Icon name="unwide" />
         </button>
       </div>
-    {:else}
-    <div class="strip">
-    <button
-      class="icon-btn strip-btn"
-      title="{tr(sideHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)"
-      onclick={sideToggle}
-    >
-      <Icon name={sideHidden ? 'sidebarOff' : 'sidebar'} />
-    </button>
-    <div class="tabs-wrap" class:more-left={moreLeft} class:more-right={moreRight}>
-    <div class="tabs" bind:this={tabsEl} use:holdScroll onwheel={tabsWheel} onscroll={tabsEdges}>
-      {#each app.tabs.filter((x) => !x.detached) as t (t.id)}
-        {@const c = connById(t.connId)}
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div
-          class="tab"
-          data-id={t.id}
-          class:on={t.id === app.activeTab}
-          class:dragging={dragging === t.id}
-          style:--conn-color={c?.color || 'transparent'}
-          onclick={() => (app.activeTab = t.id)}
-          onpointerdown={(e) => tabDown(e, t.id)}
-          ondblclick={() => (t.preview ? pinTab(t) : (renaming = t.id))}
-          oncontextmenu={(e) => openTabMenu(e, t.id)}
-          title="{c?.name ?? ''} · {c ? driverLabel(c.driver) : ''}"
-        >
-          {#if t.running}<span class="spin"></span>{:else}<Icon name={t.erd ? 'erd' : t.tableRef ? 'table' : 'console'} size={13} />{/if}
-          {#if renaming === t.id}
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              class="rename"
-              autofocus
-              bind:value={t.title}
-              onblur={() => ((renaming = null), saveWorkspaceSoon())}
-              onkeydown={(e) => (e.key === 'Enter' || e.key === 'Escape') && e.currentTarget.blur()}
-            />
-          {:else}
-            <span class="name" class:preview={t.preview} title={t.preview ? tr('미리보기 탭 — 다른 테이블을 클릭하면 바뀝니다. 더블클릭하면 고정됩니다.') : ''}>{t.title}</span>
-          {/if}
-          {#if c?.readOnly}<span class="ro" title={tr('읽기 전용 연결입니다')}><Icon name="lock" size={11} /></span>{/if}
-          {#if t.inTx}<span class="tx" title={tr('커밋하지 않은 변경이 있습니다')}></span>{/if}
-          <button class="x" onclick={(e) => (e.stopPropagation(), closeTab(t.id))} aria-label={tr('닫기')}><Icon name="close" size={14} /></button>
-        </div>
-      {/each}
-      {#if app.connections.length}
-        <button
-          class="icon-btn newtab"
-          title={isWeb ? tr('새 콘솔') : tr('새 콘솔') + ' (Ctrl/⌘+T)'}
-          onclick={() => openConsole(activeTab()?.connId ?? app.connections[0].id)}
-        >
-          <Icon name="plus" size={14} />
-        </button>
-      {/if}
-    </div>
-    </div>
-    {#if activeTab()}
-      <button class="icon-btn strip-btn" title={tr('넓게 보기 — 이 탭만 창 가득 보입니다')} onclick={() => (app.wide = true)}>
-        <Icon name="wide" />
-      </button>
-    {/if}
-    </div>
     {/if}
 
-    <div class="content">
+    <div class="content" class:resizing={!!resizing} class:tab-drag={!!app.tabDrag} style:cursor={resizing || null} bind:this={contentEl}>
+      {#snippet sideBtn()}
+        <button class="icon-btn strip-btn" title="{tr(sideHidden ? '연결 목록 보이기' : '연결 목록 숨기기')} ({modKey}B)" onclick={sideToggle}>
+          <Icon name={sideHidden ? 'sidebarOff' : 'sidebar'} />
+        </button>
+      {/snippet}
+      {#snippet strip(gid: string, tabs: Tab[], active: string, focused: boolean, first: boolean)}
+        <TabStrip
+          {gid}
+          {tabs}
+          {active}
+          {focused}
+          bind:renaming
+          held={() => tabHeld}
+          ondown={tabDown}
+          onmenu={openTabMenu}
+          onclose={closeTab}
+          onnew={app.connections.length
+            ? () => {
+                if (gid) app.focus = gid
+                openConsole(activeTab()?.connId ?? app.connections[0].id)
+              }
+            : undefined}
+          lead={first ? sideBtn : undefined}
+          onwide={active ? () => ((app.activeTab = active), (app.wide = true)) : undefined}
+        />
+      {/snippet}
+
+      {#if flat && !app.wide}
+        <div class="at" style={place(FULL, 0, STRIP)}>
+          {@render strip('', app.tabs.filter((t) => !t.detached), app.activeTab, true, true)}
+        </div>
+      {:else if !app.wide}
+        {#each groups(app.panes) as g (g.id)}
+          {@const r = view.rects.get(g.id) ?? FULL}
+          <div class="at" style={place(r, 0, STRIP)}>
+            {@render strip(g.id, groupTabs(g.id), g.active, !multi || g.id === app.focus, r.x === 0 && r.y === 0)}
+          </div>
+        {/each}
+      {/if}
+
       {#each app.tabs as t (t.id)}
         {#if !t.detached}
-          <div class="pane" class:hidden={t.id !== app.activeTab}>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="pane"
+            class:hidden={!paneShown(t)}
+            style={place(paneRect(t), app.wide ? 0 : STRIP)}
+            onpointerdowncapture={() => focusTab(t)}
+            onfocusin={() => focusTab(t)}
+          >
             {#if t.erd}<ErdView tab={t} />{:else}<QueryTab tab={t} />{/if}
           </div>
         {/if}
       {/each}
+
+      {#each view.bars as b (b.path.join('.') + ':' + b.i)}
+        {@const row = b.dir === 'row'}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="bar"
+          class:row
+          style={row
+            ? `left:${pct(b.at)};top:${pct(b.rect.y)};height:${pct(b.rect.h)}`
+            : `top:${pct(b.at)};left:${pct(b.rect.x)};width:${pct(b.rect.w)}`}
+          title={tr('드래그해 크기를 바꿉니다. 더블클릭하면 똑같이 나눕니다.')}
+          onpointerdown={(e) => barDown(e, b)}
+          ondblclick={() => ((app.panes = equalize(app.panes, b.path)), saveWorkspaceSoon())}
+        ></div>
+      {/each}
+
+      {#if drop && 'line' in drop}
+        <div class="drop-at" style="left:{drop.line.x}px;top:{drop.line.y}px;height:{drop.line.h}px"></div>
+      {:else if drop}
+        <div class="drop" style={place(drop.rect)}></div>
+      {/if}
+
       {#if ready && !app.tabs.some((t) => !t.detached)}
-        <div class="welcome">
+        <div class="welcome" style={place(FULL, app.wide ? 0 : STRIP)}>
           <img src={logo} width="64" height="64" alt="" />
           <h2>Tablume</h2>
           {#if app.connections.length === 0}
@@ -662,22 +761,10 @@
   .gone {
     display: none;
   }
-  .strip {
-    display: flex;
-    align-items: stretch;
-    height: 34px;
-    flex-shrink: 0;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
-  }
   .strip-btn {
     align-self: center;
     flex-shrink: 0;
     margin: 0 4px;
-  }
-  .strip .tabs-wrap {
-    flex: 1;
-    min-width: 0;
   }
   .vdivider {
     background: var(--border);
@@ -748,124 +835,72 @@
     flex-shrink: 0;
     color: var(--text-dim);
   }
-  .tabs-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-  .tabs-wrap::before,
-  .tabs-wrap::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 2;
-    width: 18px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-  .tabs-wrap::before {
-    left: 0;
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
-  }
-  .tabs-wrap::after {
-    right: 0;
-    background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
-  }
-  .tabs-wrap.more-left::before,
-  .tabs-wrap.more-right::after {
-    opacity: 1;
-  }
-  .tabs {
-    display: flex;
-    align-items: stretch;
-    height: 33px;
-    flex-shrink: 0;
-    border-left: 1px solid var(--border);
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .tab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 220px;
-    padding: 0 6px 0 12px;
-    border-right: 1px solid var(--border);
-    color: var(--text-dim);
-    cursor: default;
-    white-space: nowrap;
-    box-shadow: inset 0 -2px 0 transparent, inset 0 3px 0 var(--conn-color);
-  }
-  .tab.on {
-    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
-    color: var(--text);
-    font-weight: 500;
-    box-shadow: inset 0 -2px 0 var(--accent), inset 0 3px 0 var(--conn-color);
-  }
-  .tab.dragging {
-    opacity: 0.6;
-    background: var(--bg-hover);
-  }
-  .tab .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tab .name.preview {
-    font-style: italic;
-  }
-  .rename {
-    width: 120px;
-    padding: 1px 4px;
-  }
-  .x {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: none;
-    border-radius: 3px;
-    background: none;
-    color: var(--text-faint);
-    cursor: pointer;
-    visibility: hidden;
-  }
-  .tab.on .x {
-    visibility: visible;
-  }
-  /* not on touch: a tap that reveals something is taken as a hover, not a tap */
-  @media (hover: hover) {
-    .tab:hover .x {
-      visibility: visible;
-    }
-  }
-  .x:hover {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-  .newtab {
-    align-self: center;
-    margin-left: 4px;
-  }
   .content {
     position: relative;
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
-  .pane {
+  /* a group's strip and pane, placed by the split tree */
+  .at,
+  .pane,
+  .welcome {
     position: absolute;
-    inset: 0;
   }
   .pane.hidden {
     visibility: hidden;
+    pointer-events: none;
+  }
+  /* while a line or a tab is dragged the panes under it don't take the
+     pointer, and nothing gets selected on the way */
+  .content.resizing .pane,
+  .content.tab-drag .pane {
+    pointer-events: none;
+  }
+  .content.tab-drag {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .bar {
+    position: absolute;
+    z-index: 5;
+    height: 1px;
+    background: var(--border);
+    cursor: row-resize;
+  }
+  .bar.row {
+    width: 1px;
+    height: auto;
+    cursor: col-resize;
+  }
+  .bar::after {
+    content: '';
+    position: absolute;
+    inset: -3px 0;
+  }
+  .bar.row::after {
+    inset: 0 -3px;
+  }
+  .bar:hover,
+  .content.resizing .bar {
+    background: var(--accent);
+  }
+  /* where a dragged tab would go */
+  .drop {
+    position: absolute;
+    z-index: 6;
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border: 2px solid var(--accent);
+    pointer-events: none;
+  }
+  /* where a dragged tab would go in another group's strip */
+  .drop-at {
+    position: absolute;
+    z-index: 6;
+    width: 3px;
+    margin-left: -1.5px;
+    border-radius: 2px;
+    background: var(--accent);
     pointer-events: none;
   }
   .welcome {
@@ -884,18 +919,6 @@
   }
   .welcome p {
     margin: 4px;
-  }
-  .tab .tx {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--warn);
-    flex-shrink: 0;
-  }
-  .tab .ro {
-    display: inline-flex;
-    color: var(--text-faint);
-    flex-shrink: 0;
   }
   .confirm-sql {
     margin-top: 10px;
@@ -932,18 +955,5 @@
   .toast.error {
     border-color: var(--danger);
     color: var(--danger);
-  }
-  .spin {
-    width: 10px;
-    height: 10px;
-    border: 2px solid var(--text-faint);
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 </style>

@@ -135,7 +135,7 @@ interface Api {
   SetDarkTitleBar(dark: boolean): Promise<void>
   IsConnected(id: string): Promise<boolean>
   SupportedDrivers(): Promise<string[]>
-  OpenTabWindow(tabId: string, title: string, state: string): Promise<void>
+  OpenTabWindow(tabId: string, title: string, state: string, x: number, y: number, at: boolean): Promise<void>
   TabWindowState(tabId: string): Promise<string>
   CloseTabWindow(tabId: string): Promise<void>
   FocusTabWindow(tabId: string): Promise<boolean>

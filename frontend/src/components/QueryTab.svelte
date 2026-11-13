@@ -41,6 +41,7 @@
     followForeignKey,
     logStatements,
     treeChanged,
+    tabShown,
   } from '../lib/state.svelte'
   import { loadEditInfo, pendingCount, tabPending, revert, previewChanges, applyChanges } from '../lib/editing.svelte'
   import type { Cell, LogEntry, StmtResult } from '../lib/types'
@@ -148,7 +149,7 @@
     if (autoLoaded || !isTable || tab.creating) return
     // loaded or being loaded some other way ("connect and load"): not again
     if (current || tab.running || tab.opening) return void (autoLoaded = true)
-    if (app.activeTab !== tab.id || !connected) return
+    if (!tabShown(tab) || !connected) return
     autoLoaded = true
     reloadTable(tab)
   })

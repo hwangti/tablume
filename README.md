@@ -115,6 +115,7 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 
 - The connection list can be hidden (`Ctrl/⌘+B`), and "Wide View" shows only the current tab across the window.
 - Tabs can be reordered by dragging; the tab menu closes groups of tabs, duplicates, renames and (desktop app) opens a tab in a window of its own.
+- **Split tabs**: drag a tab onto an edge of the tab area and that part splits off with the tab in it, as often and in whichever direction you like; dropped on the middle of another group, the tab moves there. The tab menu has "Split Right", "Split Down", "Move to Other Group" and "Unsplit All". Drag the line between groups to resize them (double-click shares evenly). Tables open in the group you're working in, `Ctrl/⌘+1…9` and `Ctrl+Tab` go through that group's tabs, and the layout is kept with the workspace. On a phone-width screen all tabs share one strip.
 - Dialogs can be dragged by their title bar.
 - The desktop app reopens at the window size it was closed at.
 - **Updates**: at startup the app asks GitHub whether a newer version is out and says so once per release ("Download" opens the release page). "Check for updates" in the view options checks right away, and "Check for updates at startup" turns it off. Nothing is downloaded or installed by the app.
@@ -127,8 +128,8 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 | `Ctrl/⌘ + Shift + Enter` | Run all |
 | `Ctrl/⌘ + T` / `Ctrl/⌘ + W` | New console / close tab |
 | `Ctrl/⌘ + B` | Hide / show the connection list (in wide view: back to the normal view) |
-| `Ctrl/⌘ + 1…9` | Go to tab |
-| `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / previous tab (also `Ctrl + PageDown/PageUp`, and `⌘ + Shift + ]/[` on macOS) |
+| `Ctrl/⌘ + 1…9` | Go to tab (in the current group) |
+| `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / previous tab in the current group (also `Ctrl + PageDown/PageUp`, and `⌘ + Shift + ]/[` on macOS) |
 | `Ctrl/⌘ + /` | Toggle comment |
 | `Ctrl + Alt + L` / `⌘ + ⌥ + L` | Format SQL (selection or everything) |
 | `Ctrl/⌘ + F` | Find/replace in the editor |
