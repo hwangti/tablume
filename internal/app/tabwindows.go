@@ -28,8 +28,10 @@ type tabWindows struct {
 func tabWindowName(tabID string) string { return "tab:" + tabID }
 
 // OpenTabWindow shows the tab in a window of its own; state is the tab's
-// saved form (JSON), read back by the window with TabWindowState.
-func (a *App) OpenTabWindow(tabID, title, state string) {
+// saved form (JSON), read back by the window with TabWindowState. at: the
+// window's top left goes near screen point x, y (a tab dropped outside the
+// main window), else the system places it.
+func (a *App) OpenTabWindow(tabID, title, state string, x, y int, at bool) {
 	tw := &a.tabWins
 	tw.mu.Lock()
 	if w := tw.wins[tabID]; w != nil {
@@ -41,7 +43,7 @@ func (a *App) OpenTabWindow(tabID, title, state string) {
 	tw.state[tabID] = state
 	tw.mu.Unlock()
 
-	w := application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
+	opts := application.WebviewWindowOptions{
 		Name:             tabWindowName(tabID),
 		Title:            title,
 		Width:            1100,
@@ -50,7 +52,12 @@ func (a *App) OpenTabWindow(tabID, title, state string) {
 		MinHeight:        360,
 		BackgroundColour: application.NewRGB(30, 31, 34),
 		URL:              "/?tab=" + url.QueryEscape(tabID),
-	})
+	}
+	if at {
+		// the title bar about under the pointer
+		opts.InitialPosition, opts.X, opts.Y = application.WindowXY, x-120, y-12
+	}
+	w := application.Get().Window.NewWithOptions(opts)
 	// The close button puts the tab back (the page sends its latest state
 	// first), unless the tab itself asked to close or the app is quitting.
 	w.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {

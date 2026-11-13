@@ -1719,8 +1719,9 @@ function applySaved(t: Tab, s: SavedTab) {
   t.erd = s.erd
 }
 
-// Main window: move a tab into its own window.
-export async function detachTab(id: string) {
+// Main window: move a tab into its own window; at: its top left near that
+// screen point (the tab was dropped there, outside the window).
+export async function detachTab(id: string, at?: { x: number; y: number }) {
   const i = app.tabs.findIndex((t) => t.id === id)
   const t = app.tabs[i]
   if (!t || t.detached) return
@@ -1729,7 +1730,7 @@ export async function detachTab(id: string) {
   beforeClose(new Set([id]))
   t.detached = true
   t.preview = false // never reused for another table while it's away
-  await api.OpenTabWindow(id, t.title, JSON.stringify(savedTab(t)))
+  await api.OpenTabWindow(id, t.title, JSON.stringify(savedTab(t)), Math.round(at?.x ?? 0), Math.round(at?.y ?? 0), !!at)
   saveWorkspaceSoon()
 }
 

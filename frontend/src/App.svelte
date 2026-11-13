@@ -274,6 +274,7 @@
   // Dragging a tab: along a strip it moves (into that strip's group, if
   // another); over a group's pane it shows where it would go, and dropping
   // there splits that group (an edge) or moves the tab into it (the middle).
+  // Dropped outside the window (desktop), it gets a window of its own there.
   // A finger drags after holding the tab (the menu that opened then closes);
   // before that, a swipe scrolls the strip.
   const TAB_HOLD_MS = 450
@@ -298,6 +299,7 @@
     const hold = touch ? setTimeout(() => (tabHeld = true), TAB_HOLD_MS) : 0
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== e.pointerId) return
+      if (!touch && !ev.buttons) return up(ev) // let go where the page didn't hear it
       if (!app.tabDrag) {
         if (Math.abs(ev.clientX - x0) < 5 && Math.abs(ev.clientY - y0) < 5) return
         if (touch) {
@@ -310,13 +312,15 @@
       }
       dragOver(id, ev.clientX, ev.clientY)
     }
-    const up = () => {
+    const up = (ev?: PointerEvent) => {
       clearTimeout(hold)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
+      const out = !isWeb && ev?.type !== 'pointercancel' && !!ev && (ev.clientX < 0 || ev.clientY < 0 || ev.clientX > innerWidth || ev.clientY > innerHeight)
       if (app.tabDrag) {
-        if (drop && 'line' in drop) moveToGroup(id, drop.gid, drop.before)
+        if (out) detachTab(id, { x: ev!.screenX, y: ev!.screenY })
+        else if (drop && 'line' in drop) moveToGroup(id, drop.gid, drop.before)
         else if (drop) drop.zone === 'center' ? moveToGroup(id, drop.gid) : splitTo(id, drop.gid, drop.zone)
         app.tabDrag = '' // (emptied groups go now)
         saveWorkspaceSoon()
