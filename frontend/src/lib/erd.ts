@@ -178,8 +178,8 @@ function components(nodes: string[], edges: Edge[]): string[][] {
 
 /**
  * One group's boxes, by springs: each line pulls its two tables together
- * (by distance²), each two tables push apart (by 1 / distance), cooling
- * down step by step. Distances count in boxes, a box being wider than
+ * (by distance²), each two tables push apart (by 1 / distance), the middle
+ * pulls every table a little, cooling down step by step. Distances count in boxes, a box being wider than
  * tall, so the picture comes out about as many boxes wide as high. The
  * start is a spiral, the most-linked tables innermost, so a layout is the
  * same every time. Then boxes that overlap are pushed apart, along the
@@ -211,6 +211,7 @@ function springs(names: string[], edges: Edge[], w: (n: string) => number, h: (n
   })
   // ponytail: every pair every step, O(n²); a quadtree (Barnes–Hut) if schemas of thousands of linked tables get slow
   const k = 0.6 // a line's length, in boxes (the overlap pass then spaces them out)
+  const GRAVITY = 0.1
   const dx = new Float64Array(n)
   const dy = new Float64Array(n)
   const STEPS = 300
@@ -238,6 +239,16 @@ function springs(names: string[], edges: Edge[], w: (n: string) => number, h: (n
       dy[a] -= uy * f
       dx[b] += ux * f
       dy[b] += uy * f
+    }
+    // Gravity to the middle, by distance² like a line: a group of clusters
+    // linked in a chain would otherwise string out into a long strip.
+    let mx = 0
+    let my = 0
+    for (let i = 0; i < n; i++) (mx += x[i] / n), (my += y[i] / n)
+    for (let i = 0; i < n; i++) {
+      const f = GRAVITY * Math.hypot(x[i] - mx, y[i] - my)
+      dx[i] -= (x[i] - mx) * f
+      dy[i] -= (y[i] - my) * f
     }
     for (let i = 0; i < n; i++) {
       const d = Math.hypot(dx[i], dy[i])
