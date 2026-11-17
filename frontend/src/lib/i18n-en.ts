@@ -518,7 +518,6 @@ export default {
   '확대': 'Zoom in',
   '화면 맞춤': 'Fit',
   '스키마를 다시 읽습니다': 'Reads the schema again',
-  '연결되어 있지 않습니다': 'Not connected',
   '불러오는 중…': 'Loading…',
   '테이블이 없습니다': 'No tables',
   '관계(FK) 없는 테이블 {n}': 'Tables without relations (FK): {n}',

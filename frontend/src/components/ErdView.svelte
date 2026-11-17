@@ -4,7 +4,7 @@
   import ZoomBox from './ZoomBox.svelte'
   import { t, num } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
-  import { app, askText, connect, globMatch, openDDL, openTableData, saveWorkspaceSoon, type Tab } from '../lib/state.svelte'
+  import { app, askText, connById, connect, globMatch, openDDL, openTableData, saveWorkspaceSoon, type Tab } from '../lib/state.svelte'
   import { copyText } from '../lib/clipboard'
   import { closeMenus, fitMenu, onCloseMenus } from '../lib/fit'
   import { layout, boxView, stack, edgePath, DEFAULT_OPTIONS, DEFAULT_AUDIT, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
@@ -22,6 +22,7 @@
   let loading = $state(false)
   let opt = $state<ViewOptions>({ ...DEFAULT_OPTIONS })
   let connected = $derived(app.conn[tab.connId]?.status === 'connected')
+  let connecting = $derived(app.conn[tab.connId]?.status === 'connecting')
 
   // Text is measured on a canvas: measuring SVG text forces a layout each time.
   const ctx = document.createElement('canvas').getContext('2d')!
@@ -302,8 +303,9 @@
       }
       if (fingers.size > 2) return
     }
-    // not with the right button: the box would follow the menu
-    if (e.button !== 0) return
+    // not with the right button: the box would follow the menu; not on a
+    // message (its button would lose the click to the capture)
+    if (e.button !== 0 || (e.target as Element).closest('.msg')) return
     e.preventDefault()
     closeMenus()
     const el = e.target as Element
@@ -497,9 +499,13 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="view" class:panning={!!pan} bind:this={viewEl} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onpointerleave={() => !drag && boxLeave()} oncontextmenu={openCtx}>
     {#if !connected}
-      <div class="msg">
-        {t('연결되어 있지 않습니다')}
-        <button class="btn" onclick={() => connect(tab.connId)}>{t('연결')}</button>
+      <!-- as a table tab restored from the last session -->
+      <div class="msg reload">
+        <button class="btn primary" disabled={connecting} onclick={() => connect(tab.connId)}>
+          <Icon name="plug" size={14} />
+          {connecting ? t('연결 중…') : t('연결하고 불러오기')}
+        </button>
+        {#if connById(tab.connId)}<span class="dim">{connById(tab.connId)!.name}</span>{/if}
       </div>
     {:else if error}
       <div class="msg err">{error}</div>
@@ -739,6 +745,15 @@
     gap: 10px;
     color: var(--text-dim);
     cursor: default;
+  }
+  .msg.reload {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .msg.reload .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .msg.err {
     color: var(--danger);
