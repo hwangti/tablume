@@ -4,10 +4,10 @@
   import ZoomBox from './ZoomBox.svelte'
   import { t, num } from '../lib/i18n.svelte'
   import { api, errText } from '../lib/api'
-  import { app, askText, connect, globMatch, openDDL, openTableData, saveWorkspaceSoon, type Tab } from '../lib/state.svelte'
+  import { app, askText, connById, connect, globMatch, openDDL, openTableData, saveWorkspaceSoon, type Tab } from '../lib/state.svelte'
   import { copyText } from '../lib/clipboard'
   import { closeMenus, fitMenu, onCloseMenus } from '../lib/fit'
-  import { layout, boxView, stack, edgePath, routedPath, DEFAULT_OPTIONS, DEFAULT_AUDIT, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
+  import { layout, boxView, stack, edgePath, DEFAULT_OPTIONS, DEFAULT_AUDIT, K, type Layout, type ViewOptions, type BoxView, type Node, type Measure } from '../lib/erd'
   import type { ForeignKey, SchemaGraph, Table } from '../lib/types'
 
   let { tab }: { tab: Tab } = $props()
@@ -22,6 +22,7 @@
   let loading = $state(false)
   let opt = $state<ViewOptions>({ ...DEFAULT_OPTIONS })
   let connected = $derived(app.conn[tab.connId]?.status === 'connected')
+  let connecting = $derived(app.conn[tab.connId]?.status === 'connecting')
 
   // Text is measured on a canvas: measuring SVG text forces a layout each time.
   const ctx = document.createElement('canvas').getContext('2d')!
@@ -107,13 +108,7 @@
       }
     return m
   })
-  // A column's row from the top of its box; a hidden one: the middle.
-  const rowAt = (n: string, col: string) => {
-    const v = views.get(n)!
-    const r = v.rows.find((r) => r.line.name === col)
-    return r ? r.y - 4 : v.h / 2
-  }
-  let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt, rowAt) : null)
+  let pos = $derived(L ? stack(L, new Map([...views].map(([n, v]) => [n, v.h])), opt) : null)
   let nodes = $derived(L ? [...L.nodes.values()] : [])
 
   // Where each shown box is now: the layout plus what was done by hand.
@@ -154,10 +149,7 @@
         },
       }
     }
-    // Through the waypoints while neither end was moved by hand.
-    const routed = (e: Layout['edges'][number]) =>
-      e.via.length && pos && !manual[e.a] && !manual[e.b] ? routedPath(at(e.a), at(e.b), e.ac, e.bc, e.via.map((id) => pos!.via.get(id)!)) : null
-    return L.edges.map((e, i) => ({ ...e, i, d: routed(e) ?? edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
+    return L.edges.map((e, i) => ({ ...e, i, d: edgePath(at(e.a), at(e.b), e.ac, e.bc, e.a === e.b) }))
   })
 
   // ------------------------------------------------------------ highlight
@@ -311,8 +303,9 @@
       }
       if (fingers.size > 2) return
     }
-    // not with the right button: the box would follow the menu
-    if (e.button !== 0) return
+    // not with the right button: the box would follow the menu; not on a
+    // message (its button would lose the click to the capture)
+    if (e.button !== 0 || (e.target as Element).closest('.msg')) return
     e.preventDefault()
     closeMenus()
     const el = e.target as Element
@@ -423,17 +416,7 @@
 
   let loose = $derived(L ? L.edges.filter((e) => e.fk.looseRef).length : 0)
   let statText = $derived(L ? t('테이블 {t} · 관계 {e}', { t: num(L.stats.tables + L.stats.iso), e: num(L.stats.edges) }) : '')
-  let statTitle = $derived.by(() => {
-    if (!L) return ''
-    const s = L.stats
-    return [
-      s.tables ? t('테이블 {t} · 관계 {e} · {l}층 · 선 교차 {c}', { t: num(s.tables), e: num(s.edges), l: s.layers, c: s.cross }) : '',
-      s.iso ? t('관계 없는 테이블 {n}', { n: num(s.iso) }) : '',
-      s.tables ? t('배치 전 교차 {n}개에서 줄인 결과입니다', { n: s.cross0 }) : '',
-    ]
-      .filter(Boolean)
-      .join('\n')
-  })
+  let statTitle = $derived(L?.stats.iso ? t('관계 없는 테이블 {n}', { n: num(L.stats.iso) }) : '')
 </script>
 
 <svelte:window
@@ -516,9 +499,13 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="view" class:panning={!!pan} bind:this={viewEl} onwheel={wheel} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onpointerleave={() => !drag && boxLeave()} oncontextmenu={openCtx}>
     {#if !connected}
-      <div class="msg">
-        {t('연결되어 있지 않습니다')}
-        <button class="btn" onclick={() => connect(tab.connId)}>{t('연결')}</button>
+      <!-- as a table tab restored from the last session -->
+      <div class="msg reload">
+        <button class="btn primary" disabled={connecting} onclick={() => connect(tab.connId)}>
+          <Icon name="plug" size={14} />
+          {connecting ? t('연결 중…') : t('연결하고 불러오기')}
+        </button>
+        {#if connById(tab.connId)}<span class="dim">{connById(tab.connId)!.name}</span>{/if}
       </div>
     {:else if error}
       <div class="msg err">{error}</div>
@@ -567,7 +554,7 @@
               <path class="edh" d={e.d} onpointerenter={() => !pan && litEdges([e.i])} onpointerleave={() => (hot = null)}><title>{edgeTitle(e.fk)}</title></path>
             {/each}
           </g>
-          {#if opt.iso && L.isoBand >= 0}
+          {#if opt.iso && L.grid}
             <text class="isolbl" x={K.PAD} y={pos.isoY - 12}>{t('관계(FK) 없는 테이블 {n}', { n: num(L.stats.iso) })}</text>
           {/if}
           <g class="boxes">
@@ -758,6 +745,15 @@
     gap: 10px;
     color: var(--text-dim);
     cursor: default;
+  }
+  .msg.reload {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .msg.reload .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .msg.err {
     color: var(--danger);
