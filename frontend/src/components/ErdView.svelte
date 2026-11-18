@@ -54,6 +54,7 @@
       const probe = 'abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
       hiTrack = -(measure(probe, 11, true) - measure(probe, 11)) / probe.length
       hot = null
+      pin = null
       hov = null
       fitted = false
       manual = {}
@@ -155,10 +156,15 @@
   // ------------------------------------------------------------ highlight
   // On a box's header: all its relations; on a column row: that column's;
   // on a line: that one. The rest dims.
-  let hot = $state.raw<{ tables: Set<string>; edges: Set<number>; cols: Set<string> } | null>(null)
+  type Lit = { tables: Set<string>; edges: Set<number>; cols: Set<string> }
+  let hot = $state.raw<Lit | null>(null)
+  // A click on a box keeps what it lit (a second click, or one on the
+  // background, lets go), so the boxes can be dragged about to read it.
+  let pin = $state.raw<(Lit & { n: string; key: string }) | null>(null)
+  let lit = $derived(pin ?? hot)
   const ck = (tb: string, c: string) => tb + '\0' + c
 
-  function litEdges(ids: number[], also?: string) {
+  function lights(ids: number[], also?: string): Lit {
     const tables = new Set<string>(also ? [also] : [])
     const cols = new Set<string>()
     for (const i of ids) {
@@ -166,7 +172,13 @@
       tables.add(e.a).add(e.b)
       cols.add(ck(e.a, e.ac)).add(ck(e.b, e.bc))
     }
-    hot = { tables, edges: new Set(ids), cols }
+    return { tables, edges: new Set(ids), cols }
+  }
+  const litEdges = (ids: number[], also?: string) => (hot = lights(ids, also))
+  function togglePin(n: string, at: Lit | null) {
+    const key = n + ':' + cur
+    // a row with no relation keeps the whole table's
+    pin = pin?.key === key ? null : { ...(at ?? lights(edgeIds((x) => x.a === n || x.b === n), n)), n, key }
   }
   const edgeIds = (f: (e: Layout['edges'][number]) => boolean) => L!.edges.flatMap((e, i) => (f(e) ? [i] : []))
 
@@ -260,7 +272,7 @@
   }
   // Dragging the background pans; a box moves it; its corner grip widens it.
   let pan = $state<{ x: number; y: number; px: number; py: number } | null>(null)
-  let drag = $state<{ n: string; size: boolean; x: number; y: number; dx: number; dy: number; w: number } | null>(null)
+  let drag = $state<{ n: string; size: boolean; x: number; y: number; dx: number; dy: number; w: number; at: Lit | null } | null>(null)
   const MIN_W = 130
   const MAX_W = 900
 
@@ -313,7 +325,7 @@
     const b = n ? L?.nodes.get(n) : undefined
     if (n && b) {
       const o = manual[n]
-      drag = { n, size: !!el.closest('.grip'), x: e.clientX, y: e.clientY, dx: o?.dx ?? 0, dy: o?.dy ?? 0, w: o?.w ?? b.w }
+      drag = { n, size: !!el.closest('.grip'), x: e.clientX, y: e.clientY, dx: o?.dx ?? 0, dy: o?.dy ?? 0, w: o?.w ?? b.w, at: hot }
       hot = null
     } else {
       boxLeave()
@@ -341,6 +353,10 @@
   // A pointer that's cancelled sends no pointerup: without this the cursor stays grabbing.
   function up(e?: PointerEvent) {
     if (e) fingers.delete(e.pointerId)
+    // not moved: a click
+    const still = (p: { x: number; y: number } | null) => e?.type === 'pointerup' && p && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 4
+    if (drag && !drag.size && still(drag)) togglePin(drag.n, drag.at)
+    else if (pan && still(pan)) pin = null
     pinch = null // the finger left behind doesn't take over
     drag = null
     pan = null
@@ -422,7 +438,7 @@
 <svelte:window
   onclick={() => ((menu = null), (cmenu = null))}
   onblur={() => (cmenu = null)}
-  onkeydown={(e) => e.key === 'Escape' && ((menu = null), (cmenu = null))}
+  onkeydown={(e) => e.key === 'Escape' && ((menu = null), (cmenu = null), (pin = null))}
 />
 
 {#snippet box(b: Node, w: number, v: BoxView)}
@@ -431,7 +447,7 @@
   <text class="title" x="10" y="18">{b.name}</text>
   {#if v.comment}<text class="tcmt" x="10" y={K.HEAD_H + 6}>{v.comment}</text>{/if}
   {#each v.rows as r (r.line.name)}
-    <g class="ln {r.line.kind}" class:aud={r.line.audit} class:hi={hot?.cols.has(ck(b.name, r.line.name))}>
+    <g class="ln {r.line.kind}" class:aud={r.line.audit} class:hi={lit?.cols.has(ck(b.name, r.line.name))}>
       {#if r.line.kind}<text class="mk" x="10" y={r.y}>{r.line.kind === 'pk' ? '●' : '◆'}</text>{/if}
       <text class="nm" x={10 + (r.line.kind ? markW : 0)} y={r.y}>{r.name}</text>
       <text class="tail" x={w - 10} y={r.y} text-anchor="end">{#each r.tail as p, i}<tspan class={p.cls}>{(i ? ' ' : '') + p.text}</tspan>{/each}</text>
@@ -537,13 +553,13 @@
         <g transform="translate({px} {py}) scale({z})">
           <g class="edges">
             <!-- the lit lines last, over the rest; the rest dim with their boxes -->
-            {#each hot ? [...edges.filter((e) => !hot!.edges.has(e.i)), ...edges.filter((e) => hot!.edges.has(e.i))] : edges as e (e.i)}
-              {@const on = !!hot?.edges.has(e.i)}
+            {#each lit ? [...edges.filter((e) => !lit!.edges.has(e.i)), ...edges.filter((e) => lit!.edges.has(e.i))] : edges as e (e.i)}
+              {@const on = !!lit?.edges.has(e.i)}
               <path
                 class="ed"
                 class:loose={e.fk.looseRef}
                 class:hot={on}
-                class:dim={!!hot && !on}
+                class:dim={!!lit && !on}
                 d={e.d}
                 marker-start="url(#{uid}-{e.fk.one ? 'one' : 'many'}{on ? '-h' : ''})"
                 marker-end="url(#{uid}-{e.fk.required ? 'req' : 'opt'}{on ? '-h' : ''})"
@@ -565,7 +581,8 @@
                 <g
                   class="bx"
                   data-t={b.name}
-                  class:dim={hot && !hot.tables.has(b.name)}
+                  class:dim={lit && !lit.tables.has(b.name)}
+                  class:pinned={pin?.n === b.name}
                   class:moved={!!manual[b.name]}
                   class:grab={drag?.n === b.name}
                   transform="translate({g.x} {g.y})"
@@ -827,7 +844,8 @@
   .bx.moved .frame {
     stroke: color-mix(in srgb, var(--accent) 55%, var(--erd-frame));
   }
-  .bx.grab .frame {
+  .bx.grab .frame,
+  .bx.pinned .frame {
     stroke: var(--accent);
     stroke-width: 2;
   }
