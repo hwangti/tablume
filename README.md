@@ -103,7 +103,7 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
 ### ERD
 
 - On MySQL/MariaDB, schema menu → "Show ERD" draws the tables and their foreign keys, each relation marked 1:1 or 1:N and required or optional. Linked tables sit near each other, the most-linked ones in the middle.
-- Zoom, pan and fit (pinch on a touch screen); hovering a table, a column or a line highlights what it's related to; a click keeps that highlight while you move boxes about.
+- Zoom, pan and fit (pinch on a touch screen); hovering a table, a column or a line highlights what it's related to; a click keeps that highlight while you move boxes about, Shift- or ⌘-click adds more.
 - Boxes can be moved and widened; "Auto arrange" puts them back. A box's menu opens its data or DDL.
 - Options show all columns, comments, NULL and AUTO_INCREMENT marks and tables without relations. Audit columns such as `created_*` and `updated_*` are hidden by default, and which names count as audit columns is set as patterns.
 

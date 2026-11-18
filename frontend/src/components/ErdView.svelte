@@ -54,7 +54,7 @@
       const probe = 'abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
       hiTrack = -(measure(probe, 11, true) - measure(probe, 11)) / probe.length
       hot = null
-      pin = null
+      pins = []
       hov = null
       fitted = false
       manual = {}
@@ -159,9 +159,19 @@
   type Lit = { tables: Set<string>; edges: Set<number>; cols: Set<string> }
   let hot = $state.raw<Lit | null>(null)
   // A click on a box keeps what it lit (a second click, or one on the
-  // background, lets go), so the boxes can be dragged about to read it.
-  let pin = $state.raw<(Lit & { n: string; key: string }) | null>(null)
-  let lit = $derived(pin ?? hot)
+  // background, lets go), so the boxes can be dragged about to read it;
+  // with Shift or ⌘ it's added to what's kept.
+  let pins = $state.raw<(Lit & { n: string; key: string })[]>([])
+  let lit = $derived(
+    pins.length < 2
+      ? (pins[0] ?? hot)
+      : {
+          tables: new Set(pins.flatMap((p) => [...p.tables])),
+          edges: new Set(pins.flatMap((p) => [...p.edges])),
+          cols: new Set(pins.flatMap((p) => [...p.cols])),
+        },
+  )
+  let pinned = $derived(new Set(pins.map((p) => p.n)))
   const ck = (tb: string, c: string) => tb + '\0' + c
 
   function lights(ids: number[], also?: string): Lit {
@@ -175,10 +185,13 @@
     return { tables, edges: new Set(ids), cols }
   }
   const litEdges = (ids: number[], also?: string) => (hot = lights(ids, also))
-  function togglePin(n: string, at: Lit | null) {
+  function togglePin(n: string, at: Lit | null, add: boolean) {
     const key = n + ':' + cur
+    const had = pins.some((p) => p.key === key)
     // a row with no relation keeps the whole table's
-    pin = pin?.key === key ? null : { ...(at ?? lights(edgeIds((x) => x.a === n || x.b === n), n)), n, key }
+    const p = { ...(at ?? lights(edgeIds((x) => x.a === n || x.b === n), n)), n, key }
+    if (add) pins = had ? pins.filter((q) => q.key !== key) : [...pins, p]
+    else pins = had && pins.length === 1 ? [] : [p]
   }
   const edgeIds = (f: (e: Layout['edges'][number]) => boolean) => L!.edges.flatMap((e, i) => (f(e) ? [i] : []))
 
@@ -355,8 +368,8 @@
     if (e) fingers.delete(e.pointerId)
     // not moved: a click
     const still = (p: { x: number; y: number } | null) => e?.type === 'pointerup' && p && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 4
-    if (drag && !drag.size && still(drag)) togglePin(drag.n, drag.at)
-    else if (pan && still(pan)) pin = null
+    if (drag && !drag.size && still(drag)) togglePin(drag.n, drag.at, e!.shiftKey || e!.metaKey || e!.ctrlKey)
+    else if (pan && still(pan)) pins = []
     pinch = null // the finger left behind doesn't take over
     drag = null
     pan = null
@@ -438,7 +451,7 @@
 <svelte:window
   onclick={() => ((menu = null), (cmenu = null))}
   onblur={() => (cmenu = null)}
-  onkeydown={(e) => e.key === 'Escape' && ((menu = null), (cmenu = null), (pin = null))}
+  onkeydown={(e) => e.key === 'Escape' && ((menu = null), (cmenu = null), (pins = []))}
 />
 
 {#snippet box(b: Node, w: number, v: BoxView)}
@@ -582,7 +595,7 @@
                   class="bx"
                   data-t={b.name}
                   class:dim={lit && !lit.tables.has(b.name)}
-                  class:pinned={pin?.n === b.name}
+                  class:pinned={pinned.has(b.name)}
                   class:moved={!!manual[b.name]}
                   class:grab={drag?.n === b.name}
                   transform="translate({g.x} {g.y})"
