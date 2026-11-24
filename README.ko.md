@@ -112,7 +112,7 @@ DataGrip보다 가볍게 쓰려고 Go로 만든 멀티 DB SQL 클라이언트입
   ![라이트 테마: WHERE / ORDER BY를 건 테이블 탭](docs/screenshot-light.png)
 
 - 연결 목록을 잠시 숨기거나(`Ctrl/⌘+B`), "넓게 보기"로 지금 탭만 창 가득 볼 수 있습니다.
-- 탭은 끌어서 순서를 바꾸고, 탭 메뉴로 여러 탭 닫기, 복제, 이름 바꾸기, (데스크톱 앱) 새 창으로 열기를 합니다.
+- 탭은 끌어서 순서를 바꾸고, 탭 메뉴로 여러 탭 닫기, 복제, 이름 바꾸기, (데스크톱 앱) 새 창으로 열기를 합니다. 데스크톱 앱에서는 탭을 창 밖으로 끌어 놓으면 그 자리에 새 창으로 열립니다.
 - **탭 분할**: 탭을 끌어 탭 영역의 가장자리에 놓으면 그쪽이 나뉘고 그 탭이 들어갑니다. 몇 번이든, 어느 방향으로든 나눌 수 있습니다. 다른 그룹의 가운데에 놓으면 그 그룹으로 옮겨집니다. 탭 메뉴에는 "오른쪽으로 분할", "아래로 분할", "다른 그룹으로 옮기기", "분할 모두 해제"가 있습니다. 그룹 사이의 선을 끌어 크기를 바꾸고, 더블클릭하면 똑같이 나눕니다. 테이블은 지금 작업 중인 그룹에 열리고, `Ctrl/⌘+1…9`와 `Ctrl+Tab`은 그 그룹의 탭 사이를 오갑니다. 나눈 모양은 작업 공간과 함께 저장됩니다. 폰 너비 화면에서는 모든 탭이 탭 줄 하나에 모입니다.
 - 팝업 창은 제목 줄을 끌어서 옮깁니다.
 - 데스크톱 앱은 닫을 때의 창 크기로 다시 열립니다.
@@ -352,7 +352,7 @@ go test ./internal/... ./build/...
 CGO_ENABLED=0 go test -tags server .
 ```
 
-단위 테스트입니다(문장 분리, SQLite, 번역, 웹 앞단, 파일 제한, 버전 사본). 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
+단위 테스트입니다(문장 분리, SQLite, 번역, 웹 앞단, 파일 제한, 버전 사본). `frontend/`에서 `npm run check`를 실행하면 타입, 빠진 번역, 탭 분할과 ERD 배치(`scripts/panes-test.ts`, `scripts/erd-test.ts`)를 확인합니다. 실제 DB 5종에 대한 통합 테스트는 아래 순서로 실행합니다. 먼저 Docker로 테스트용 DB를 띄웁니다.
 
 ```bash
 docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
@@ -401,6 +401,9 @@ internal/web/              웹 버전 앞단: 패스키 로그인(WebAuthn), 세
 internal/i18n/             백엔드 메시지 번역 (en.go: 영어 표)
 frontend/                  Svelte 5 + CodeMirror 6 UI
   src/lib/i18n*.ts         화면 문구 번역 (i18n-en.ts: 영어 표)
+  src/lib/panes.ts         탭 분할 그룹: 나눈 모양의 트리
+  src/lib/erd.ts           ERD 배치
+  scripts/                 npm run check가 돌리는 검사
 ```
 
 번역: 한국어 문구가 그대로 키입니다. 화면은 `t('새 콘솔')`, Go는 `i18n.T("…")` / `i18n.Errorf("…", …)`로 쓰고, 영어 표(`frontend/src/lib/i18n-en.ts`, `internal/i18n/en.go`)에 같은 문구를 키로 영어를 넣습니다. 빠진 항목은 `npm run check`(프런트엔드)와 `go test ./internal/i18n`(백엔드)이 알려 줍니다.
