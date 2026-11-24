@@ -114,7 +114,7 @@ Built as a lighter alternative to DataGrip. It runs on macOS and Windows, and th
   ![Light theme: a table tab with WHERE / ORDER BY](docs/screenshot-light.png)
 
 - The connection list can be hidden (`Ctrl/⌘+B`), and "Wide View" shows only the current tab across the window.
-- Tabs can be reordered by dragging; the tab menu closes groups of tabs, duplicates, renames and (desktop app) opens a tab in a window of its own.
+- Tabs can be reordered by dragging; the tab menu closes groups of tabs, duplicates, renames and (desktop app) opens a tab in a window of its own. In the desktop app a tab dropped outside the window opens in a window of its own there.
 - **Split tabs**: drag a tab onto an edge of the tab area and that part splits off with the tab in it, as often and in whichever direction you like; dropped on the middle of another group, the tab moves there. The tab menu has "Split Right", "Split Down", "Move to Other Group" and "Unsplit All". Drag the line between groups to resize them (double-click shares evenly). Tables open in the group you're working in, `Ctrl/⌘+1…9` and `Ctrl+Tab` go through that group's tabs, and the layout is kept with the workspace. On a phone-width screen all tabs share one strip.
 - Dialogs can be dragged by their title bar.
 - The desktop app reopens at the window size it was closed at.
@@ -354,7 +354,7 @@ go test ./internal/... ./build/...
 CGO_ENABLED=0 go test -tags server .
 ```
 
-These are unit tests (statement splitting, SQLite, translations, the web front door, file restrictions, version copies). Integration tests against the five databases run like this. First start test databases with Docker:
+These are unit tests (statement splitting, SQLite, translations, the web front door, file restrictions, version copies). In `frontend/`, `npm run check` checks types, missing translations, and the split-tab and ERD layouts (`scripts/panes-test.ts`, `scripts/erd-test.ts`). Integration tests against the five databases run like this. First start test databases with Docker:
 
 ```bash
 docker run -d --name t-maria -e MARIADB_ROOT_PASSWORD=pw -e MARIADB_DATABASE=shop -p 3306:3306 mariadb:11
@@ -403,6 +403,9 @@ internal/web/              Web version front door: passkey sign-in (WebAuthn), s
 internal/i18n/             Backend message translations (en.go: English table)
 frontend/                  Svelte 5 + CodeMirror 6 UI
   src/lib/i18n*.ts         Interface translations (i18n-en.ts: English table)
+  src/lib/panes.ts         Split tab groups: the tree of splits
+  src/lib/erd.ts           ERD layout
+  scripts/                 Checks run by npm run check
 ```
 
 Translations: the Korean text is the key. The UI writes `t('새 콘솔')` and Go `i18n.T("…")` / `i18n.Errorf("…", …)`, and the English tables (`frontend/src/lib/i18n-en.ts`, `internal/i18n/en.go`) map the same text to English. `npm run check` (frontend) and `go test ./internal/i18n` (backend) list missing entries.
